@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          file: ./coverage/coverage-final.json
+          fail_ci_if_error: false
+        continue-on-error: true
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Check build artifacts
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Build failed: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "dist/server.js" ]; then
+            echo "Build failed: dist/server.js not found"
+            exit 1
+          fi
+          echo "Build successful: dist/server.js exists"
+
+  # Future: Add Salesforce deployment job
+  # salesforce:
+  #   name: Salesforce Validation
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Salesforce CLI
+  #       run: |
+  #         wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
+  #         mkdir sfdx
+  #         tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
+  #         export PATH=./sfdx/bin:$PATH
+  #         sfdx version
+  #
+  #     - name: Authorize Dev Hub
+  #       run: |
+  #         echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+  #         sfdx auth:sfdxurl:store -f auth.txt -a DevHub
+  #
+  #     - name: Deploy and run Apex tests
+  #       run: |
+  #         sfdx force:source:deploy --sourcepath force-app --testlevel RunLocalTests --wait 10
