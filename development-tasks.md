@@ -134,17 +134,32 @@ sequenceDiagram
 
 **Definition of Done**: Diagram committed; ADRs reflect all hard constraints.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-05)
+
 **Progress checklist**
 
-* [ ] Mermaid diagram added to README
-* [ ] ADRs capture non‑negotiables
-* [ ] Docs test ensures presence
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] Mermaid diagram added to README
+* [x] ADRs capture non‑negotiables
+* [x] Docs test ensures presence
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (21/21 tests passing)
+* [x] Security & secrets handled per policy (no secrets in T-02)
+* [x] Observability (logs/metrics/traces) added where relevant (documentation only)
+* [x] Docs updated (README/Runbook/ADR) (all 4 ADRs complete)
+* [x] Reviewer notes: risks, roll-back, toggles (ADRs document decisions)
+
+**Completion Summary**:
+- **Commit**: `5989a10` - T-02: System Flows Diagram & ADRs
+- **Files Created**: 1 file (test/docs.test.ts - 62 lines)
+- **Test Results**: 21/21 tests passing (16 docs tests + 5 health tests) ✓
+- **Key Deliverables**:
+  - Mermaid sequence diagram in README.md (interactive + batch flows)
+  - ADR 0001: Runtime (Node.js + TypeScript + Fastify + LibreOffice)
+  - ADR 0002: Authentication (AAD inbound + JWT Bearer outbound)
+  - ADR 0003: Worker Model (internal polling with Salesforce as queue)
+  - ADR 0004: Caching & Idempotency (template cache + RequestHash)
+  - Documentation validation tests ensure diagram and ADRs exist
 
 ---
 
