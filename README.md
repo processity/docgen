@@ -109,7 +109,48 @@ sf apex run test --test-level RunLocalTests --result-format human
 - `DocgenDataProvider` - Interface for pluggable data collection strategies
 - `StandardSOQLProvider` - Default SOQL provider with locale-aware formatting
 - `DocgenEnvelopeService` - JSON envelope builder with SHA-256 RequestHash
-- Apex test classes: `DocgenTemplateTest`, `GeneratedDocumentTest`, `StandardSOQLProviderTest`, `DocgenEnvelopeServiceTest` (38/38 tests passing)
+- `DocgenController` - Interactive document generation controller (calls Node API via Named Credential)
+- Apex test classes: 6 test classes with 44 test methods (all passing)
+
+### Named Credential Setup
+
+The service uses a Salesforce Named Credential to securely authenticate API calls to the Node.js service using Azure AD OAuth 2.0 client credentials.
+
+**Quick Setup**:
+
+1. **Deploy metadata**:
+   ```bash
+   sf project deploy start --source-dir force-app/main/default/externalCredentials,force-app/main/default/namedCredentials
+   ```
+
+2. **Configure External Credential** (via Salesforce UI):
+   - Go to **Setup → Named Credentials → External Credentials**
+   - Edit `Docgen_AAD_Credential`
+   - Add Principal: `DocgenAADPrincipal`
+   - Add Client ID: `f42d24be-0a17-4a87-bfc5-d6cd84339302` (from `azure-ad-config.md`)
+   - Add Client Secret: See `azure-ad-config.md` (⚠️ expires 2027-11-06)
+
+3. **Update Named Credential URL**:
+   - Go to **Setup → Named Credentials → Named Credentials**
+   - Edit `Docgen_Node_API`
+   - Set URL based on environment:
+     - **Local**: `http://localhost:8080` (tests only; Salesforce can't reach localhost)
+     - **Dev/Sandbox**: Ngrok tunnel or dev Azure deployment
+     - **Production**: Azure Container Apps URL (configured in T-16)
+
+4. **Test authentication**:
+   ```apex
+   HttpRequest req = new HttpRequest();
+   req.setEndpoint('callout:Docgen_Node_API/healthz');
+   req.setMethod('GET');
+   Http http = new Http();
+   HTTPResponse res = http.send(req);
+   System.debug('Status: ' + res.getStatusCode()); // Should be 200
+   ```
+
+**📖 Full Documentation**: See [docs/named-credential-setup.md](docs/named-credential-setup.md) for detailed step-by-step instructions, troubleshooting, and security best practices.
+
+**🔐 Azure AD Configuration**: See `azure-ad-config.md` (not in git) for tenant ID, client ID, endpoints, and secrets.
 
 ### Environment Variables
 

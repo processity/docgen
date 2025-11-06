@@ -18,6 +18,14 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.production
+
+# Secrets and sensitive files
+azure-ad-config.md
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Logs
 logs/
