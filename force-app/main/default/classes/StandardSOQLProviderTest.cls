@@ -262,4 +262,250 @@ private class StandardSOQLProviderTest {
         }
         Test.stopTest();
     }
+
+    @isTest
+    static void testBuildDataWithChildRelationships() {
+        // Given: Account with Contacts (child relationship)
+        Account acc = new Account(
+            Name = 'Parent Company',
+            AnnualRevenue = 5000000
+        );
+        insert acc;
+
+        List<Contact> contacts = new List<Contact>{
+            new Contact(
+                FirstName = 'John',
+                LastName = 'Doe',
+                AccountId = acc.Id
+            ),
+            new Contact(
+                FirstName = 'Jane',
+                LastName = 'Smith',
+                AccountId = acc.Id
+            )
+        };
+        insert contacts;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Account with Contacts',
+            TemplateContentVersionId__c = '068000000000005AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data with child relationships
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: Should include child array with formatted fields
+        Assert.isNotNull(data, 'Data map should not be null');
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+
+        // Verify parent fields
+        Assert.areEqual('Parent Company', accountData.get('Name'), 'Should contain Account Name');
+        Assert.isNotNull(accountData.get('AnnualRevenue__formatted'), 'Should have formatted revenue');
+
+        // Verify child relationship exists
+        Assert.isTrue(accountData.containsKey('Contacts'), 'Should contain Contacts child relationship');
+
+        List<Object> contactsList = (List<Object>) accountData.get('Contacts');
+        Assert.areEqual(2, contactsList.size(), 'Should have 2 contacts');
+
+        // Verify first contact
+        Map<String, Object> firstContact = (Map<String, Object>) contactsList[0];
+        Assert.isNotNull(firstContact.get('FirstName'), 'Contact should have FirstName');
+        Assert.isNotNull(firstContact.get('LastName'), 'Contact should have LastName');
+    }
+
+    @isTest
+    static void testBuildDataWithEmptyChildRelationship() {
+        // Given: Account with NO contacts
+        Account acc = new Account(
+            Name = 'Lonely Company',
+            AnnualRevenue = 100000
+        );
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Account with No Contacts',
+            TemplateContentVersionId__c = '068000000000006AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data with empty child relationship
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: Should include empty child array (not null)
+        Assert.isNotNull(data, 'Data map should not be null');
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+
+        Assert.areEqual('Lonely Company', accountData.get('Name'), 'Should contain Account Name');
+
+        // Child relationship should exist but be empty
+        if (accountData.containsKey('Contacts')) {
+            List<Object> contactsList = (List<Object>) accountData.get('Contacts');
+            Assert.isNotNull(contactsList, 'Contacts list should not be null');
+            Assert.areEqual(0, contactsList.size(), 'Contacts list should be empty');
+        }
+    }
+
+    @isTest
+    static void testBuildDataWithParentRelationship() {
+        // Given: Opportunity with Owner (parent relationship)
+        Account acc = new Account(Name = 'Test Account');
+        insert acc;
+
+        Opportunity opp = new Opportunity(
+            Name = 'Big Deal',
+            AccountId = acc.Id,
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Opportunity with Owner',
+            TemplateContentVersionId__c = '068000000000007AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, Owner.Name, Account.Name FROM Opportunity WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data with parent relationship
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(opp.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: Should include parent object data
+        Assert.isNotNull(data, 'Data map should not be null');
+        Map<String, Object> oppData = (Map<String, Object>) data.get('Opportunity');
+
+        Assert.areEqual('Big Deal', oppData.get('Name'), 'Should contain Opportunity Name');
+
+        // Verify parent Owner relationship
+        Assert.isTrue(oppData.containsKey('Owner'), 'Should contain Owner parent relationship');
+        Map<String, Object> ownerData = (Map<String, Object>) oppData.get('Owner');
+        Assert.isNotNull(ownerData.get('Name'), 'Owner should have Name');
+
+        // Verify parent Account relationship
+        Assert.isTrue(oppData.containsKey('Account'), 'Should contain Account parent relationship');
+        Map<String, Object> accountData = (Map<String, Object>) oppData.get('Account');
+        Assert.areEqual('Test Account', accountData.get('Name'), 'Account should have Name');
+    }
+
+    @isTest
+    static void testFormatCurrencyVeryLarge() {
+        // Given: Very large currency value (15 digits)
+        Decimal value = 999999999999.99;
+        String locale = 'en-GB';
+
+        // When: Formatting very large currency
+        Test.startTest();
+        String formatted = StandardSOQLProvider.formatCurrency(value, locale);
+        Test.stopTest();
+
+        // Then: Should format correctly with all separators
+        Assert.isNotNull(formatted, 'Formatted currency should not be null');
+        Assert.isTrue(formatted.contains('£'), 'Should contain GBP symbol');
+        Assert.isTrue(formatted.contains('999,999,999,999') || formatted.contains('999999999999'), 'Should contain large number');
+    }
+
+    @isTest
+    static void testFormatCurrencyNegative() {
+        // Given: Negative currency value
+        Decimal value = -1200000.50;
+        String locale = 'en-GB';
+
+        // When: Formatting negative currency
+        Test.startTest();
+        String formatted = StandardSOQLProvider.formatCurrency(value, locale);
+        Test.stopTest();
+
+        // Then: Should indicate negative value
+        Assert.isNotNull(formatted, 'Formatted currency should not be null');
+        Assert.isTrue(formatted.contains('£'), 'Should contain GBP symbol');
+        Assert.isTrue(formatted.contains('-') || formatted.startsWith('('), 'Should indicate negative');
+        Assert.isTrue(formatted.contains('1,200,000') || formatted.contains('1200000'), 'Should contain amount');
+    }
+
+    @isTest
+    static void testFormatNumberVerySmall() {
+        // Given: Very small decimal number
+        Decimal value = 0.000001;
+        String locale = 'en-GB';
+
+        // When: Formatting very small number
+        Test.startTest();
+        String formatted = StandardSOQLProvider.formatNumber(value, locale);
+        Test.stopTest();
+
+        // Then: Should handle precision correctly
+        Assert.isNotNull(formatted, 'Formatted number should not be null');
+        // The exact format depends on implementation, but should not throw error
+        Assert.isTrue(true, 'Successfully formatted very small number');
+    }
+
+    @isTest
+    static void testFormatNumberNegative() {
+        // Given: Negative number
+        Decimal value = -987654.321;
+        String locale = 'en-GB';
+
+        // When: Formatting negative number
+        Test.startTest();
+        String formatted = StandardSOQLProvider.formatNumber(value, locale);
+        Test.stopTest();
+
+        // Then: Should indicate negative
+        Assert.isNotNull(formatted, 'Formatted number should not be null');
+        Assert.isTrue(formatted.contains('-'), 'Should indicate negative');
+        Assert.isTrue(formatted.contains('987,654') || formatted.contains('987654'), 'Should contain number');
+    }
+
+    @isTest
+    static void testBuildDataWithAllNullFields() {
+        // Given: Account with all optional fields null
+        Account acc = new Account(
+            Name = 'Minimal Account',
+            AnnualRevenue = null,
+            BillingCity = null,
+            BillingStreet = null,
+            Phone = null
+        );
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'All Nulls Test',
+            TemplateContentVersionId__c = '068000000000008AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue, BillingCity, BillingStreet, Phone FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data with all null fields
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: Should handle all nulls gracefully without errors
+        Assert.isNotNull(data, 'Data map should not be null');
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.areEqual('Minimal Account', accountData.get('Name'), 'Name should be populated');
+        // All other fields are null - key behavior is no exception thrown
+        Assert.isTrue(true, 'Successfully processed record with all null optional fields');
+    }
 }

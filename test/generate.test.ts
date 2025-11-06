@@ -61,7 +61,9 @@ describe('POST /generate - Data Contract Validation', () => {
 
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
-      expect(body.message).toContain('outputFormat');
+      // Error message format changed with schemaErrorFormatter
+      expect(body.message).toMatch(/outputFormat|allowed values/i);
+      expect(body.correlationId).toBeDefined(); // Should have correlation ID
     });
 
     it('should return 400 when outputFileName is missing', async () => {
@@ -317,6 +319,361 @@ describe('POST /generate - Data Contract Validation', () => {
       expect(response.statusCode).toBe(202);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toBe(customCorrelationId);
+    });
+  });
+
+  describe('Edge cases and malformed payloads', () => {
+    it('should return 400 for completely malformed JSON with normalized error name', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        headers: {
+          'content-type': 'application/json',
+        },
+        payload: 'this is not json',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.statusCode).toBe(400);
+      // Error name should be normalized to "Bad Request" for 400 errors
+      expect(body.error).toBe('Bad Request');
+      expect(body.message).toBeDefined();
+      expect(body.correlationId).toBeDefined();
+    });
+
+    it('should handle empty JSON object', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.message).toContain('required');
+    });
+
+    it('should handle null values in required fields', async () => {
+      const payload = {
+        templateId: null,
+        outputFileName: null,
+        outputFormat: null,
+        locale: null,
+        timezone: null,
+        options: null,
+        data: null,
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should reject payload with parents=null (schema validation)', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: { Account: { Name: 'Test Account' } },
+        parents: null,
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      // Schema requires parents to be an object if present, not null
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should accept payload without parents field', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: { Account: { Name: 'Test Account' } },
+        // parents omitted
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should accept payload without requestHash field', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: { Account: { Name: 'Test Account' } },
+        // requestHash omitted
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should handle very large data payload (>100KB)', async () => {
+      // Create a large data object with 1000 line items
+      const lineItems = Array.from({ length: 1000 }, (_, i) => ({
+        Name: `Product ${i}`,
+        Qty: i + 1,
+        UnitPrice__formatted: `£${(i + 1) * 100}`,
+        LineTotal__formatted: `£${(i + 1) * 100 * (i + 1)}`,
+        Description: `This is a long description for product ${i} with lots of text to make the payload larger. `.repeat(
+          10
+        ),
+      }));
+
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'large_opportunity.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: {
+          Opportunity: {
+            Name: 'Large Opportunity',
+            LineItems: lineItems,
+          },
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should handle requestHash with sha256: prefix', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: { Account: { Name: 'Test Account' } },
+        requestHash:
+          'sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6abcd',
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should handle different locale formats', async () => {
+      const locales = ['en-US', 'en-GB', 'de-DE', 'fr-FR', 'es-ES'];
+
+      for (const locale of locales) {
+        const payload = {
+          templateId: '068xx000000abcdXXX',
+          outputFileName: 'test.pdf',
+          outputFormat: 'PDF',
+          locale,
+          timezone: 'Europe/London',
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: true,
+          },
+          data: { Account: { Name: 'Test Account' } },
+        };
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/generate',
+          payload,
+        });
+
+        expect(response.statusCode).toBe(202);
+        const body = JSON.parse(response.body);
+        expect(body).toHaveProperty('correlationId');
+      }
+    });
+
+    it('should handle different timezone formats', async () => {
+      const timezones = [
+        'Europe/London',
+        'America/New_York',
+        'Asia/Tokyo',
+        'Australia/Sydney',
+        'UTC',
+      ];
+
+      for (const timezone of timezones) {
+        const payload = {
+          templateId: '068xx000000abcdXXX',
+          outputFileName: 'test.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone,
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: true,
+          },
+          data: { Account: { Name: 'Test Account' } },
+        };
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/generate',
+          payload,
+        });
+
+        expect(response.statusCode).toBe(202);
+        const body = JSON.parse(response.body);
+        expect(body).toHaveProperty('correlationId');
+      }
+    });
+
+    it('should handle empty data object', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: {},
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should handle nested data objects', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: {
+          Account: {
+            Name: 'Test Account',
+            Owner: {
+              Name: 'John Doe',
+              Email: 'john.doe@example.com',
+              Manager: {
+                Name: 'Jane Smith',
+                Email: 'jane.smith@example.com',
+              },
+            },
+          },
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
+    });
+
+    it('should handle special characters in data fields', async () => {
+      const payload = {
+        templateId: '068xx000000abcdXXX',
+        outputFileName: 'test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: {
+          Account: {
+            Name: 'Test & Co. <"Special"> Chars™',
+            Description: "This contains 'quotes' and \"double quotes\" and newlines\nand tabs\t",
+            Unicode: 'Émile, François, Müller, 日本語, 中文, Русский',
+          },
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveProperty('correlationId');
     });
   });
 });

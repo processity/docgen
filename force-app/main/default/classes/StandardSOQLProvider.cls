@@ -1,6 +1,6 @@
 /**
  * Default SOQL-based data provider
- * Executes template.SOQL__c with :recordId binding and preformats all fields
+ * Executes template.SOQL__c with :recordId binding (when present) and preformats all fields
  */
 public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
@@ -18,8 +18,17 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             throw new IllegalArgumentException('Template SOQL__c is required for StandardSOQLProvider');
         }
 
-        // Execute query with bound recordId
-        List<SObject> results = Database.query(template.SOQL__c);
+        // Safely bind :recordId if author used it in the template
+        String soql = bindRecordId(template.SOQL__c, recordId);
+
+        // Execute query
+        List<SObject> results;
+        try {
+            results = Database.query(soql);
+        } catch (Exception e) {
+            // Surface template mistakes clearly
+            throw new IllegalArgumentException('Invalid SOQL on template: ' + e.getMessage());
+        }
 
         if (results.isEmpty()) {
             throw new IllegalArgumentException('No records found for recordId: ' + recordId);
@@ -30,86 +39,105 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         // Build hierarchical data structure
         Map<String, Object> data = new Map<String, Object>();
 
-        // Get object type from recordId
-        String objectType = recordId.getSObjectType().getDescribe().getName();
+        // Use actual record type (not the template's target)
+        String objectType = record.getSObjectType().getDescribe().getName();
 
-        // Process the record and add formatted fields
+        // Process the record (scalars, parents, and child subqueries)
         Map<String, Object> processedRecord = processRecord(record, locale, timezone);
 
         data.put(objectType, processedRecord);
-
         return data;
     }
 
     /**
-     * Process a single SObject record and add formatted fields
+     * Process a single SObject record:
+     *  - scalar fields (with __formatted when applicable)
+     *  - parent relationships (SObject -> recurse)
+     *  - child relationships (subqueries -> list of maps)
      */
     @TestVisible
     private Map<String, Object> processRecord(SObject record, String locale, String timezone) {
-        Map<String, Object> result = new Map<String, Object>();
-
-        // Get ALL fields from the SObject, including nulls
-        // We need to extract field names from getPopulatedFieldsAsMap() and check for nulls separately
-        Map<String, Object> populatedFields = record.getPopulatedFieldsAsMap();
-
-        // Get the SObject type to fetch all field names
-        Schema.SObjectType sObjectType = record.getSObjectType();
-        Map<String, Schema.SObjectField> fieldMap = sObjectType.getDescribe().fields.getMap();
-
-        // Process each field that was queried (appears in populated or is explicitly set to null)
-        Set<String> processedFields = new Set<String>();
-
-        // First, process all populated (non-null) fields
-        for (String fieldName : populatedFields.keySet()) {
-            Object fieldValue = record.get(fieldName);
-            processedFields.add(fieldName.toLowerCase());
-
-            // Add raw value
-            result.put(fieldName, fieldValue);
-
-            // Add formatted value if applicable
-            if (fieldValue != null) {
-                String formattedValue = formatFieldValue(fieldValue, fieldName, locale, timezone);
-                if (formattedValue != null) {
-                    result.put(fieldName + '__formatted', formattedValue);
-                }
-            }
+        Map<String, Object> out = new Map<String, Object>();
+        if (record == null) return out;
+    
+        // Metadata + what's actually populated in this row
+        Schema.DescribeSObjectResult d = record.getSObjectType().getDescribe();
+        Map<String, Schema.SObjectField> fieldMap = d.fields.getMap();
+        Map<String, Object> populated = record.getPopulatedFieldsAsMap();
+    
+        // Collect child relationship names (e.g., Contacts, Opportunities, CustomChildren__r)
+        Set<String> childRelNames = new Set<String>();
+        for (Schema.ChildRelationship cr : d.getChildRelationships()) {
+            String relName = cr.getRelationshipName();
+            if (!String.isBlank(relName)) childRelNames.add(relName);
         }
-
-        // Then, check for null fields that should have __formatted versions
-        // We determine this by field naming conventions
-        for (String fieldName : fieldMap.keySet()) {
-            String lowerFieldName = fieldName.toLowerCase();
-
-            // Skip if already processed
-            if (processedFields.contains(lowerFieldName)) {
+    
+        // 1) Scalars & parent relationships that were actually queried.
+        //    IMPORTANT: skip child relationship names here; they are not fields and record.get(<child>) throws.
+        for (String key : populated.keySet()) {
+            if (childRelNames.contains(key)) continue; // defer to child section
+    
+            Object val = populated.get(key); // use populated map; don't call record.get(key)
+    
+            // Parent relationship present (value is an SObject)
+            if (val instanceof SObject) {
+                out.put(key, processRecord((SObject) val, locale, timezone));
                 continue;
             }
-
-            // Check if this field was queried (try to get it, will be null if not queried)
+    
+            // Scalar value
+            out.put(key, val);
+            if (val != null) {
+                String formatted = formatFieldValue(val, key, locale, timezone);
+                if (formatted != null) out.put(key + '__formatted', formatted);
+            }
+        }
+    
+        // 2) Child relationships (only when sub-queried in SOQL)
+        for (String relName : childRelNames) {
+            List<SObject> children;
             try {
-                Object fieldValue = record.get(fieldName);
-
-                // If we got here, field was queried but is null
-                // Add null value and empty formatted string for appropriate field types
-                if (lowerFieldName.contains('revenue') || lowerFieldName.contains('amount') ||
-                    lowerFieldName.contains('price') || lowerFieldName.contains('total') ||
-                    lowerFieldName.contains('percent') || lowerFieldName.contains('probability') ||
-                    lowerFieldName.contains('date') || lowerFieldName.contains('quantity')) {
-                    result.put(fieldName, null);
-                    result.put(fieldName + '__formatted', '');
-                }
+                children = record.getSObjects(relName); // null if not subselected; may throw if unsupported -> catch
             } catch (Exception e) {
-                // Field was not queried, skip it
+                children = null;
+            }
+            if (children == null) continue;
+    
+            List<Object> processed = new List<Object>();
+            for (SObject child : children) {
+                processed.add(processRecord(child, locale, timezone));
+            }
+            out.put(relName, processed);
+        }
+    
+        // 3) (Optional) Add empty __formatted for queried-but-null scalars.
+        //    Only consider true fields on this sObject to avoid relationship names.
+        for (String fieldName : fieldMap.keySet()) {
+            if (out.containsKey(fieldName)) continue;
+            Object v;
+            try {
+                v = record.get(fieldName); // returns null if not queried or null; safe for real fields
+            } catch (Exception e) {
                 continue;
             }
+            if (v == null) {
+                Schema.DisplayType t = fieldMap.get(fieldName).getDescribe().getType();
+                if (t == Schema.DisplayType.Date || t == Schema.DisplayType.DateTime ||
+                    t == Schema.DisplayType.Currency || t == Schema.DisplayType.Percent ||
+                    t == Schema.DisplayType.Double   || t == Schema.DisplayType.Integer) {
+                    out.put(fieldName, null);
+                    out.put(fieldName + '__formatted', '');
+                }
+            }
         }
-
-        return result;
+    
+        return out;
     }
+    
+
 
     /**
-     * Format field value based on type
+     * Format field value based on type (adds currency/percent/date/datetime formatting)
      */
     @TestVisible
     private String formatFieldValue(Object value, String fieldName, String locale, String timezone) {
@@ -117,14 +145,12 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             return '';
         }
 
-        // Determine field type and format accordingly
         if (value instanceof Decimal) {
-            // Check if it's a currency or percent field by naming convention
-            String lowerFieldName = fieldName.toLowerCase();
-            if (lowerFieldName.contains('revenue') || lowerFieldName.contains('amount') ||
-                lowerFieldName.contains('price') || lowerFieldName.contains('total')) {
+            String lower = fieldName == null ? '' : fieldName.toLowerCase();
+            if (lower.contains('revenue') || lower.contains('amount') ||
+                lower.contains('price')   || lower.contains('total')) {
                 return formatCurrency((Decimal) value, locale);
-            } else if (lowerFieldName.contains('percent') || lowerFieldName.contains('probability')) {
+            } else if (lower.contains('percent') || lower.contains('probability')) {
                 return formatPercent((Decimal) value, locale);
             } else {
                 return formatNumber((Decimal) value, locale);
@@ -134,8 +160,40 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         } else if (value instanceof Datetime) {
             return formatDatetime((Datetime) value, locale, timezone);
         }
+        return null; // No formatting for other types
+    }
 
-        return null; // No formatting needed for this type
+    /**
+     * Helper: add __formatted alongside scalar when applicable
+     */
+    private void putFormatted(
+        Map<String, Object> target,
+        String fieldName,
+        Object rawValue,
+        String locale,
+        String timezone
+    ) {
+        if (rawValue == null) return;
+        String formatted = formatFieldValue(rawValue, fieldName, locale, timezone);
+        if (formatted != null) {
+            target.put(fieldName + '__formatted', formatted);
+        }
+    }
+
+    /**
+     * Safely bind :recordId inside dynamic SOQL (if present).
+     * We replace case-insensitively occurrences of ":recordId" with a quoted, escaped literal.
+     */
+    private static String bindRecordId(String soql, Id recordId) {
+        if (String.isBlank(soql)) return soql;
+        if (recordId == null)     return soql;
+
+        // Escape and wrap as SOQL string literal
+        String lit = '\'' + String.escapeSingleQuotes(String.valueOf(recordId)) + '\'';
+
+        // Case-insensitive replacement of :recordId tokens
+        // Use a regex with a word boundary so ":recordIdXYZ" is not replaced
+        return soql.replaceAll('(?i):\\s*recordId\\b', lit);
     }
 
     /**
@@ -143,13 +201,9 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     public static String formatCurrency(Decimal value, String locale) {
-        if (value == null) {
-            return '';
-        }
-
+        if (value == null) return '';
         String currencySymbol = getCurrencySymbol(locale);
         String formattedNumber = formatNumber(value, locale);
-
         return currencySymbol + formattedNumber;
     }
 
@@ -158,9 +212,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     public static String formatNumber(Decimal value, String locale) {
-        if (value == null) {
-            return '';
-        }
+        if (value == null) return '';
 
         // Round to 2 decimal places
         Decimal rounded = value.setScale(2, RoundingMode.HALF_UP);
@@ -181,7 +233,6 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         if (decimalPart == '00') {
             return formattedInteger;
         }
-
         return formattedInteger + decimalSeparator + decimalPart;
     }
 
@@ -190,11 +241,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     public static String formatPercent(Decimal value, String locale) {
-        if (value == null) {
-            return '';
-        }
-
-        // Format as number and append %
+        if (value == null) return '';
         String formattedNumber = formatNumber(value, locale);
         return formattedNumber + '%';
     }
@@ -204,18 +251,17 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     public static String formatDate(Date value, String locale) {
-        if (value == null) {
-            return '';
-        }
+        if (value == null) return '';
 
         Datetime dt = Datetime.newInstance(value, Time.newInstance(0, 0, 0, 0));
 
-        if (locale == 'en-GB' || locale.startsWith('en-')) {
-            // DD MMM YYYY (31 Dec 2025)
-            return dt.format('dd MMM yyyy');
-        } else if (locale == 'en-US') {
+        // IMPORTANT: check en-US before generic en-*
+        if (locale == 'en-US') {
             // MM/DD/YYYY (12/31/2025)
             return dt.format('MM/dd/yyyy');
+        } else if (locale == 'en-GB' || (locale != null && locale.startsWith('en-'))) {
+            // DD MMM YYYY (31 Dec 2025)
+            return dt.format('dd MMM yyyy');
         } else {
             // Default ISO format
             return dt.format('yyyy-MM-dd');
@@ -227,25 +273,19 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     public static String formatDatetime(Datetime value, String locale, String timezone) {
-        if (value == null) {
-            return '';
-        }
+        if (value == null) return '';
 
-        // Convert to specified timezone
-        String formattedDatetime;
-
-        if (locale == 'en-GB' || locale.startsWith('en-')) {
-            // DD MMM YYYY HH:mm (31 Oct 2025 14:30)
-            formattedDatetime = value.format('dd MMM yyyy HH:mm', timezone);
-        } else if (locale == 'en-US') {
+        // IMPORTANT: check en-US before generic en-*
+        if (locale == 'en-US') {
             // MM/DD/YYYY hh:mm a (10/31/2025 02:30 PM)
-            formattedDatetime = value.format('MM/dd/yyyy hh:mm a', timezone);
+            return value.format('MM/dd/yyyy hh:mm a', timezone);
+        } else if (locale == 'en-GB' || (locale != null && locale.startsWith('en-'))) {
+            // DD MMM YYYY HH:mm (31 Oct 2025 14:30)
+            return value.format('dd MMM yyyy HH:mm', timezone);
         } else {
-            // ISO format with timezone
-            formattedDatetime = value.format('yyyy-MM-dd HH:mm', timezone);
+            // ISO-like format with timezone
+            return value.format('yyyy-MM-dd HH:mm', timezone);
         }
-
-        return formattedDatetime;
     }
 
     /**
@@ -281,7 +321,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String separator = getThousandsSeparator(locale);
 
         // Handle negative numbers
-        Boolean isNegative = integerStr.startsWith('-');
+        Boolean isNegative = integerStr != null && integerStr.startsWith('-');
         if (isNegative) {
             integerStr = integerStr.substring(1);
         }

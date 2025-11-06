@@ -10,16 +10,17 @@ export function generateCorrelationId(): string {
 
 /**
  * Extract or generate correlation ID from request
+ * Validates that correlation IDs are non-empty strings
  */
 export function getCorrelationId(request: FastifyRequest): string {
   const headerValue = request.headers['x-correlation-id'];
 
-  if (typeof headerValue === 'string') {
-    return headerValue;
+  if (typeof headerValue === 'string' && headerValue.trim().length > 0) {
+    return headerValue.trim();
   }
 
-  if (Array.isArray(headerValue) && headerValue.length > 0) {
-    return headerValue[0];
+  if (Array.isArray(headerValue) && headerValue.length > 0 && headerValue[0].trim().length > 0) {
+    return headerValue[0].trim();
   }
 
   return generateCorrelationId();

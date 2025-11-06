@@ -1,6 +1,6 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import type { DocgenRequest, DocgenResponse } from '../types';
-import { getCorrelationId } from '../utils/correlation-id';
+import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
 
 /**
  * Fastify JSON Schema for POST /generate request validation
@@ -97,6 +97,9 @@ async function generateHandler(
   // Extract or generate correlation ID
   const correlationId = getCorrelationId(request);
 
+  // Set correlation ID in response header for distributed tracing
+  setCorrelationId(reply, correlationId);
+
   // Log the request (structured logging)
   request.log.info(
     {
@@ -152,6 +155,7 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
               statusCode: { type: 'number' },
               error: { type: 'string' },
               message: { type: 'string' },
+              correlationId: { type: 'string' },
             },
           },
         },

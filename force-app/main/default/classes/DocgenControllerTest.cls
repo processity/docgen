@@ -79,6 +79,42 @@ private class DocgenControllerTest {
     }
 
     /**
+     * Mock HTTP callout for timeout (CalloutException)
+     */
+    private class MockDocgenTimeoutCallout implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            // Simulate timeout by throwing CalloutException
+            throw new CalloutException('Read timed out');
+        }
+    }
+
+    /**
+     * Mock HTTP callout with very long error message (for truncation testing)
+     */
+    private class MockDocgenLongErrorCallout implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(500);
+            res.setStatus('Internal Server Error');
+            res.setHeader('Content-Type', 'application/json');
+
+            // Generate error message > 131KB (Long Text Area limit is 131,072 chars)
+            String longError = 'ERROR: ';
+            for (Integer i = 0; i < 20000; i++) {
+                longError += 'This is a very long error message that will exceed the Long Text Area limit. ';
+            }
+
+            Map<String, Object> errorBody = new Map<String, Object>{
+                'error' => longError,
+                'correlationId' => 'truncation-test-id'
+            };
+            res.setBody(JSON.serialize(errorBody));
+
+            return res;
+        }
+    }
+
+    /**
      * Test setup: Create test data
      */
     @testSetup
@@ -410,5 +446,193 @@ private class DocgenControllerTest {
 
         // This test documents the cache expiry logic in checkExistingDocument()
         // which filters by: AND CreatedDate = LAST_N_DAYS:1
+    }
+
+    /**
+     * Test 8: HTTP Timeout Handling
+     * Given: API call times out (CalloutException)
+     * When: generate() is called
+     * Then: Exception is thrown to caller, no document record created
+     * Note: Due to Salesforce's mixed DML restrictions, the callout must happen
+     * before the document record is inserted. If the callout fails, no record is created.
+     */
+    @isTest
+    static void testGenerateTimeout() {
+        // Given
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        // Set mock callout that throws timeout exception
+        Test.setMock(HttpCalloutMock.class, new MockDocgenTimeoutCallout());
+
+        // When/Then - Expect exception
+        Test.startTest();
+        try {
+            DocgenController.generate(template.Id, acc.Id, 'PDF');
+            Assert.fail('Should have thrown AuraHandledException for timeout');
+        } catch (AuraHandledException e) {
+            String errorMsg = e.getMessage().toLowerCase();
+            Assert.isTrue(
+                errorMsg.contains('timeout') || errorMsg.contains('timed out') || errorMsg.contains('callout'),
+                'Error message should mention timeout or callout. Got: ' + e.getMessage()
+            );
+        }
+        Test.stopTest();
+
+        // Then - Verify no Generated_Document__c record was created
+        // Note: Because callouts must happen before DML in Salesforce, when a callout fails
+        // before the document record is inserted, no record is created. This is by design.
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c, Error__c
+            FROM Generated_Document__c
+            WHERE Account__c = :acc.Id
+        ];
+        Assert.areEqual(0, docs.size(), 'No Generated_Document__c should be created when callout fails before DML');
+    }
+
+    /**
+     * Test 9: CorrelationId Format Validation
+     * Given: Successful document generation
+     * When: generate() is called
+     * Then: CorrelationId follows UUID v4 format pattern
+     */
+    @isTest
+    static void testCorrelationIdFormat() {
+        // Given
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        // Set mock callout
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.generate(template.Id, acc.Id, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify CorrelationId format
+        Generated_Document__c doc = [
+            SELECT Id, CorrelationId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :acc.Id
+            LIMIT 1
+        ];
+
+        Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be set');
+
+        // UUID v4 format: 8-4-4-4-12 hexadecimal digits
+        // Example: 550e8400-e29b-41d4-a716-446655440000
+        String correlationId = doc.CorrelationId__c;
+
+        // Verify exact length (36 chars including hyphens)
+        Assert.areEqual(
+            36,
+            correlationId.length(),
+            'CorrelationId must be exactly 36 characters (UUID v4 format)'
+        );
+
+        // Verify hyphen positions (at indices 8, 13, 18, 23)
+        Assert.areEqual('-', correlationId.substring(8, 9), 'Hyphen expected at position 8');
+        Assert.areEqual('-', correlationId.substring(13, 14), 'Hyphen expected at position 13');
+        Assert.areEqual('-', correlationId.substring(18, 19), 'Hyphen expected at position 18');
+        Assert.areEqual('-', correlationId.substring(23, 24), 'Hyphen expected at position 23');
+
+        // Verify version 4 identifier (character at position 14 should be '4')
+        Assert.areEqual('4', correlationId.substring(14, 15), 'UUID version must be 4');
+
+        // Verify variant identifier (character at position 19 should be 8, 9, a, or b)
+        String variant = correlationId.substring(19, 20).toLowerCase();
+        Assert.isTrue(
+            variant == '8' || variant == '9' || variant == 'a' || variant == 'b',
+            'UUID variant must be 8, 9, a, or b (got: ' + variant + ')'
+        );
+
+        // Verify all other characters are valid hexadecimal (0-9, a-f)
+        String hexPattern = '0123456789abcdef';
+        for (Integer i = 0; i < 36; i++) {
+            if (i == 8 || i == 13 || i == 18 || i == 23) continue; // Skip hyphens
+            String c = correlationId.substring(i, i + 1).toLowerCase();
+            Assert.isTrue(
+                hexPattern.contains(c),
+                'Invalid hex character at position ' + i + ': ' + c
+            );
+        }
+    }
+
+    /**
+     * Test 10: Error Message Truncation
+     * Given: API returns very long error message (>131KB)
+     * When: generate() is called
+     * Then: Error__c field truncated to Long Text Area limit (131,072 chars)
+     */
+    @isTest
+    static void testErrorMessageTruncation() {
+        // Given
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        // Set mock callout with very long error
+        Test.setMock(HttpCalloutMock.class, new MockDocgenLongErrorCallout());
+
+        // When/Then - Expect exception
+        Test.startTest();
+        try {
+            DocgenController.generate(template.Id, acc.Id, 'PDF');
+            Assert.fail('Should have thrown AuraHandledException');
+        } catch (AuraHandledException e) {
+            // Exception expected
+            Assert.isNotNull(e.getMessage(), 'Exception message should exist');
+        }
+        Test.stopTest();
+
+        // Then - Verify Error__c field is populated and truncated if needed
+        Generated_Document__c doc = [
+            SELECT Id, Status__c, Error__c
+            FROM Generated_Document__c
+            WHERE Account__c = :acc.Id
+            LIMIT 1
+        ];
+
+        Assert.areEqual('FAILED', doc.Status__c, 'Status should be FAILED');
+        Assert.isNotNull(doc.Error__c, 'Error__c should be populated');
+
+        // Long Text Area limit is 131,072 characters
+        Assert.isTrue(
+            doc.Error__c.length() <= 131072,
+            'Error__c should be truncated to Long Text Area limit'
+        );
+    }
+
+    /**
+     * Test 11: CorrelationId Propagation to Request Body
+     * Given: Valid request
+     * When: generate() is called
+     * Then: CorrelationId is included in HTTP request body
+     */
+    @isTest
+    static void testCorrelationIdPropagation() {
+        // Given
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        // Set mock callout (MockDocgenSuccessCallout already validates request structure)
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.generate(template.Id, acc.Id, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify CorrelationId was saved (mock validates it was in request)
+        Generated_Document__c doc = [
+            SELECT Id, CorrelationId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :acc.Id
+            LIMIT 1
+        ];
+
+        Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be captured');
+        // The MockDocgenSuccessCallout already verifies request structure
+        // If CorrelationId was missing from request, mock would fail assertion
     }
 }

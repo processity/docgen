@@ -199,11 +199,11 @@ public with sharing class DocgenController {
             String responseCorrelationId = (String) body.get('correlationId');
 
             // Update record to SUCCEEDED
+            // Note: CorrelationId__c was already set during insert and should not be modified
             update new Generated_Document__c(
                 Id = doc.Id,
                 Status__c = 'SUCCEEDED',
-                OutputFileId__c = contentVersionId,
-                CorrelationId__c = responseCorrelationId != null ? responseCorrelationId : correlationId
+                OutputFileId__c = contentVersionId
             );
 
             // Build and return download URL
@@ -285,8 +285,8 @@ public with sharing class DocgenController {
         // Version 4 (random): set version bits (4) and variant bits (8/9/a/b)
         return hex.substring(0, 8) + '-' +
                hex.substring(8, 12) + '-' +
-               '4' + hex.substring(13, 16) + '-' +
-               '8' + hex.substring(17, 20) + '-' +
-               hex.substring(20, 32);
+               '4' + hex.substring(12, 15) + '-' +
+               '8' + hex.substring(15, 18) + '-' +
+               hex.substring(18, 30);
     }
 }

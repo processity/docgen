@@ -38,12 +38,31 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
-      - name: Upload coverage to Codecov (optional)
-        uses: codecov/codecov-action@v3
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          file: ./coverage/coverage-final.json
+          name: coverage-reports
+          path: |
+            coverage/
+            !coverage/tmp/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage/coverage-final.json
           fail_ci_if_error: false
+          verbose: true
+        continue-on-error: true
+
+      - name: Comment coverage summary on PR
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        if: github.event_name == 'pull_request'
+        with:
+          lcov-file: ./coverage/lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
       - name: Type check
@@ -96,10 +115,19 @@ jobs:
         run: |
           sf project deploy start --source-dir force-app --wait 10
 
-      - name: Run Apex tests
+      - name: Run Apex tests with coverage
         if: env.SFDX_AUTH_URL != ''
         run: |
-          sf apex run test --test-level RunLocalTests --code-coverage --result-format human --wait 10
+          sf apex run test --test-level RunLocalTests --code-coverage --result-format human --wait 10 > apex-test-results.txt
+          cat apex-test-results.txt
+
+      - name: Upload Apex test results
+        uses: actions/upload-artifact@v4
+        if: always() && env.SFDX_AUTH_URL != ''
+        with:
+          name: apex-test-results
+          path: apex-test-results.txt
+          retention-days: 30
 
       - name: Delete Scratch Org
         if: always() && env.SFDX_AUTH_URL != ''

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { HealthStatus, ReadinessStatus } from '../types';
+import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
 
 /**
  * Health check routes
@@ -9,7 +10,9 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
    * GET /healthz - Liveness probe
    * Always returns 200 if the service is running
    */
-  app.get<{ Reply: HealthStatus }>('/healthz', async (_request: FastifyRequest, reply: FastifyReply) => {
+  app.get<{ Reply: HealthStatus }>('/healthz', async (request: FastifyRequest, reply: FastifyReply) => {
+    const correlationId = getCorrelationId(request);
+    setCorrelationId(reply, correlationId);
     return reply.code(200).send({ status: 'ok' });
   });
 
@@ -22,7 +25,10 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
    * - Key Vault accessibility
    * - LibreOffice availability
    */
-  app.get<{ Reply: ReadinessStatus }>('/readyz', async (_request: FastifyRequest, reply: FastifyReply) => {
+  app.get<{ Reply: ReadinessStatus }>('/readyz', async (request: FastifyRequest, reply: FastifyReply) => {
+    const correlationId = getCorrelationId(request);
+    setCorrelationId(reply, correlationId);
+
     // For now, always ready since we have no external dependencies yet
     // This will be expanded in future tasks (T-08, T-09, T-16)
     const ready = true;
