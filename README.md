@@ -14,7 +14,7 @@ sequenceDiagram
   participant N as Node (Fastify API + Worker)
   participant SF as Salesforce (REST & Files)
   rect rgb(235,245,255)
-  Note over U,L,AX,N,SF: Interactive flow (upload-first, return download link)
+  Note over U,SF: Interactive flow (upload-first, return download link)
   U->>L: Click "Generate PDF"
   L->>AX: @AuraEnabled invoke(recordId, templateId)
   AX->>AX: Build JSON envelope (preformatting, RequestHash)
@@ -29,7 +29,7 @@ sequenceDiagram
   L-->>U: Open PDF in new tab
   end
   rect rgb(245,235,255)
-  Note over AX,N,SF: Batch flow (ACA poller)
+  Note over AX,SF: Batch flow (ACA poller)
   AX->>SF: Batch/Queueable inserts Generated Document rows (QUEUED)
   loop every 15s
     N->>SF: Poll up to 50 rows where Status=QUEUED, not locked
@@ -110,7 +110,10 @@ sf apex run test --test-level RunLocalTests --result-format human
 **Salesforce Components**:
 - `Docgen_Template__c` - Template configuration object (7 fields)
 - `Generated_Document__c` - Document generation tracking object (15 fields)
-- Apex test classes: `DocgenTemplateTest`, `GeneratedDocumentTest`
+- `DocgenDataProvider` - Interface for pluggable data collection strategies
+- `StandardSOQLProvider` - Default SOQL provider with locale-aware formatting
+- `DocgenEnvelopeService` - JSON envelope builder with SHA-256 RequestHash
+- Apex test classes: `DocgenTemplateTest`, `GeneratedDocumentTest`, `StandardSOQLProviderTest`, `DocgenEnvelopeServiceTest` (38/38 tests passing)
 
 ### Environment Variables
 

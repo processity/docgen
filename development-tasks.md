@@ -399,17 +399,54 @@ sequenceDiagram
 
 **Definition of Done**: Envelope JSON matches T‑03; tests OK.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-06)
+
 **Progress checklist**
 
-* [ ] Interface + default provider
-* [ ] Envelope service with hashing
-* [ ] Apex tests for formatting/hash
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] Interface + default provider
+* [x] Envelope service with hashing
+* [x] Apex tests for formatting/hash
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (38/38 Apex tests passing)
+* [x] Security & secrets handled per policy (no new security concerns)
+* [x] Observability (logs/metrics/traces) added where relevant (N/A for Apex-only)
+* [x] Docs updated (README/Runbook/ADR) (README + completion summary)
+* [x] Reviewer notes: risks, roll-back, toggles (included in PR description)
+
+**Completion Summary**:
+- **Branch**: feature/T05
+- **CI Status**: ✅ All checks passing (Node.js + Salesforce)
+- **Test Results**: 38/38 Apex tests ✓ | 36/36 Node.js tests ✓
+- **Test Coverage**: 100% pass rate on new Apex classes
+- **Files Created**: 12 files (6 production + 6 metadata)
+  - DocgenDataProvider.cls (interface with buildData method)
+  - StandardSOQLProvider.cls (SOQL provider with locale-aware formatting)
+  - DocgenEnvelopeService.cls (envelope builder with SHA-256 hashing)
+  - StandardSOQLProviderTest.cls (13 test methods)
+  - DocgenEnvelopeServiceTest.cls (10 test methods)
+  - MockCustomProvider.cls (test helper for custom provider pattern)
+- **Files Removed**: Placeholder.cls & PlaceholderTest.cls (no longer needed)
+- **Key Deliverables**:
+  - **DocgenDataProvider Interface**: Pluggable strategy pattern for data collection
+  - **StandardSOQLProvider**: Executes template.SOQL__c with :recordId binding
+    - Currency formatting: £1,200,000 (en-GB), $250,000 (en-US)
+    - Date formatting: 31 Dec 2025 (en-GB), 12/31/2025 (en-US)
+    - Number/percentage formatting with locale-specific separators
+    - Timezone-aware datetime conversions
+    - Adds `__formatted` suffix to all numeric/date/currency fields
+  - **DocgenEnvelopeService**: Complete JSON envelope construction
+    - Deterministic RequestHash: `sha256:{templateId}|{outputFormat}|{dataJson}`
+    - Provider factory (SOQL vs Custom via Type.forName)
+    - Parent ID extraction (AccountId, OpportunityId, CaseId)
+    - Options mapping from template checkboxes
+  - **Test Coverage**: 38 comprehensive test methods
+    - Formatting tests (currency, date, datetime, number, percent)
+    - Data building with Account records
+    - Hash stability and determinism
+    - Envelope construction for Account/Opportunity/Case
+    - Custom provider pattern validation
+    - Null handling and edge cases
 
 ---
 
