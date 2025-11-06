@@ -5,7 +5,7 @@
 [![Salesforce Coverage](https://img.shields.io/codecov/c/github/bigmantra/docgen/main?flag=salesforce&label=Salesforce&logo=codecov)](https://codecov.io/gh/bigmantra/docgen?flags[0]=salesforce)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen?logo=node.js)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io/)
 [![Salesforce](https://img.shields.io/badge/Salesforce-Integration-00A1E0?logo=salesforce)](https://www.salesforce.com/)
 
