@@ -6,43 +6,39 @@ A Node.js-based document generation service that creates PDF documents from Sale
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  participant U as User (Browser)
-  participant L as LWC Button
-  participant AX as Apex Controller
-  participant NC as Named Credential (AAD client creds)
-  participant N as Node (Fastify API + Worker)
-  participant SF as Salesforce (REST & Files)
-  rect rgb(235,245,255)
-  Note over U,SF: Interactive flow (upload-first, return download link)
-  U->>L: Click "Generate PDF"
-  L->>AX: @AuraEnabled invoke(recordId, templateId)
-  AX->>AX: Build JSON envelope (preformatting, RequestHash)
-  AX->>NC: Call POST /generate (AAD client credentials)
-  NC->>N: POST /generate (Bearer <AAD JWT>)
-  N->>SF: Fetch Template (ContentVersion <ContentVersionId>)
-  N->>N: Merge DOCX (docx-templates)
-  N->>N: Convert to PDF (soffice --headless)
-  N->>SF: Upload ContentVersion + ContentDocumentLink(s)
-  N-->>NC: 200 {downloadUrl, contentVersionId}
-  AX-->>L: Return downloadUrl
-  L-->>U: Open PDF in new tab
-  end
-  rect rgb(245,235,255)
-  Note over AX,SF: Batch flow (ACA poller)
-  AX->>SF: Batch/Queueable inserts Generated Document rows (QUEUED)
-  loop every 15s
-    N->>SF: Poll up to 50 rows where Status=QUEUED, not locked
-    N->>SF: Lock rows (LockedUntil = now+2m; Status=PROCESSING)
-    par up to 8 concurrent
-      N->>SF: Fetch Template (by ContentVersionId)
-      N->>N: Merge DOCX -> PDF
-      N->>SF: Upload ContentVersion; update OutputFileId; set Status=SUCCEEDED
-    and on failure
-      N->>SF: Increment Attempts; set next run per backoff (1m/5m/15m); set FAILED if >3
-    end
-  end
-  end
+  participant U as User
+  participant LWC as LWC_Button
+  participant APX as Apex_Controller
+  participant NC as Named_Credential
+  participant API as Node_Service
+  participant SF as Salesforce
+
+  Note over U,SF: Interactive flow
+  U->>LWC: Click Generate PDF
+  LWC->>APX: Invoke with recordId and templateId
+  APX->>APX: Build JSON envelope and request hash
+  APX->>NC: POST /generate using client credentials
+  NC->>API: POST /generate with Authorization header
+  API->>SF: Get template by ContentVersionId
+  API->>API: Merge DOCX to PDF
+  API->>SF: Upload file
+  API-->>NC: Return downloadUrl and contentVersionId
+  APX-->>LWC: Return downloadUrl
+  LWC-->>U: Open PDF
+
+  Note over APX,SF: Batch flow
+  APX->>SF: Insert Generated Document rows with status QUEUED
+  Note over API,SF: Poll every 15 seconds and process up to 8
+  API->>SF: Query up to 50 queued rows
+  API->>SF: Lock rows and set status PROCESSING
+  API->>SF: Fetch template by ContentVersionId
+  API->>API: Merge DOCX to PDF
+  API->>SF: Upload file
+  API->>SF: Update OutputFileId
+  API->>SF: Update status SUCCEEDED
+  API->>SF: On failure increment attempts
+  API->>SF: Set backoff schedule
+  API->>SF: If attempts exceed three then mark FAILED
 ```
 
 ## Features
