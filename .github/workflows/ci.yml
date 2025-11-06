@@ -78,34 +78,34 @@ jobs:
           sf version
 
       - name: Authorize Dev Hub
-        if: ${{ secrets.SFDX_AUTH_URL }}
+        if: secrets.SFDX_AUTH_URL
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt --set-default-dev-hub --alias DevHub
           rm auth.txt
 
       - name: Create Scratch Org
-        if: ${{ secrets.SFDX_AUTH_URL }}
+        if: secrets.SFDX_AUTH_URL
         run: |
           sf org create scratch --definition-file config/project-scratch-def.json --alias ciorg --set-default --duration-days 1 --wait 10
 
       - name: Deploy metadata to Scratch Org
-        if: ${{ secrets.SFDX_AUTH_URL }}
+        if: secrets.SFDX_AUTH_URL
         run: |
           sf project deploy start --source-dir force-app --wait 10
 
       - name: Run Apex tests
-        if: ${{ secrets.SFDX_AUTH_URL }}
+        if: secrets.SFDX_AUTH_URL
         run: |
           sf apex run test --test-level RunLocalTests --code-coverage --result-format human --wait 10
 
       - name: Delete Scratch Org
-        if: ${{ always() && secrets.SFDX_AUTH_URL }}
+        if: always() && secrets.SFDX_AUTH_URL
         run: |
           sf org delete scratch --target-org ciorg --no-prompt
 
       - name: Skip Salesforce validation (no Dev Hub configured)
-        if: ${{ !secrets.SFDX_AUTH_URL }}
+        if: "!secrets.SFDX_AUTH_URL"
         run: |
           echo "⚠️  Salesforce validation skipped: SFDX_AUTH_URL secret not configured"
           echo "To enable Salesforce CI validation:"
