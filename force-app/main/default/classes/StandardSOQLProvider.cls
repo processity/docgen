@@ -61,10 +61,42 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
         // First, process all populated (non-null) fields
         for (String fieldName : populatedFields.keySet()) {
-            Object fieldValue = record.get(fieldName);
             processedFields.add(fieldName.toLowerCase());
 
-            // Add raw value
+            Object fieldValue = null;
+            Boolean isChildRelationship = false;
+
+            // Try to get as child relationship first (List<SObject>)
+            try {
+                List<SObject> childRecords = record.getSObjects(fieldName);
+                if (childRecords != null) {
+                    // This is a child relationship
+                    isChildRelationship = true;
+                    List<Object> processedChildren = new List<Object>();
+
+                    for (SObject childRecord : childRecords) {
+                        processedChildren.add(processRecord(childRecord, locale, timezone));
+                    }
+
+                    result.put(fieldName, processedChildren);
+                    continue;
+                }
+            } catch (Exception e) {
+                // Not a child relationship, continue to try as regular field
+            }
+
+            // If not a child relationship, get as regular field or parent relationship
+            if (!isChildRelationship) {
+                fieldValue = record.get(fieldName);
+            }
+
+            // Check if this is a parent relationship (returns SObject)
+            if (fieldValue instanceof SObject) {
+                result.put(fieldName, processRecord((SObject) fieldValue, locale, timezone));
+                continue;
+            }
+
+            // Regular field - add raw value
             result.put(fieldName, fieldValue);
 
             // Add formatted value if applicable
