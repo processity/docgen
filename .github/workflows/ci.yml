@@ -134,7 +134,7 @@ jobs:
       - name: Install coverage transformer plugin
         if: env.SFDX_AUTH_URL != ''
         run: |
-          sf plugins install apex-code-coverage-transformer
+          echo "y" | sf plugins install apex-code-coverage-transformer
 
       - name: Transform Apex coverage to Cobertura
         if: env.SFDX_AUTH_URL != ''
