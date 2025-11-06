@@ -321,34 +321,30 @@ sequenceDiagram
 
 **Definition of Done**: Metadata deploys; tests passing; unique external ID enforced.
 **Timebox**: ≤2–3 days
-**Status**: ✅ **COMPLETED** (2025-11-05)
+**Status**: ✅ **COMPLETED** (2025-11-06)
 
 **Progress checklist**
-
 * [x] Objects/fields defined
 * [x] Unit tests insert/query/update
 * [x] External ID uniqueness enforced
 
 **PR checklist**
-* [x] Tests cover external behaviour and edge cases (14 test methods)
-* [x] Security & secrets handled per policy (metadata only; no secrets)
-* [x] Observability (logs/metrics/traces) added where relevant (CorrelationId field)
-* [x] Docs updated (README/Runbook/ADR) (README + T04-COMPLETION-SUMMARY.md)
-* [x] Reviewer notes: risks, roll-back, toggles (included in PR description)
+* [x] Tests cover external behaviour and edge cases (16 Apex tests passing)
+* [x] Security & secrets handled per policy
+* [x] Observability added (CorrelationId field)
+* [x] Docs updated (README + T04-COMPLETION-SUMMARY.md)
+* [x] Reviewer notes in PR description
 
 **Completion Summary**:
-- **PR**: #3 - T-04: Salesforce Custom Objects & Fields
+- **PR**: #3 - https://github.com/bigmantra/docgen/pull/3
 - **Branch**: feature/T04
-- **Files Added/Modified**: 37 files (1,567 lines added, 24 lines modified)
-- **Test Results**: 14 Apex test methods covering all behaviors ✓
-- **Key Deliverables**:
-  - Docgen_Template__c object with 7 fields
-  - Generated_Document__c object with 15 fields
-  - DocgenTemplateTest.cls with 5 test methods
-  - GeneratedDocumentTest.cls with 9 test methods
-  - Scratch org setup and helper scripts
-  - GitHub Actions Salesforce CI job
-  - README updates with Salesforce setup and CI documentation
+- **CI Status**: ✅ All checks passing (Node.js + Salesforce)
+- **Test Results**: 16/16 Apex tests ✓ | 36/36 Node.js tests ✓
+- **Files**: 37 changed (1,593 insertions, 33 deletions)
+- **Key Fixes**:
+  - Parent lookups renamed (Account__c, Opportunity__c, Case__c)
+  - GitHub Actions workflow syntax corrected
+  - SFDX_AUTH_URL secret configured
 
 ---
 
