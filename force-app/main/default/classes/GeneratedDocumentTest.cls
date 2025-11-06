@@ -249,8 +249,8 @@ private class GeneratedDocumentTest {
      */
     @isTest
     static void testCorrelationId() {
-        // Given: Document with CorrelationId
-        String corrId = 'corr-123e4567-e89b-12d3-a456-426614174000';
+        // Given: Document with CorrelationId (UUID format, 36 chars)
+        String corrId = '123e4567-e89b-12d3-a456-426614174000';
         Generated_Document__c doc = new Generated_Document__c(
             RequestHash__c = 'sha256:corr123',
             Status__c = 'PROCESSING',
