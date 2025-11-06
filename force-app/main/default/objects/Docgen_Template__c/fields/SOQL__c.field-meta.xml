@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>SOQL__c</fullName>
+    <description>SOQL query used by the default StandardSOQLProvider to fetch data. Must bind :recordId variable. Example: SELECT Id, Name FROM Account WHERE Id = :recordId</description>
+    <externalId>false</externalId>
+    <label>SOQL Query</label>
+    <length>32768</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

@@ -84,6 +84,34 @@ npm run build
 npm start
 ```
 
+### Salesforce Setup
+
+This project includes Salesforce custom objects and Apex code. To set up a scratch org for development:
+
+```bash
+# Authenticate to your Dev Hub (one-time setup)
+sf org login web --set-default-dev-hub --alias DevHub
+
+# Create and configure a scratch org
+./scripts/setup-scratch-org.sh
+
+# Or manually:
+sf org create scratch --definition-file config/project-scratch-def.json --alias docgen-dev --set-default --duration-days 7
+sf project deploy start --source-dir force-app
+sf apex run test --test-level RunLocalTests --result-format human
+```
+
+**Helper Scripts**:
+- `scripts/setup-scratch-org.sh [alias]` - Create and deploy to scratch org
+- `scripts/deploy-to-org.sh [alias]` - Deploy metadata to existing org
+- `scripts/run-apex-tests.sh [alias]` - Run Apex tests
+- `scripts/delete-scratch-org.sh [alias]` - Delete scratch org
+
+**Salesforce Components**:
+- `Docgen_Template__c` - Template configuration object (7 fields)
+- `Generated_Document__c` - Document generation tracking object (15 fields)
+- Apex test classes: `DocgenTemplateTest`, `GeneratedDocumentTest`
+
 ### Environment Variables
 
 ```bash
@@ -113,6 +141,8 @@ docgen/
 
 ## Testing
 
+### Node.js Tests
+
 ```bash
 # Run all tests
 npm test
@@ -122,6 +152,47 @@ npm run test:watch
 
 # Run tests with coverage
 npm run test:coverage
+```
+
+### Salesforce Apex Tests
+
+```bash
+# Run Apex tests in scratch org
+./scripts/run-apex-tests.sh
+
+# Or manually
+sf apex run test --test-level RunLocalTests --code-coverage --result-format human
+```
+
+## Continuous Integration
+
+The project includes GitHub Actions workflows that automatically:
+
+1. **Node.js CI** (`test` job):
+   - Runs ESLint
+   - Runs Jest tests with coverage
+   - Type checks TypeScript
+   - Builds the project
+
+2. **Salesforce CI** (`salesforce` job):
+   - Creates a scratch org
+   - Deploys all metadata
+   - Runs Apex tests
+   - Cleans up scratch org
+
+To enable Salesforce CI in GitHub Actions:
+
+```bash
+# 1. Authenticate to your Dev Hub
+sf org login web --set-default-dev-hub --alias DevHub
+
+# 2. Get the auth URL
+sf org display --verbose --target-org DevHub
+
+# 3. Copy the "Sfdx Auth Url" value
+
+# 4. Add it as a GitHub secret named SFDX_AUTH_URL
+# Go to: Settings → Secrets and variables → Actions → New repository secret
 ```
 
 ## API Endpoints

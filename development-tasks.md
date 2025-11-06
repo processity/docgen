@@ -321,17 +321,30 @@ sequenceDiagram
 
 **Definition of Done**: Metadata deploys; tests passing; unique external ID enforced.
 **Timebox**: ≤2–3 days
-**Progress checklist**
+**Status**: ✅ **COMPLETED** (2025-11-06)
 
-* [ ] Objects/fields defined
-* [ ] Unit tests insert/query/update
-* [ ] External ID uniqueness enforced
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+**Progress checklist**
+* [x] Objects/fields defined
+* [x] Unit tests insert/query/update
+* [x] External ID uniqueness enforced
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (16 Apex tests passing)
+* [x] Security & secrets handled per policy
+* [x] Observability added (CorrelationId field)
+* [x] Docs updated (README + T04-COMPLETION-SUMMARY.md)
+* [x] Reviewer notes in PR description
+
+**Completion Summary**:
+- **PR**: #3 - https://github.com/bigmantra/docgen/pull/3
+- **Branch**: feature/T04
+- **CI Status**: ✅ All checks passing (Node.js + Salesforce)
+- **Test Results**: 16/16 Apex tests ✓ | 36/36 Node.js tests ✓
+- **Files**: 37 changed (1,593 insertions, 33 deletions)
+- **Key Fixes**:
+  - Parent lookups renamed (Account__c, Opportunity__c, Case__c)
+  - GitHub Actions workflow syntax corrected
+  - SFDX_AUTH_URL secret configured
 
 ---
 

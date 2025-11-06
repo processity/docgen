@@ -1,0 +1,21 @@
+{
+  "orgName": "Docgen PDF Generation - Scratch Org",
+  "edition": "Developer",
+  "features": ["EnableSetPasswordInApi"],
+  "settings": {
+    "lightningExperienceSettings": {
+      "enableS1DesktopEnabled": true
+    },
+    "mobileSettings": {
+      "enableS1EncryptedStoragePref2": false
+    },
+    "securitySettings": {
+      "sessionSettings": {
+        "forceRelogin": false
+      }
+    }
+  },
+  "hasSampleData": false,
+  "country": "GB",
+  "language": "en_GB"
+}

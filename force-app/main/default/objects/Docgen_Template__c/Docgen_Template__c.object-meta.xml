@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Docgen Template</label>
+    <pluralLabel>Docgen Templates</pluralLabel>
+    <nameField>
+        <label>Template Name</label>
+        <type>Text</type>
+    </nameField>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <sharingModel>ReadWrite</sharingModel>
+    <description>Configuration for document generation templates. Each template references a DOCX file in Salesforce Files and defines how data is fetched and merged.</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+</CustomObject>

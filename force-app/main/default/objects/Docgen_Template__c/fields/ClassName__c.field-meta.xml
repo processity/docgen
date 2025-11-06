@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ClassName__c</fullName>
+    <description>Fully qualified Apex class name for custom data provider. Must implement DocgenDataProvider interface. Only used when DataSource__c is Custom.</description>
+    <externalId>false</externalId>
+    <label>Custom Provider Class Name</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

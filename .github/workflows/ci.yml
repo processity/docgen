@@ -64,27 +64,53 @@ jobs:
           fi
           echo "Build successful: dist/server.js exists"
 
-  # Future: Add Salesforce deployment job
-  # salesforce:
-  #   name: Salesforce Validation
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Setup Salesforce CLI
-  #       run: |
-  #         wget https://developer.salesforce.com/media/salesforce-cli/sfdx/channels/stable/sfdx-linux-x64.tar.xz
-  #         mkdir sfdx
-  #         tar xJf sfdx-linux-x64.tar.xz -C sfdx --strip-components 1
-  #         export PATH=./sfdx/bin:$PATH
-  #         sfdx version
-  #
-  #     - name: Authorize Dev Hub
-  #       run: |
-  #         echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
-  #         sfdx auth:sfdxurl:store -f auth.txt -a DevHub
-  #
-  #     - name: Deploy and run Apex tests
-  #       run: |
-  #         sfdx force:source:deploy --sourcepath force-app --testlevel RunLocalTests --wait 10
+  salesforce:
+    name: Salesforce Validation
+    runs-on: ubuntu-latest
+    env:
+      SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install -g @salesforce/cli
+          sf version
+
+      - name: Authorize Dev Hub
+        if: env.SFDX_AUTH_URL != ''
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sf org login sfdx-url --sfdx-url-file auth.txt --set-default-dev-hub --alias DevHub
+          rm auth.txt
+
+      - name: Create Scratch Org
+        if: env.SFDX_AUTH_URL != ''
+        run: |
+          sf org create scratch --definition-file config/project-scratch-def.json --alias ciorg --set-default --duration-days 1 --wait 10
+
+      - name: Deploy metadata to Scratch Org
+        if: env.SFDX_AUTH_URL != ''
+        run: |
+          sf project deploy start --source-dir force-app --wait 10
+
+      - name: Run Apex tests
+        if: env.SFDX_AUTH_URL != ''
+        run: |
+          sf apex run test --test-level RunLocalTests --code-coverage --result-format human --wait 10
+
+      - name: Delete Scratch Org
+        if: always() && env.SFDX_AUTH_URL != ''
+        run: |
+          sf org delete scratch --target-org ciorg --no-prompt
+
+      - name: Skip Salesforce validation (no Dev Hub configured)
+        if: env.SFDX_AUTH_URL == ''
+        run: |
+          echo "⚠️  Salesforce validation skipped: SFDX_AUTH_URL secret not configured"
+          echo "To enable Salesforce CI validation:"
+          echo "1. Authenticate to your Dev Hub org: sf org login web --set-default-dev-hub --alias DevHub"
+          echo "2. Generate auth URL: sf org display --verbose --target-org DevHub"
+          echo "3. Add SFDX_AUTH_URL as a GitHub secret with the Sfdx Auth Url value"

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>RequestJSON__c</fullName>
+    <description>Full JSON envelope sent to Node API. Stored for audit trail and replay. Contains templateId, data, options, parents. Shield encryption recommended.</description>
+    <externalId>false</externalId>
+    <label>Request JSON</label>
+    <length>131072</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>10</visibleLines>
+</CustomField>

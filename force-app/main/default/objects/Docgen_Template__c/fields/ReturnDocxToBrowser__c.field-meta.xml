@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ReturnDocxToBrowser__c</fullName>
+    <defaultValue>true</defaultValue>
+    <description>Legacy flag: interactive generation always returns ContentVersion download URL. Kept for backward compatibility and future extension.</description>
+    <externalId>false</externalId>
+    <label>Return DOCX to Browser</label>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LockedUntil__c</fullName>
+    <description>Distributed lock timestamp (TTL = 2 minutes). Poller sets this when picking up work. Stale locks allow re-pick after expiry.</description>
+    <externalId>false</externalId>
+    <label>Locked Until</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

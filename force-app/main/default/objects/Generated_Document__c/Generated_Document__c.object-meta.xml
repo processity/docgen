@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Generated Document</label>
+    <pluralLabel>Generated Documents</pluralLabel>
+    <nameField>
+        <displayFormat>GD-{0000000}</displayFormat>
+        <label>Document Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <sharingModel>ReadWrite</sharingModel>
+    <description>Tracks document generation requests for both interactive and batch flows. Manages status, retries, locks, and results. RequestHash ensures idempotency.</description>
+    <enableActivities>true</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+</CustomObject>
