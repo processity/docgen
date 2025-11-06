@@ -131,16 +131,15 @@ jobs:
           path: apex-test-results.txt
           retention-days: 30
 
-      - name: Setup Node.js for coverage transformation
+      - name: Install coverage transformer plugin
         if: env.SFDX_AUTH_URL != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
+        run: |
+          sf plugins install apex-code-coverage-transformer
 
       - name: Transform Apex coverage to Cobertura
         if: env.SFDX_AUTH_URL != ''
         run: |
-          npx apex-code-coverage-transformer \
+          sf acc-transformer transform \
             -j coverage-apex/test-result-codecoverage.json \
             -r coverage-apex/cobertura.xml \
             -f cobertura
