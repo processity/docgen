@@ -67,4 +67,19 @@ describe('Health Endpoints', () => {
       expect(response.status).toBe(404);
     });
   });
+
+  describe('Error Handler', () => {
+    it('should handle errors with proper format', async () => {
+      // Trigger an error by sending invalid JSON
+      const response = await supertest(app.server)
+        .post('/generate')
+        .set('Content-Type', 'application/json')
+        .send('this is not valid json');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body).toHaveProperty('message');
+      expect(response.body).toHaveProperty('statusCode');
+    });
+  });
 });
