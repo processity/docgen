@@ -11,7 +11,8 @@
     </targets>
     <targetConfigs>
         <targetConfig targets="lightning__RecordPage,lightning__AppPage,lightning__HomePage">
-            <property name="templateId" type="String" label="Template ID" description="ID of the Docgen_Template__c record to use for generation" required="true" />
+            <property name="templateId" type="String" label="Template ID" description="ID of the Docgen_Template__c record (alternative to Template Name)" />
+            <property name="templateName" type="String" label="Template Name" description="Name of the Docgen_Template__c record (alternative to Template ID)" />
             <property name="outputFormat" type="String" label="Output Format" description="Document output format (PDF or DOCX)" datasource="PDF,DOCX" default="PDF" required="true" />
             <property name="buttonLabel" type="String" label="Button Label" description="Custom label for the generation button" default="Generate Document" />
             <property name="successMessage" type="String" label="Success Message" description="Custom message shown in success toast" default="Document generated successfully!" />

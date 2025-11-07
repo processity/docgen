@@ -39,11 +39,11 @@ export const test = base.extend<{ salesforce: SalesforceFixture }>({
     // Set Salesforce session cookies for authentication
     await authenticateWithAccessToken(page, orgInfo);
 
-    // Enable test mode in DocgenController (bypass HTTP callouts)
-    await enableTestMode();
-
     // Create test data
     const testData = await createTestData(orgInfo);
+
+    // Enable test mode in DocgenController (bypass HTTP callouts)
+    await enableTestMode();
 
     // Provide fixture to test
     await use({
@@ -64,8 +64,7 @@ export const test = base.extend<{ salesforce: SalesforceFixture }>({
     // Cleanup: Delete test Account (cascade deletes related records)
     await deleteRecords('Account', [testData.accountId]);
 
-    // Cleanup: Delete test Template (each test creates its own unique template)
-    await deleteRecords('Docgen_Template__c', [testData.templateId]);
+    // Note: We don't delete the E2E_Test_Template since it's shared across tests
   },
 });
 
@@ -129,7 +128,7 @@ async function logOneClickLoginUrl(): Promise<void> {
 async function enableTestMode(): Promise<void> {
   // Check if Custom Setting record already exists
   const existing = await querySalesforce(
-    `SELECT Id FROM Docgen_Settings__c LIMIT 1`
+    `SELECT Id, Test_Mode__c FROM Docgen_Settings__c LIMIT 1`
   );
 
   // Only create if it doesn't exist (once per org, persists across tests)
@@ -314,17 +313,32 @@ async function createTestData(orgInfo: ScratchOrgInfo): Promise<TestData> {
   });
   console.log(`✓ Created Account with ID: ${accountId}`);
 
-  // Create template with unique name to avoid duplicate detection rules
-  // For UI-only tests, we mock the backend response, so template content doesn't matter
-  const templateName = `TestTemplate_${uniqueId}`;
-  console.log(`Creating test Template: ${templateName}`);
-  const templateId = await createRecord('Docgen_Template__c', {
-    Name: templateName,
-    DataSource__c: 'SOQL',
-    TemplateContentVersionId__c: '068000000000000AAA', // Mock ContentVersion ID
-    SOQL__c: 'SELECT Id, Name FROM Account WHERE Id = :recordId', // Minimal SOQL for test mode
-  });
-  console.log(`✓ Created Template with ID: ${templateId}`);
+  // Check if our standard test template exists, create if not
+  const existingTemplates = await querySalesforce(
+    `SELECT Id, Name FROM Docgen_Template__c WHERE Name = 'E2E_Test_Template' LIMIT 1`
+  );
+
+  let templateId: string;
+  let templateName: string;
+
+  if (existingTemplates.length > 0) {
+    // Use existing template
+    templateId = existingTemplates[0].Id;
+    templateName = existingTemplates[0].Name;
+    console.log(`Using existing test template: ${templateName} (${templateId})`);
+  } else {
+    // Create template with consistent name for all tests
+    // For UI-only tests, we mock the backend response, so template content doesn't matter
+    templateName = 'E2E_Test_Template';
+    console.log(`Creating test Template: ${templateName}`);
+    templateId = await createRecord('Docgen_Template__c', {
+      Name: templateName,
+      DataSource__c: 'SOQL',
+      TemplateContentVersionId__c: '068000000000000AAA', // Mock ContentVersion ID
+      SOQL__c: 'SELECT Id, Name FROM Account WHERE Id = :recordId', // Minimal SOQL for test mode
+    });
+    console.log(`✓ Created Template with ID: ${templateId}`);
+  }
 
   // In CI, log the record URLs for manual inspection
   if (process.env.CI) {

@@ -16,8 +16,8 @@
                     <value>Test document generated successfully!</value>
                 </componentInstanceProperties>
                 <componentInstanceProperties>
-                    <name>templateId</name>
-                    <value>a00S900000QWKJBIA5</value>
+                    <name>templateName</name>
+                    <value>E2E_Test_Template</value>
                 </componentInstanceProperties>
                 <componentName>docgenButton</componentName>
                 <identifier>docgenButtonInstance</identifier>

@@ -1,5 +1,6 @@
-import { LightningElement, api, track } from 'lwc';
+import { LightningElement, api, track, wire } from 'lwc';
 import generate from '@salesforce/apex/DocgenController.generate';
+import getTemplateIdByName from '@salesforce/apex/DocgenController.getTemplateIdByName';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 /**
@@ -19,9 +20,15 @@ export default class DocgenButton extends LightningElement {
   /**
    * Template ID (Docgen_Template__c record ID)
    * @type {string}
-   * @required
    */
   @api templateId;
+
+  /**
+   * Template Name (Docgen_Template__c.Name)
+   * Alternative to templateId - will be resolved to ID automatically
+   * @type {string}
+   */
+  @api templateName;
 
   /**
    * Output format (PDF or DOCX)
@@ -58,16 +65,23 @@ export default class DocgenButton extends LightningElement {
   @track isProcessing = false;
 
   /**
+   * Resolved template ID (either from templateId prop or resolved from templateName)
+   * @type {string}
+   * @private
+   */
+  resolvedTemplateId = null;
+
+  /**
    * Handles button click event
    * Validates required properties, calls Apex, and handles response
    * @private
    */
-  handleGenerateClick() {
+  async handleGenerateClick() {
     // Validate required properties
-    if (!this.templateId) {
+    if (!this.templateId && !this.templateName) {
       this.showToast(
         'Configuration Error',
-        'Template ID is required. Please configure the component.',
+        'Either Template ID or Template Name is required. Please configure the component.',
         'error'
       );
       return;
@@ -85,28 +99,48 @@ export default class DocgenButton extends LightningElement {
     // Start processing
     this.isProcessing = true;
 
-    // Call Apex method
-    generate({
-      templateId: this.templateId,
-      recordId: this.recordId,
-      outputFormat: this.outputFormat
-    })
-      .then((downloadUrl) => {
-        // Success: Open download URL in new tab
-        window.open(downloadUrl, '_blank');
+    try {
+      // Resolve template ID if using template name
+      let effectiveTemplateId = this.templateId;
 
-        // Show success toast
-        this.showToast('Success', this.successMessage, 'success');
-      })
-      .catch((error) => {
-        // Error: Extract and display error message
-        const errorMessage = this.extractErrorMessage(error);
-        this.showToast('Error Generating Document', errorMessage, 'error');
-      })
-      .finally(() => {
-        // Always re-enable button
-        this.isProcessing = false;
+      if (!effectiveTemplateId && this.templateName) {
+        // Resolve template name to ID
+        try {
+          effectiveTemplateId = await getTemplateIdByName({ templateName: this.templateName });
+          this.resolvedTemplateId = effectiveTemplateId;
+        } catch (error) {
+          this.isProcessing = false;
+          this.showToast(
+            'Template Not Found',
+            `Template with name "${this.templateName}" not found. Please check the template name.`,
+            'error'
+          );
+          console.error('Template resolution error:', error);
+          return;
+        }
+      }
+
+      // Call Apex method
+      const downloadUrl = await generate({
+        templateId: effectiveTemplateId,
+        recordId: this.recordId,
+        outputFormat: this.outputFormat
       });
+
+      // Success: Open download URL in new tab
+      window.open(downloadUrl, '_blank');
+
+      // Show success toast
+      this.showToast('Success', this.successMessage, 'success');
+
+    } catch (error) {
+      // Error: Extract and display error message
+      const errorMessage = this.extractErrorMessage(error);
+      this.showToast('Error Generating Document', errorMessage, 'error');
+    } finally {
+      // Always re-enable button
+      this.isProcessing = false;
+    }
   }
 
   /**

@@ -71,6 +71,39 @@ public with sharing class DocgenController {
     }
 
     /**
+     * Get template ID by name
+     * Used by LWC component to resolve template name to ID
+     * Cacheable to avoid repeated queries for the same template
+     */
+    @AuraEnabled(cacheable=true)
+    public static String getTemplateIdByName(String templateName) {
+        try {
+            if (String.isBlank(templateName)) {
+                throw new AuraHandledException('Template name is required');
+            }
+
+            List<Docgen_Template__c> templates = [
+                SELECT Id, Name
+                FROM Docgen_Template__c
+                WHERE Name = :templateName
+                LIMIT 1
+            ];
+
+            if (templates.isEmpty()) {
+                AuraHandledException ex = new AuraHandledException('Template not found: ' + templateName);
+                ex.setMessage('Template not found: ' + templateName);
+                throw ex;
+            }
+
+            return templates[0].Id;
+        } catch (Exception e) {
+            AuraHandledException auraEx = new AuraHandledException(e.getMessage());
+            auraEx.setMessage(e.getMessage());
+            throw auraEx;
+        }
+    }
+
+    /**
      * Check for existing successful document within cache window (24 hours)
      * Implements idempotency by returning cached results for duplicate requests
      *
