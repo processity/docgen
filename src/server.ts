@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { healthRoutes } from './routes/health';
 import { generateRoutes } from './routes/generate';
+import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
 
@@ -52,6 +53,9 @@ export async function build(): Promise<FastifyInstance> {
 
     return reply.status(statusCode).send(response);
   });
+
+  // Register auth plugin before routes
+  await app.register(authPlugin, { config });
 
   // Register routes
   await app.register(healthRoutes);

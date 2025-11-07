@@ -57,7 +57,7 @@ sequenceDiagram
 - **Template-Based**: Uses DOCX templates with field-path substitution via docx-templates
 - **PDF Conversion**: LibreOffice headless conversion with bounded concurrency (8 max per instance)
 - **Idempotency**: RequestHash-based deduplication prevents duplicate work
-- **Secure**: AAD OAuth2 inbound, JWT Bearer Flow outbound to Salesforce
+- **Secure**: AAD OAuth2 inbound (T-08 ✅), JWT Bearer Flow outbound to Salesforce (T-09)
 - **Scalable**: Horizontal scaling on Azure Container Apps with distributed locking
 - **Observable**: Azure Application Insights integration with correlation IDs and custom metrics
 
@@ -171,18 +171,57 @@ AZURE_TENANT_ID=<azure-tenant-id>
 CLIENT_ID=<azure-client-id>
 KEY_VAULT_URI=<azure-key-vault-uri>
 IMAGE_ALLOWLIST=cdn.example.com,images.company.com
+
+# Azure AD JWT Validation (T-08)
+ISSUER=https://login.microsoftonline.com/<azure-tenant-id>/v2.0
+AUDIENCE=api://<azure-client-id>
+JWKS_URI=https://login.microsoftonline.com/<azure-tenant-id>/discovery/v2.0/keys
+
+# Optional: Bypass auth in development
+AUTH_BYPASS_DEVELOPMENT=true  # Only works when NODE_ENV=development
 ```
+
+## Authentication (T-08)
+
+### Azure AD JWT Validation
+
+The service uses Azure AD (Entra ID) OAuth 2.0 for inbound authentication from Salesforce:
+
+- **Protocol**: OAuth 2.0 Client Credentials Flow
+- **Token Type**: JWT (RS256)
+- **Validation**: JWKS-based signature verification with caching
+- **Claims**: Validates issuer, audience, expiry, and not-before times
+
+#### Implementation Details
+
+**Core Components**:
+- `src/auth/aad.ts` - AAD JWT verifier with JWKS client
+- `src/plugins/auth.ts` - Fastify authentication plugin
+- `/generate` endpoint - Protected with `preHandler: fastify.authenticate`
+- `/readyz` endpoint - Includes JWKS connectivity check
+
+**Security Features**:
+- JWKS key caching (5 minutes) to reduce external calls
+- Rate limiting (10 JWKS requests/minute)
+- Correlation ID propagation in auth failures
+- Development mode bypass (NODE_ENV=development + AUTH_BYPASS_DEVELOPMENT=true)
+
+**Error Responses**:
+- `401 Unauthorized` - Missing/expired/invalid token
+- `403 Forbidden` - Wrong audience or issuer
 
 ## Project Structure
 
 ```
 docgen/
 ├── src/              # TypeScript source code
+│   ├── auth/         # Azure AD JWT authentication (T-08)
 │   ├── routes/       # Fastify routes
 │   ├── plugins/      # Fastify plugins
 │   ├── config/       # Configuration management
 │   └── utils/        # Utility functions
 ├── test/             # Jest tests
+│   └── helpers/      # Test utilities (JWT helpers)
 ├── force-app/        # Salesforce Apex and metadata
 ├── docs/             # Documentation and ADRs
 └── dist/             # Compiled JavaScript (gitignored)

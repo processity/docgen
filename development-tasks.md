@@ -1,3 +1,44 @@
+# Salesforce PDF Generation - Development Tasks
+
+## Progress Summary
+
+**Overall Progress**: 8 of 18 tasks completed (44%)
+
+### Completed Tasks ✅
+- **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
+- **T-02**: System Flows Diagram & ADRs (2025-11-05)
+- **T-03**: Data Contract & OpenAPI Skeleton (2025-11-05)
+- **T-04**: Salesforce Custom Objects & Fields (2025-11-06)
+- **T-05**: Apex Data Provider, Envelope Builder & RequestHash (2025-11-06)
+- **T-06**: AAD Named Credential & Apex Interactive Controller (2025-11-06)
+- **T-07**: LWC Button UX & ContentDocumentLink Strategy (2025-11-07)
+- **T-08**: AAD JWT Validation (Inbound) & Request Validation (2025-11-07)
+
+### In Progress 🚧
+- None currently
+
+### Upcoming Tasks 📋
+- **T-09**: Salesforce Client via JWT Bearer (Outbound) - Next up
+- **T-10**: Template Fetch & Immutable Cache + docx-templates Usage
+- **T-11**: LibreOffice Conversion Pool
+- **T-12**: Upload to Salesforce Files & Linking; Idempotency
+- **T-13**: `/generate` End‑to‑End Interactive Path
+- **T-14**: Batch Enqueue (Apex) & Node Poller Worker
+- **T-15**: Observability with Azure Application Insights
+- **T-16**: Containerization & Azure Container Apps Deployment
+- **T-17**: Security & Compliance Hardening
+- **T-18**: Performance, Failure Injection, Rollout & DocuSign Hooks
+
+### Current Status
+- **Node.js Service**: Auth layer complete (T-08), ready for Salesforce integration
+- **Salesforce Components**: All Apex/LWC components built and tested
+- **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer pending (T-09)
+- **Test Coverage**: 113 Node.js tests, 46 Apex tests all passing
+
+---
+
+## Task Details
+
 ### T-01 — Repo, Runtime & Test Harness Bootstrap
 
 **Goal**: Create the TypeScript/Fastify service skeleton with Jest/ts‑jest/Supertest/Nock and Apex test scaffolding.
@@ -642,17 +683,40 @@ sequenceDiagram
 
 **Definition of Done**: Auth enforced; all negative/positive tests pass.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-07)
+
 **Progress checklist**
 
-* [ ] AAD validation implemented
-* [ ] Request schema enforced
-* [ ] CorrelationId propagation in logs
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] AAD validation implemented
+* [x] Request schema enforced
+* [x] CorrelationId propagation in logs
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (20 auth test scenarios)
+* [x] Security & secrets handled per policy (no secrets in code)
+* [x] Observability (logs/metrics/traces) added where relevant (correlation IDs)
+* [x] Docs updated (README/Runbook/ADR) (README + T08-COMPLETION-SUMMARY.md)
+* [x] Reviewer notes: risks, roll-back, toggles (development bypass mode)
+
+**Completion Summary**:
+- **Files Created**: 5 files (auth module, plugin, tests, helpers)
+  - `src/auth/aad.ts` (196 lines) - AAD JWT verifier with JWKS client
+  - `src/auth/index.ts` (9 lines) - Module exports
+  - `src/plugins/auth.ts` (119 lines) - Fastify auth plugin
+  - `test/auth.test.ts` (477 lines) - Comprehensive auth tests
+  - `test/helpers/jwt-helper.ts` (156 lines) - JWT test utilities
+- **Files Modified**: 10 files (config, server, routes, tests)
+- **Dependencies Added**: jsonwebtoken, jwks-rsa, fastify-plugin
+- **Test Results**: 113 total tests (93 existing + 20 new auth tests)
+- **Key Deliverables**:
+  - JWT verification with JWKS-based signature validation
+  - Claims validation (issuer, audience, exp, nbf)
+  - JWKS caching (5 minutes) with rate limiting
+  - Development mode bypass (AUTH_BYPASS_DEVELOPMENT=true)
+  - `/generate` endpoint protected with preHandler
+  - `/readyz` includes JWKS connectivity check
+  - Error responses: 401 (invalid token), 403 (wrong audience/issuer)
+  - Correlation ID preserved in auth failures
 
 ---
 

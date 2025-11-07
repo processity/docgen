@@ -10,6 +10,7 @@ export interface ReadinessStatus {
     database?: boolean;
     salesforce?: boolean;
     keyVault?: boolean;
+    jwks?: boolean;
   };
 }
 
@@ -22,6 +23,10 @@ export interface AppConfig {
   clientId?: string;
   keyVaultUri?: string;
   imageAllowlist?: string[];
+  // Azure AD JWT validation settings (T-08)
+  issuer?: string;
+  audience?: string;
+  jwksUri?: string;
 }
 
 export interface CorrelationContext {

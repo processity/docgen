@@ -192,7 +192,7 @@ describe('Config', () => {
       };
 
       expect(() => validateConfig(config)).toThrow(
-        'Missing required configuration in production: sfDomain, azureTenantId, clientId, keyVaultUri'
+        'Missing required configuration in production: sfDomain, azureTenantId, clientId, keyVaultUri, issuer, audience, jwksUri'
       );
     });
 
@@ -205,6 +205,9 @@ describe('Config', () => {
         azureTenantId: 'tenant-id',
         clientId: 'client-id',
         keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -219,6 +222,9 @@ describe('Config', () => {
         azureTenantId: 'tenant-id',
         clientId: 'client-id',
         keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
         // imageAllowlist is optional
       };
 
@@ -233,6 +239,9 @@ describe('Config', () => {
       process.env.AZURE_TENANT_ID = 'tenant-id';
       process.env.CLIENT_ID = 'client-id';
       process.env.KEY_VAULT_URI = 'https://vault.azure.net/';
+      process.env.ISSUER = 'https://login.microsoftonline.com/tenant-id/v2.0';
+      process.env.AUDIENCE = 'api://client-id';
+      process.env.JWKS_URI = 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys';
 
       const config = loadConfig();
       expect(() => validateConfig(config)).not.toThrow();

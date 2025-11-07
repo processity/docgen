@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { HealthStatus, ReadinessStatus } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
+import { getAADVerifier } from '../auth';
 
 /**
  * Health check routes
@@ -20,22 +21,38 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
    * GET /readyz - Readiness probe
    * Returns 200 when dependencies are ready, 503 otherwise
    *
-   * In future tasks, this will check:
-   * - Salesforce connectivity
-   * - Key Vault accessibility
-   * - LibreOffice availability
+   * Checks:
+   * - JWKS endpoint connectivity (T-08)
+   * - Salesforce connectivity (T-09)
+   * - Key Vault accessibility (T-16)
+   * - LibreOffice availability (T-11)
    */
   app.get<{ Reply: ReadinessStatus }>('/readyz', async (request: FastifyRequest, reply: FastifyReply) => {
     const correlationId = getCorrelationId(request);
     setCorrelationId(reply, correlationId);
 
-    // For now, always ready since we have no external dependencies yet
-    // This will be expanded in future tasks (T-08, T-09, T-16)
-    const ready = true;
+    // Check JWKS connectivity if AAD is configured
+    let jwksReady: boolean | undefined;
+    const verifier = getAADVerifier();
+    if (verifier) {
+      try {
+        jwksReady = await verifier.checkJWKSConnectivity();
+      } catch (error) {
+        jwksReady = false;
+        request.log.error({ correlationId, error }, 'JWKS connectivity check failed');
+      }
+    }
+
+    // Determine overall readiness
+    // For now, we only check JWKS if configured
+    // In production, JWKS must be ready
+    const isProduction = process.env.NODE_ENV === 'production';
+    const ready = !isProduction || jwksReady === true || jwksReady === undefined;
 
     const status: ReadinessStatus = {
       ready,
       checks: {
+        jwks: jwksReady,
         // Placeholder for future dependency checks
         salesforce: undefined,
         keyVault: undefined,
