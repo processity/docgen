@@ -9,6 +9,9 @@ export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.ts',
 
+  /* Output test results relative to this config file (e2e directory) */
+  outputDir: './test-results',
+
   /* Run tests sequentially to avoid race conditions in scratch org */
   fullyParallel: false,
   workers: 1,

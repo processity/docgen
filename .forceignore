@@ -23,3 +23,7 @@ test-results/
 # Environment files
 .env
 .env.local
+
+**/jsconfig.json
+
+**/.eslintrc.json

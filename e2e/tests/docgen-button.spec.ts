@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/salesforce.fixture';
 import { AccountRecordPage } from '../pages/AccountRecordPage';
 import { DocgenButtonComponent } from '../pages/DocgenButtonComponent';
-import { querySalesforce, executeAnonymousApex } from '../utils/scratch-org';
+import { querySalesforce, executeAnonymousApex, waitForSalesforceRecord } from '../utils/scratch-org';
 
 test.describe('docgenButton Component - UI Only Tests (No Backend)', () => {
   // Note: Test mode is enabled automatically in the salesforce fixture
@@ -121,19 +121,38 @@ test.describe('docgenButton Component - UI Only Tests (No Backend)', () => {
     const spinnerVisible = await button.isSpinnerVisible();
     expect(spinnerVisible).toBe(true);
 
-    // Wait for Apex to execute and transaction to commit
-    // In CI, this may take longer due to network latency
-    await salesforce.authenticatedPage.waitForTimeout(10000);
+    // Wait for spinner to disappear (indicates Apex method has completed)
+    // This is more reliable than a fixed timeout
+    console.log('Waiting for spinner to disappear (Apex completion)...');
+    await button.waitForSpinnerToDisappear(30000);
+    console.log('Spinner disappeared, Apex method completed');
 
-    // Query for Generated_Document__c record
-    console.log('Querying for Generated_Document__c with Account__c =', salesforce.testData.accountId);
-    const generatedDocs = await querySalesforce(
-      `SELECT Id, Status__c, Account__c FROM Generated_Document__c WHERE Account__c = '${salesforce.testData.accountId}' ORDER BY CreatedDate DESC LIMIT 1`
+    // Now poll for the Generated_Document__c record
+    // The record should exist after the Apex method completes
+    console.log('Polling for Generated_Document__c with Account__c =', salesforce.testData.accountId);
+
+    const generatedDocs = await waitForSalesforceRecord(
+      () => querySalesforce(
+        `SELECT Id, Status__c, Account__c, Error__c FROM Generated_Document__c WHERE Account__c = '${salesforce.testData.accountId}' ORDER BY CreatedDate DESC LIMIT 1`
+      ),
+      {
+        description: 'Generated_Document__c record',
+        maxAttempts: process.env.CI ? 10 : 5,  // More attempts in CI
+        delayMs: 2000
+      }
     );
 
-    console.log('Found', generatedDocs.length, 'Generated_Document__c records');
     expect(generatedDocs.length).toBeGreaterThan(0);
     const doc = generatedDocs[0];
+
+    // Log the document details for debugging
+    console.log('Generated Document found:', {
+      Id: doc.Id,
+      Status__c: doc.Status__c,
+      Error__c: doc.Error__c,
+      Account__c: doc.Account__c
+    });
+
     expect(doc.Status__c).toMatch(/PROCESSING|SUCCEEDED/); // Could transition quickly
   });
 

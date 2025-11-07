@@ -237,3 +237,61 @@ export async function deleteRecords(
     );
   }
 }
+
+/**
+ * Wait for Salesforce records to appear by polling with retries
+ * Useful for CI environments where database commits may be delayed
+ */
+export async function waitForSalesforceRecord(
+  queryFn: () => Promise<any[]>,
+  options: {
+    maxAttempts?: number;
+    delayMs?: number;
+    description?: string;
+  } = {}
+): Promise<any[]> {
+  const {
+    maxAttempts = process.env.CI ? 15 : 5,  // More attempts in CI
+    delayMs = 2000,
+    description = 'records'
+  } = options;
+
+  console.log(`Waiting for ${description} (max ${maxAttempts} attempts with ${delayMs}ms delay)...`);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Attempt ${attempt}/${maxAttempts}: Querying for ${description}...`);
+
+    try {
+      const results = await queryFn();
+
+      if (results && results.length > 0) {
+        console.log(`[${timestamp}] Success! Found ${results.length} ${description}`);
+        return results;
+      }
+
+      console.log(`[${timestamp}] No records found yet`);
+    } catch (error) {
+      console.error(`[${timestamp}] Query failed:`, error instanceof Error ? error.message : error);
+      // Continue trying unless it's the last attempt
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+    }
+
+    // Wait before next attempt (unless it's the last one)
+    if (attempt < maxAttempts) {
+      console.log(`[${timestamp}] Waiting ${delayMs}ms before next attempt...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw new Error(
+    `No ${description} found after ${maxAttempts} attempts (${maxAttempts * delayMs / 1000}s total wait time). ` +
+    `This may indicate:\n` +
+    `1. The Apex transaction is taking longer than expected to commit\n` +
+    `2. There's an error preventing record creation\n` +
+    `3. Network latency is higher than anticipated in CI\n` +
+    `Consider increasing maxAttempts or delayMs for CI environments.`
+  );
+}

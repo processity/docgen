@@ -82,6 +82,101 @@ async function enableTestMode(): Promise<void> {
   }
 
   console.log('✓ Test mode enabled in DocgenController');
+
+  // Enable Apex debug logging in CI for better diagnostics
+  if (process.env.CI) {
+    await enableApexDebugLogging();
+  }
+}
+
+/**
+ * Enable Apex debug logging for the current user
+ * Useful for debugging issues in CI where we can't see the Developer Console
+ */
+async function enableApexDebugLogging(): Promise<void> {
+  try {
+    console.log('Enabling Apex debug logging for CI...');
+
+    // Get the current user ID
+    const users = await querySalesforce(
+      `SELECT Id, Username FROM User WHERE Username LIKE '%test-%.sfdx@example.com' LIMIT 1`
+    );
+
+    if (users.length === 0) {
+      console.log('⚠️  Warning: Could not find test user for debug logging');
+      return;
+    }
+
+    const userId = users[0].Id;
+    const username = users[0].Username;
+    console.log(`Setting up debug logging for user: ${username}`);
+
+    // Check if a TraceFlag already exists for this user
+    const existingTraceFlags = await querySalesforce(
+      `SELECT Id, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = 'USER_DEBUG'`
+    );
+
+    // Calculate expiration (2 hours from now)
+    const expirationDate = new Date();
+    expirationDate.setHours(expirationDate.getHours() + 2);
+    const expirationDateStr = expirationDate.toISOString().replace('T', ' ').replace('.000Z', '');
+
+    if (existingTraceFlags.length > 0) {
+      console.log('Debug logging already enabled for user');
+      // Could update expiration if needed
+    } else {
+      // Create a new debug log configuration
+      // Note: This requires setting up via Tooling API or metadata API
+      // For now, we'll log a message about manual setup
+      console.log(`
+⚠️  To enable Apex debug logging in CI, run this in Anonymous Apex:
+
+// Enable debug logging for test user
+User testUser = [SELECT Id FROM User WHERE Username LIKE '%test-%.sfdx@example.com' LIMIT 1];
+Database.insert(new DebugLevel(
+  DeveloperName = 'E2E_Debug',
+  MasterLabel = 'E2E Debug Level',
+  ApexCode = 'DEBUG',
+  System_x = 'DEBUG',
+  Database = 'DEBUG',
+  ApexProfiling = 'DEBUG',
+  Callout = 'DEBUG',
+  Validation = 'DEBUG',
+  Workflow = 'DEBUG'
+));
+
+DebugLevel debugLevel = [SELECT Id FROM DebugLevel WHERE DeveloperName = 'E2E_Debug' LIMIT 1];
+Database.insert(new TraceFlag(
+  TracedEntityId = testUser.Id,
+  DebugLevelId = debugLevel.Id,
+  LogType = 'USER_DEBUG',
+  StartDate = DateTime.now(),
+  ExpirationDate = DateTime.now().addHours(2)
+));
+
+Then check logs at: Setup > Debug Logs
+      `);
+    }
+
+    // Also log current Apex logs if any exist
+    const recentLogs = await querySalesforce(
+      `SELECT Id, LogUser.Name, Application, DurationMilliseconds, Status, Operation, LogLength
+       FROM ApexLog
+       WHERE LogUser.Id = '${userId}'
+       ORDER BY SystemModstamp DESC
+       LIMIT 5`
+    );
+
+    if (recentLogs.length > 0) {
+      console.log(`Found ${recentLogs.length} recent Apex logs:`);
+      recentLogs.forEach(log => {
+        console.log(`  - ${log.Operation} (${log.DurationMilliseconds}ms, ${log.Status})`);
+      });
+    }
+
+  } catch (error) {
+    console.log('⚠️  Could not enable Apex debug logging:', error);
+  }
 }
 
 /**
