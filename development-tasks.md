@@ -560,8 +560,8 @@ sequenceDiagram
 
 **Behavioural tests (Given/When/Then)**:
 
-* Given a click, When controller returns URL, Then window opens and toast “Generated”.
-* Given error, Then toast “Failed” with reason.
+* Given a click, When controller returns URL, Then window opens and toast "Generated".
+* Given error, Then toast "Failed" with reason.
 
 **Artifacts to commit**:
 
@@ -570,17 +570,49 @@ sequenceDiagram
 
 **Definition of Done**: Button deploys; opens download; linking strategy documented.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-07)
+
 **Progress checklist**
 
-* [ ] LWC built & unit tested
-* [ ] UX: spinner, success/fail toasts
-* [ ] Linking strategy documented
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] LWC built & unit tested (12/12 tests passing)
+* [x] UX: spinner, success/fail toasts (fully implemented)
+* [x] Linking strategy documented (docs/contentdocumentlink.md)
+* [x] LWC Jest infrastructure set up (@salesforce/sfdx-lwc-jest)
+* [x] Component is configurable (templateId, outputFormat, buttonLabel, successMessage)
+* [x] Component deployable to Record/App/Home pages
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (12 comprehensive LWC tests + 93 Node.js tests passing)
+* [x] Security & secrets handled per policy (no new security concerns)
+* [x] Observability (logs/metrics/traces) added where relevant (N/A for LWC-only task)
+* [x] Docs updated (README/Runbook/ADR) (contentdocumentlink.md + T07-COMPLETION-SUMMARY.md)
+* [x] Reviewer notes: risks, roll-back, toggles (included in completion summary)
+
+**Completion Summary**:
+- **Files Created**: 8 files (LWC component + tests + config + docs)
+- **Test Results**: 12/12 LWC tests ✅ | 93/93 Node.js tests ✅ (105 total)
+- **Key Deliverables**:
+  - **docgenButton LWC Component**: Configurable button for interactive PDF/DOCX generation
+    - HTML template with button + spinner (372 bytes)
+    - JavaScript controller with Apex integration + error handling (4,291 bytes)
+    - Metadata with exposed properties (1,397 bytes)
+    - Comprehensive Jest tests (12,482 bytes, 12 scenarios)
+  - **LWC Jest Infrastructure**: Complete test framework setup
+    - @salesforce/sfdx-lwc-jest installed (111 packages)
+    - jest.config.lwc.js configuration
+    - .forceignore for deployment exclusions
+    - Test scripts in package.json (test:lwc, test:lwc:watch, test:lwc:coverage)
+  - **ContentDocumentLink Documentation**: Strategy for linking files to parents (7,812 bytes)
+    - Comprehensive markdown with Mermaid diagrams
+    - Examples for Account/Opportunity/Case scenarios
+    - Security considerations and future enhancements
+  - **Component Features**:
+    - Admin-configurable properties (templateId, outputFormat, buttonLabel, successMessage)
+    - Spinner during processing + button disabled state
+    - Success: Opens download URL in new tab + shows success toast
+    - Error: Shows error toast with message + re-enables button
+    - Validation: Checks for required properties (templateId, outputFormat)
+    - Deployment targets: Record/App/Home pages
 
 ---
 
