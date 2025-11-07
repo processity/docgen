@@ -8,12 +8,18 @@ describe('Sample Payloads Validation', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
+    // Set up environment to bypass auth in development mode
+    process.env.NODE_ENV = 'development';
+    process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+
     app = await build();
     await app.ready();
   });
 
   afterAll(async () => {
     await app.close();
+    // Clean up environment
+    delete process.env.AUTH_BYPASS_DEVELOPMENT;
   });
 
   it('should validate account.json sample', async () => {

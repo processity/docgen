@@ -49,12 +49,18 @@ describe('Correlation ID', () => {
     let app: FastifyInstance;
 
     beforeAll(async () => {
+      // Set up environment to bypass auth in development mode
+      process.env.NODE_ENV = 'development';
+      process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+
       app = await build();
       await app.ready();
     });
 
     afterAll(async () => {
       await app.close();
+      // Clean up environment
+      delete process.env.AUTH_BYPASS_DEVELOPMENT;
     });
 
     it('should extract correlation ID from string header', async () => {
@@ -314,12 +320,18 @@ describe('Correlation ID', () => {
     let app: FastifyInstance;
 
     beforeAll(async () => {
+      // Set up environment to bypass auth in development mode
+      process.env.NODE_ENV = 'development';
+      process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+
       app = await build();
       await app.ready();
     });
 
     afterAll(async () => {
       await app.close();
+      // Clean up environment
+      delete process.env.AUTH_BYPASS_DEVELOPMENT;
     });
 
     it('should include correlation ID in response body', async () => {
@@ -438,12 +450,18 @@ describe('Correlation ID', () => {
     let app: FastifyInstance;
 
     beforeAll(async () => {
+      // Set up environment to bypass auth in development mode
+      process.env.NODE_ENV = 'development';
+      process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+
       app = await build();
       await app.ready();
     });
 
     afterAll(async () => {
       await app.close();
+      // Clean up environment
+      delete process.env.AUTH_BYPASS_DEVELOPMENT;
     });
 
     it('should include correlation ID in error response body and headers', async () => {

@@ -1,6 +1,13 @@
-import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyPluginAsync, FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastify';
 import type { DocgenRequest, DocgenResponse } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
+
+// Extend FastifyInstance type to include authenticate
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: preHandlerHookHandler;
+  }
+}
 
 /**
  * Fastify JSON Schema for POST /generate request validation
@@ -113,7 +120,7 @@ async function generateHandler(
     'Received document generation request'
   );
 
-  // TODO (T-08): Add AAD JWT validation preHandler
+  // Authentication is handled via preHandler in route registration
   // TODO (T-09): Implement Salesforce client for template fetch & upload
   // TODO (T-10): Implement template fetch & merge
   // TODO (T-11): Implement LibreOffice conversion
@@ -139,6 +146,7 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{ Body: DocgenRequest; Reply: DocgenResponse | { correlationId: string; message: string } }>(
     '/generate',
     {
+      preHandler: fastify.authenticate,  // AAD JWT validation (T-08)
       schema: {
         body: docgenRequestSchema,
         response: {
