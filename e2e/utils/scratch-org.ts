@@ -188,10 +188,17 @@ export async function createRecord(
     return result.result.id;
   } catch (error) {
     if (error instanceof Error) {
-      // Include stderr if available to help debug CI issues
+      // SF CLI often returns error details in stdout even when command fails
+      const stdout = (error as any).stdout || '';
       const stderr = (error as any).stderr || '';
+
+      console.error('Command failed with error:', error.message);
+      if (stdout) console.error('Stdout:', stdout);
+      if (stderr) console.error('Stderr:', stderr);
+
       const stderrInfo = stderr ? `\nStderr: ${stderr}` : '';
-      throw new Error(`Failed to create record: ${error.message}${stderrInfo}`);
+      const stdoutInfo = stdout ? `\nStdout: ${stdout}` : '';
+      throw new Error(`Failed to create record: ${error.message}${stdoutInfo}${stderrInfo}`);
     }
     throw error;
   }
