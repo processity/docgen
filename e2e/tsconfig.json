@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@fixtures/*": ["./fixtures/*"],
+      "@pages/*": ["./pages/*"],
+      "@utils/*": ["./utils/*"]
+    },
+    "types": ["node", "@playwright/test"]
+  },
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "test-results",
+    "playwright-report"
+  ]
+}

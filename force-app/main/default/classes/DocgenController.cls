@@ -5,6 +5,17 @@
 public with sharing class DocgenController {
 
     /**
+     * Check if test mode is enabled via Custom Settings
+     * Test mode bypasses HTTP callouts and returns mock success responses
+     * Used by E2E tests to test UI behavior without requiring Node.js backend
+     */
+    @TestVisible
+    private static Boolean isTestMode() {
+        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
+        return settings != null && settings.Test_Mode__c == true;
+    }
+
+    /**
      * Generate a document interactively
      *
      * @param templateId ID of the Docgen_Template__c record
@@ -55,6 +66,39 @@ public with sharing class DocgenController {
             // Re-throw as AuraHandledException for LWC
             AuraHandledException auraEx = new AuraHandledException(formatErrorMessage(e));
             auraEx.setMessage(formatErrorMessage(e));
+            throw auraEx;
+        }
+    }
+
+    /**
+     * Get template ID by name
+     * Used by LWC component to resolve template name to ID
+     * Cacheable to avoid repeated queries for the same template
+     */
+    @AuraEnabled(cacheable=true)
+    public static String getTemplateIdByName(String templateName) {
+        try {
+            if (String.isBlank(templateName)) {
+                throw new AuraHandledException('Template name is required');
+            }
+
+            List<Docgen_Template__c> templates = [
+                SELECT Id, Name
+                FROM Docgen_Template__c
+                WHERE Name = :templateName
+                LIMIT 1
+            ];
+
+            if (templates.isEmpty()) {
+                AuraHandledException ex = new AuraHandledException('Template not found: ' + templateName);
+                ex.setMessage('Template not found: ' + templateName);
+                throw ex;
+            }
+
+            return templates[0].Id;
+        } catch (Exception e) {
+            AuraHandledException auraEx = new AuraHandledException(e.getMessage());
+            auraEx.setMessage(e.getMessage());
             throw auraEx;
         }
     }
@@ -170,8 +214,15 @@ public with sharing class DocgenController {
 
     /**
      * Make HTTP callout to Node API via Named Credential
+     * In test mode, returns a mock success response without making actual callout
      */
     private static HTTPResponse callNodeApi(DocgenEnvelopeService.Envelope envelope) {
+        // Test mode: return mock success response
+        if (isTestMode()) {
+            return createMockSuccessResponse(envelope);
+        }
+
+        // Production mode: make actual HTTP callout
         HttpRequest req = new HttpRequest();
         req.setEndpoint('callout:Docgen_Node_API/generate');
         req.setMethod('POST');
@@ -182,6 +233,28 @@ public with sharing class DocgenController {
 
         Http http = new Http();
         HTTPResponse res = http.send(req);
+
+        return res;
+    }
+
+    /**
+     * Create mock HTTP response for test mode
+     * Returns a mock ContentVersion ID in the expected response format
+     */
+    private static HTTPResponse createMockSuccessResponse(DocgenEnvelopeService.Envelope envelope) {
+        HTTPResponse res = new HTTPResponse();
+        res.setStatusCode(200);
+        res.setStatus('OK');
+
+        // Create mock response body matching expected format from Node API
+        Map<String, Object> responseBody = new Map<String, Object>{
+            'contentVersionId' => '068000000000TESTAA',  // Mock ContentVersion ID
+            'downloadUrl' => '/sfc/servlet.shepherd/version/download/068000000000TESTAA',
+            'correlationId' => generateCorrelationId()
+        };
+
+        res.setBody(JSON.serialize(responseBody));
+        res.setHeader('Content-Type', 'application/json');
 
         return res;
     }

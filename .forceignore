@@ -1,0 +1,29 @@
+# LWC Jest test files and output
+**/__tests__/**
+**/__mocks__/**
+**/coverage/**
+*.test.js
+
+# Node modules
+node_modules/
+
+# TypeScript build output
+dist/
+
+# Test output
+test-results/
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+**/jsconfig.json
+
+**/.eslintrc.json
