@@ -70,6 +70,10 @@ jobs:
             --source-dir force-app/test \
             --wait 10
 
+      - name: Assign permission set
+        run: |
+          sf org assign permset --name Docgen_User
+
       - name: Get org credentials
         id: org-info
         run: |
