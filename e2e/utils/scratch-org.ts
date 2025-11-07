@@ -18,7 +18,10 @@ export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
   try {
     // Get org info from SFDX CLI
     // Use SF_FORMAT_JSON=true to ensure clean JSON output without colors
-    const { stdout } = await execAsync('sf org display --json', {
+    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
+    const { stdout } = await execAsync(`sf org display${targetOrgFlag} --json`, {
       env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' }
     });
 
@@ -101,8 +104,11 @@ export async function executeAnonymousApex(apexCode: string): Promise<void> {
  */
 export async function querySalesforce(soql: string): Promise<any[]> {
   try {
+    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
     const { stdout } = await execAsync(
-      `sf data query --query "${soql}" --json`,
+      `sf data query --query "${soql}"${targetOrgFlag} --json`,
       { env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' } }
     );
     const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
@@ -139,8 +145,11 @@ export async function createRecord(
       })
       .join(' ');
 
+    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
     const { stdout } = await execAsync(
-      `sf data create record --sobject ${objectType} --values "${fieldValues}" --json`,
+      `sf data create record --sobject ${objectType} --values "${fieldValues}"${targetOrgFlag} --json`,
       { env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' } }
     );
     const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
@@ -170,8 +179,11 @@ export async function deleteRecords(
 
   try {
     const idsString = recordIds.join(',');
+    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
     await execAsync(
-      `sf data delete record --sobject ${objectType} --record-id "${idsString}" --json`,
+      `sf data delete record --sobject ${objectType} --record-id "${idsString}"${targetOrgFlag} --json`,
       { env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' } }
     );
   } catch (error) {
