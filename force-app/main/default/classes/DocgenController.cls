@@ -5,6 +5,17 @@
 public with sharing class DocgenController {
 
     /**
+     * Check if test mode is enabled via Custom Settings
+     * Test mode bypasses HTTP callouts and returns mock success responses
+     * Used by E2E tests to test UI behavior without requiring Node.js backend
+     */
+    @TestVisible
+    private static Boolean isTestMode() {
+        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
+        return settings != null && settings.Test_Mode__c == true;
+    }
+
+    /**
      * Generate a document interactively
      *
      * @param templateId ID of the Docgen_Template__c record
@@ -170,8 +181,15 @@ public with sharing class DocgenController {
 
     /**
      * Make HTTP callout to Node API via Named Credential
+     * In test mode, returns a mock success response without making actual callout
      */
     private static HTTPResponse callNodeApi(DocgenEnvelopeService.Envelope envelope) {
+        // Test mode: return mock success response
+        if (isTestMode()) {
+            return createMockSuccessResponse(envelope);
+        }
+
+        // Production mode: make actual HTTP callout
         HttpRequest req = new HttpRequest();
         req.setEndpoint('callout:Docgen_Node_API/generate');
         req.setMethod('POST');
@@ -182,6 +200,28 @@ public with sharing class DocgenController {
 
         Http http = new Http();
         HTTPResponse res = http.send(req);
+
+        return res;
+    }
+
+    /**
+     * Create mock HTTP response for test mode
+     * Returns a mock ContentVersion ID in the expected response format
+     */
+    private static HTTPResponse createMockSuccessResponse(DocgenEnvelopeService.Envelope envelope) {
+        HTTPResponse res = new HTTPResponse();
+        res.setStatusCode(200);
+        res.setStatus('OK');
+
+        // Create mock response body matching expected format from Node API
+        Map<String, Object> responseBody = new Map<String, Object>{
+            'contentVersionId' => '068000000000TESTAA',  // Mock ContentVersion ID
+            'downloadUrl' => '/sfc/servlet.shepherd/version/download/068000000000TESTAA',
+            'correlationId' => generateCorrelationId()
+        };
+
+        res.setBody(JSON.serialize(responseBody));
+        res.setHeader('Content-Type', 'application/json');
 
         return res;
     }

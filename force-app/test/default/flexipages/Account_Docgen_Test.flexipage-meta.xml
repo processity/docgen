@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>buttonLabel</name>
+                    <value>Generate Test Document</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>outputFormat</name>
+                    <value>PDF</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>successMessage</name>
+                    <value>Test document generated successfully!</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>templateId</name>
+                    <value>a00S900000QWKJBIA5</value>
+                </componentInstanceProperties>
+                <componentName>docgenButton</componentName>
+                <identifier>docgenButtonInstance</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <masterLabel>Account Docgen Test Page</masterLabel>
+    <sobjectType>Account</sobjectType>
+    <template>
+        <name>flexipage:recordHomeSingleColNoHeaderTemplateDesktop</name>
+    </template>
+    <type>RecordPage</type>
+</FlexiPage>

@@ -213,6 +213,57 @@ npm run test:coverage
 sf apex run test --test-level RunLocalTests --code-coverage --result-format human
 ```
 
+### LWC Tests
+
+```bash
+# Run Lightning Web Component tests
+npm run test:lwc
+
+# Run in watch mode
+npm run test:lwc:watch
+
+# Run with coverage
+npm run test:lwc:coverage
+```
+
+### E2E Tests (Playwright)
+
+End-to-end tests verify the `docgenButton` LWC component in a real Salesforce environment (UI-only, no backend required).
+
+```bash
+# Step 1: Create scratch org and deploy metadata
+npm run e2e:setup
+
+# Step 2: Run Playwright E2E tests
+npm run test:e2e
+
+# Step 3: View test results
+npm run test:e2e:report
+
+# Step 4: Clean up scratch org
+npm run e2e:teardown
+```
+
+**Available test modes**:
+```bash
+npm run test:e2e          # Headless (default)
+npm run test:e2e:headed   # Watch browser execute
+npm run test:e2e:ui       # Interactive mode
+npm run test:e2e:debug    # Debug with Playwright Inspector
+```
+
+**What's tested**:
+- ✅ Component rendering and visibility
+- ✅ Button state management (enabled/disabled)
+- ✅ Spinner during processing
+- ✅ Success/error toast notifications
+- ✅ Salesforce record creation (Generated_Document__c)
+- ✅ Account page loading
+
+**See also**:
+- [E2E Testing Guide](./e2e/README.md) - Setup, running tests, troubleshooting
+- [E2E Architecture](./docs/e2e-testing.md) - Design decisions, patterns, CI/CD
+
 ## Continuous Integration
 
 The project includes GitHub Actions workflows that automatically:
