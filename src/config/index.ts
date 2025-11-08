@@ -21,6 +21,16 @@ export function loadConfig(): AppConfig {
     sfUsername: process.env.SF_USERNAME,
     sfClientId: process.env.SF_CLIENT_ID,
     sfPrivateKey: process.env.SF_PRIVATE_KEY,
+    // LibreOffice conversion settings (T-11)
+    conversionTimeout: parseInt(
+      process.env.CONVERSION_TIMEOUT || '60000',
+      10
+    ),
+    conversionWorkdir: process.env.CONVERSION_WORKDIR || '/tmp',
+    conversionMaxConcurrent: parseInt(
+      process.env.CONVERSION_MAX_CONCURRENT || '8',
+      10
+    ),
   };
 }
 

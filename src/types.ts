@@ -31,6 +31,10 @@ export interface AppConfig {
   sfUsername?: string;
   sfClientId?: string;
   sfPrivateKey?: string;
+  // LibreOffice conversion settings (T-11)
+  conversionTimeout: number;
+  conversionWorkdir: string;
+  conversionMaxConcurrent: number;
 }
 
 export interface CorrelationContext {
@@ -158,4 +162,35 @@ export interface ContentVersionMetadata {
   VersionData?: string; // URL to binary data
   FileExtension?: string;
   ContentSize?: number;
+}
+
+// LibreOffice Conversion Types (T-11)
+
+/**
+ * Options for DOCX to PDF conversion
+ */
+export interface ConversionOptions {
+  /** Timeout in milliseconds (default: 60000) */
+  timeout?: number;
+  /** Working directory for temp files (default: /tmp) */
+  workdir?: string;
+  /** Correlation ID for logging and tracing */
+  correlationId?: string;
+}
+
+/**
+ * Conversion pool statistics
+ * Tracks job execution and pool state for observability
+ */
+export interface ConversionPoolStats {
+  /** Number of currently active conversion jobs */
+  activeJobs: number;
+  /** Number of jobs waiting in queue */
+  queuedJobs: number;
+  /** Total number of successfully completed conversions */
+  completedJobs: number;
+  /** Total number of failed conversions */
+  failedJobs: number;
+  /** Total number of conversion attempts (completed + failed) */
+  totalConversions: number;
 }

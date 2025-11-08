@@ -288,6 +288,78 @@ IMAGE_ALLOWLIST=cdn.example.com,images.company.com
 - [Template Authoring Guide](./docs/template-authoring.md) - Complete guide with examples
 - [ADR-0004: Caching & Idempotency](./docs/adr/0004-caching-idempotency.md)
 
+## LibreOffice Conversion Pool (T-11)
+
+The service converts merged DOCX files to PDF using LibreOffice (`soffice --headless`) with a bounded worker pool.
+
+**Key Features**:
+- **Bounded Concurrency**: Maximum 8 concurrent conversions per instance (per ADR-0003)
+- **Timeout Handling**: Configurable timeout (default: 60 seconds) with process kill
+- **Robust Cleanup**: Temp files cleaned up in all scenarios (success/failure/timeout)
+- **Queue Management**: Jobs queue when pool is full and process sequentially
+- **Stats Tracking**: Active jobs, queue depth, completed/failed counts for observability
+
+**Configuration**:
+```bash
+CONVERSION_TIMEOUT=60000          # Timeout in milliseconds (default: 60000)
+CONVERSION_WORKDIR=/tmp           # Working directory for temp files (default: /tmp)
+CONVERSION_MAX_CONCURRENT=8       # Max concurrent conversions (default: 8)
+```
+
+**Implementation**:
+```typescript
+// src/convert/soffice.ts
+export class LibreOfficeConverter {
+  async convertToPdf(docxBuffer: Buffer, options?: ConversionOptions): Promise<Buffer>
+  getStats(): ConversionPoolStats
+}
+
+// Convenience function using singleton
+export async function convertDocxToPdf(docxBuffer: Buffer, options?: ConversionOptions): Promise<Buffer>
+```
+
+**Conversion Flow**:
+1. Acquire slot in pool (max 8 concurrent, others queue)
+2. Create temp directory: `/tmp/docgen-{correlationId}-{timestamp}/`
+3. Write DOCX to temp file: `input.docx`
+4. Execute: `soffice --headless --convert-to pdf --outdir {dir} input.docx`
+5. Read generated PDF: `input.pdf`
+6. Cleanup temp directory (always, even on error)
+7. Release pool slot
+
+**Error Handling**:
+- **Timeout**: Process killed after configured timeout, error thrown
+- **Crash**: Non-zero exit code captured, error message includes stderr
+- **Cleanup Failure**: Logged as warning, doesn't fail conversion
+
+**Pool Statistics**:
+```typescript
+interface ConversionPoolStats {
+  activeJobs: number;      // Currently running conversions
+  queuedJobs: number;      // Jobs waiting for slot
+  completedJobs: number;   // Total successful conversions
+  failedJobs: number;      // Total failed conversions
+  totalConversions: number;  // Total attempts (completed + failed)
+}
+```
+
+**Usage Example**:
+```typescript
+import { convertDocxToPdf } from './convert';
+
+const docxBuffer = await mergeTemplate(templateBuffer, data);
+const pdfBuffer = await convertDocxToPdf(docxBuffer, {
+  timeout: 60000,
+  correlationId: 'request-123'
+});
+```
+
+**Constraints**:
+- **Container Sizing**: 2 vCPU / 4 GB RAM (ACA UK South)
+- **Max Concurrent**: 8 jobs (chosen based on LibreOffice CPU/memory usage)
+- **Workdir**: `/tmp` (ephemeral, cleaned up)
+- **LibreOffice**: Installed via `apt-get install -y libreoffice`
+
 ## Project Structure
 
 ```
@@ -296,12 +368,14 @@ docgen/
 │   ├── auth/         # Azure AD JWT authentication (T-08)
 │   ├── sf/           # Salesforce client (JWT Bearer + API) (T-09)
 │   ├── templates/    # Template cache, service, and merge (T-10)
+│   ├── convert/      # LibreOffice conversion pool (T-11)
 │   ├── routes/       # Fastify routes
 │   ├── plugins/      # Fastify plugins
 │   ├── config/       # Configuration management
 │   └── utils/        # Utility functions (image allowlist)
 ├── test/             # Jest tests
 │   ├── templates/    # Template cache, service, merge tests
+│   ├── convert.test.ts  # Conversion pool tests
 │   └── helpers/      # Test utilities (JWT helpers)
 ├── force-app/        # Salesforce Apex and metadata
 ├── docs/             # Documentation and ADRs
