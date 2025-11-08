@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Overall Progress**: 8 of 18 tasks completed (44%)
+**Overall Progress**: 9 of 18 tasks completed (50%)
 
 ### Completed Tasks ✅
 - **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
@@ -13,13 +13,13 @@
 - **T-06**: AAD Named Credential & Apex Interactive Controller (2025-11-06)
 - **T-07**: LWC Button UX & ContentDocumentLink Strategy (2025-11-07)
 - **T-08**: AAD JWT Validation (Inbound) & Request Validation (2025-11-07)
+- **T-09**: Salesforce Client via JWT Bearer (Outbound) (2025-11-08)
 
 ### In Progress 🚧
 - None currently
 
 ### Upcoming Tasks 📋
-- **T-09**: Salesforce Client via JWT Bearer (Outbound) - Next up
-- **T-10**: Template Fetch & Immutable Cache + docx-templates Usage
+- **T-10**: Template Fetch & Immutable Cache + docx-templates Usage - Next up
 - **T-11**: LibreOffice Conversion Pool
 - **T-12**: Upload to Salesforce Files & Linking; Idempotency
 - **T-13**: `/generate` End‑to‑End Interactive Path
@@ -30,10 +30,10 @@
 - **T-18**: Performance, Failure Injection, Rollout & DocuSign Hooks
 
 ### Current Status
-- **Node.js Service**: Auth layer complete (T-08), ready for Salesforce integration
+- **Node.js Service**: Auth layer complete (T-08 ✅), Salesforce client ready (T-09 ✅)
 - **Salesforce Components**: All Apex/LWC components built and tested
-- **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer pending (T-09)
-- **Test Coverage**: 113 Node.js tests, 46 Apex tests all passing
+- **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer ✅
+- **Test Coverage**: 143 Node.js tests (31 new SF tests), 46 Apex tests all passing
 
 ---
 
@@ -746,17 +746,44 @@ sequenceDiagram
 
 **Definition of Done**: Token acquisition & reuse verified; API wrapper tested.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-08)
+
 **Progress checklist**
 
-* [ ] JWT Bearer flow implemented
-* [ ] Token cache & refresh
-* [ ] API wrapper with retries
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] JWT Bearer flow implemented
+* [x] Token cache & refresh
+* [x] API wrapper with retries
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (31/31 tests passing)
+* [x] Security & secrets handled per policy (env vars, no hardcoded secrets)
+* [x] Observability (logs/metrics/traces) added where relevant (structured logging, correlation IDs)
+* [x] Docs updated (README/Runbook/ADR) (T09-COMPLETION-SUMMARY.md)
+* [x] Reviewer notes: risks, roll-back, toggles (documented in completion summary)
+
+**Completion Summary**:
+- **Files Created**: 6 files (~630 lines)
+  - `src/sf/auth.ts` (215 lines) - JWT Bearer Flow with token caching
+  - `src/sf/api.ts` (168 lines) - REST API wrapper with retry logic
+  - `src/sf/index.ts` (13 lines) - Module barrel exports
+  - `test/sf.auth.test.ts` (296 lines) - 18 auth tests
+  - `test/sf.api.test.ts` (254 lines) - 13 API client tests
+  - `docs/T09-COMPLETION-SUMMARY.md` - Complete documentation
+- **Files Modified**: 4 files
+  - `src/types.ts` (+27 lines) - SF types (SalesforceTokenResponse, CachedToken)
+  - `src/config/index.ts` (+6 lines) - SF env vars (SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY)
+  - `src/routes/health.ts` (+20 lines) - SF connectivity check
+  - `test/config.test.ts` (+12 lines) - Updated test fixtures
+- **Test Results**: 31/31 new tests passing ✓ | 143/143 total tests passing ✓
+- **Dependencies Added**: axios@^1.13.2, @types/axios
+- **Key Features**:
+  - JWT signing with RS256 algorithm
+  - Token caching with 60-second expiry buffer
+  - Automatic token refresh on 401
+  - Retry logic: 401 → refresh + retry once | 5xx → retry 3x (1s, 2s, 4s backoff) | 4xx → no retry
+  - Correlation ID propagation
+  - Singleton pattern for shared auth
+  - Health check integration (`/readyz` includes SF connectivity)
 
 ---
 

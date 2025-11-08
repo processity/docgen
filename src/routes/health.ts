@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { HealthStatus, ReadinessStatus } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
 import { getAADVerifier } from '../auth';
+import { getSalesforceAuth } from '../sf';
 
 /**
  * Health check routes
@@ -43,18 +44,32 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    // Check Salesforce connectivity if configured (T-09)
+    let salesforceReady: boolean | undefined;
+    const sfAuth = getSalesforceAuth();
+    if (sfAuth) {
+      try {
+        // Test token acquisition (uses cache if available)
+        await sfAuth.getAccessToken();
+        salesforceReady = true;
+      } catch (error) {
+        salesforceReady = false;
+        request.log.error({ correlationId, error }, 'Salesforce connectivity check failed');
+      }
+    }
+
     // Determine overall readiness
-    // For now, we only check JWKS if configured
-    // In production, JWKS must be ready
+    // In production, all configured dependencies must be ready
     const isProduction = process.env.NODE_ENV === 'production';
-    const ready = !isProduction || jwksReady === true || jwksReady === undefined;
+    const ready = !isProduction ||
+      (jwksReady !== false && salesforceReady !== false);
 
     const status: ReadinessStatus = {
       ready,
       checks: {
         jwks: jwksReady,
-        // Placeholder for future dependency checks
-        salesforce: undefined,
+        salesforce: salesforceReady,
+        // Placeholder for future dependency checks (T-16)
         keyVault: undefined,
       },
     };

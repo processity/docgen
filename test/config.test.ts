@@ -208,6 +208,9 @@ describe('Config', () => {
         issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
         audience: 'api://client-id',
         jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
+        sfUsername: 'integration@example.com',
+        sfClientId: 'sf-client-id',
+        sfPrivateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -225,6 +228,9 @@ describe('Config', () => {
         issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
         audience: 'api://client-id',
         jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
+        sfUsername: 'integration@example.com',
+        sfClientId: 'sf-client-id',
+        sfPrivateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
         // imageAllowlist is optional
       };
 
@@ -242,6 +248,9 @@ describe('Config', () => {
       process.env.ISSUER = 'https://login.microsoftonline.com/tenant-id/v2.0';
       process.env.AUDIENCE = 'api://client-id';
       process.env.JWKS_URI = 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys';
+      process.env.SF_USERNAME = 'integration@example.com';
+      process.env.SF_CLIENT_ID = 'sf-client-id';
+      process.env.SF_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----';
 
       const config = loadConfig();
       expect(() => validateConfig(config)).not.toThrow();

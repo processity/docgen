@@ -27,6 +27,10 @@ export interface AppConfig {
   issuer?: string;
   audience?: string;
   jwksUri?: string;
+  // Salesforce JWT Bearer Flow settings (T-09)
+  sfUsername?: string;
+  sfClientId?: string;
+  sfPrivateKey?: string;
 }
 
 export interface CorrelationContext {
@@ -86,4 +90,27 @@ export interface DocgenResponse {
   downloadUrl: string;
   contentVersionId: string;
   correlationId: string;
+}
+
+// Salesforce Authentication Types (T-09)
+
+/**
+ * Salesforce OAuth2 token response from JWT Bearer Flow
+ */
+export interface SalesforceTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number; // seconds
+  scope: string;
+  instance_url?: string;
+  id?: string;
+}
+
+/**
+ * Cached token with expiry tracking
+ */
+export interface CachedToken {
+  accessToken: string;
+  expiresAt: number; // Unix timestamp in milliseconds
+  instanceUrl?: string;
 }

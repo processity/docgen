@@ -39,16 +39,19 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.13.2",
     "fastify": "^4.25.2",
     "fastify-plugin": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "pino": "^8.17.2",
+    "undici": "^7.16.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "@salesforce/sfdx-lwc-jest": "^5.1.0",
+    "@types/axios": "^0.9.36",
     "@types/jest": "^29.5.11",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.11.0",

@@ -17,6 +17,10 @@ export function loadConfig(): AppConfig {
     issuer: process.env.ISSUER,
     audience: process.env.AUDIENCE,
     jwksUri: process.env.JWKS_URI,
+    // Salesforce JWT Bearer Flow settings (T-09)
+    sfUsername: process.env.SF_USERNAME,
+    sfClientId: process.env.SF_CLIENT_ID,
+    sfPrivateKey: process.env.SF_PRIVATE_KEY,
   };
 }
 
@@ -33,6 +37,9 @@ export function validateConfig(config: AppConfig): void {
       'issuer',
       'audience',
       'jwksUri',
+      'sfUsername',
+      'sfClientId',
+      'sfPrivateKey',
     ];
     const missing = required.filter((key) => !config[key as keyof AppConfig]);
 
