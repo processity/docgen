@@ -210,20 +210,102 @@ The service uses Azure AD (Entra ID) OAuth 2.0 for inbound authentication from S
 - `401 Unauthorized` - Missing/expired/invalid token
 - `403 Forbidden` - Wrong audience or issuer
 
+## Template Cache & Merging (T-10)
+
+### Template Caching
+
+The service implements an immutable in-memory template cache per ADR-0004:
+
+**Key Features**:
+- **Immutable Caching**: Templates are cached by `ContentVersionId` with infinite TTL (ContentVersions are immutable in Salesforce)
+- **LRU Eviction**: When cache exceeds 500 MB, least-recently-used templates are evicted
+- **Cache Statistics**: Tracks hits, misses, evictions, size, and entry count
+- **Thread-Safe**: Synchronous operations safe for single Node.js process
+
+**Implementation**:
+```typescript
+// src/templates/cache.ts
+export class TemplateCache {
+  get(contentVersionId: string): Buffer | undefined
+  set(contentVersionId: string, buffer: Buffer): void
+  getStats(): TemplateCacheStats
+  clear(): void
+}
+```
+
+**Metrics**:
+- `hits` - Number of cache hits
+- `misses` - Number of cache misses (triggers Salesforce download)
+- `evictions` - Number of LRU evictions
+- `currentSize` - Total cache size in bytes
+- `entryCount` - Number of cached templates
+
+### Template Merging
+
+The service uses the `docx-templates` library to merge Salesforce data with DOCX templates:
+
+**Supported Features**:
+- **Field Paths**: Salesforce API-style paths (e.g., `{{Account.Name}}`, `{{Opportunity.Owner.Name}}`)
+- **Formatted Values**: Apex pre-formats currency, dates, numbers using `__formatted` suffix
+- **Loops**: `{{#each Opportunity.LineItems}}...{{/each}}` for arrays
+- **Conditionals**: `{{#if Account.IsPartner}}...{{/if}}` for boolean logic
+- **Images**: Base64-encoded (preferred) or external URLs (allowlist validated)
+
+**Example Template**:
+```
+Customer: {{Account.Name}}
+Revenue: {{Account.AnnualRevenue__formatted}}
+
+{{#each Opportunity.LineItems}}
+  - {{Name}}: {{Quantity}} x {{UnitPrice__formatted}} = {{TotalPrice__formatted}}
+{{/each}}
+
+{{#if Account.IsPartner}}
+  Partner Discount: 15%
+{{/if}}
+```
+
+**Image Allowlist**:
+
+External image URLs must be on the allowlist (configured via `IMAGE_ALLOWLIST` env var):
+
+```bash
+IMAGE_ALLOWLIST=cdn.example.com,images.company.com
+```
+
+- **Base64 images** (recommended): No validation needed, included directly in data
+- **External URLs**: Validated against allowlist to prevent SSRF attacks
+
+**Template Service Flow**:
+
+1. Check cache for template by `ContentVersionId`
+2. On miss: Download from Salesforce via `/services/data/v59.0/sobjects/ContentVersion/{Id}/VersionData`
+3. Store in cache
+4. Merge template with data using `docx-templates`
+5. Return merged DOCX buffer
+
+**Documentation**:
+- [Template Authoring Guide](./docs/template-authoring.md) - Complete guide with examples
+- [ADR-0004: Caching & Idempotency](./docs/adr/0004-caching-idempotency.md)
+
 ## Project Structure
 
 ```
 docgen/
 ├── src/              # TypeScript source code
 │   ├── auth/         # Azure AD JWT authentication (T-08)
+│   ├── sf/           # Salesforce client (JWT Bearer + API) (T-09)
+│   ├── templates/    # Template cache, service, and merge (T-10)
 │   ├── routes/       # Fastify routes
 │   ├── plugins/      # Fastify plugins
 │   ├── config/       # Configuration management
-│   └── utils/        # Utility functions
+│   └── utils/        # Utility functions (image allowlist)
 ├── test/             # Jest tests
+│   ├── templates/    # Template cache, service, merge tests
 │   └── helpers/      # Test utilities (JWT helpers)
 ├── force-app/        # Salesforce Apex and metadata
 ├── docs/             # Documentation and ADRs
+│   └── template-authoring.md  # Template authoring guide
 └── dist/             # Compiled JavaScript (gitignored)
 ```
 

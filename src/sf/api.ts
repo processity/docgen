@@ -44,6 +44,112 @@ export class SalesforceApi {
   }
 
   /**
+   * Download ContentVersion binary data (template DOCX file)
+   *
+   * @param contentVersionId - Salesforce ContentVersionId (18-char ID)
+   * @param options - Request options including correlation ID
+   * @returns Buffer containing the binary file data
+   */
+  async downloadContentVersion(contentVersionId: string, options?: RequestOptions): Promise<Buffer> {
+    return this.downloadBinary(`/services/data/v59.0/sobjects/ContentVersion/${contentVersionId}/VersionData`, options);
+  }
+
+  /**
+   * Download binary data from Salesforce
+   */
+  private async downloadBinary(
+    path: string,
+    options?: RequestOptions,
+    attempt = 1,
+    hasRefreshedToken = false
+  ): Promise<Buffer> {
+    try {
+      const token = await this.auth.getAccessToken();
+      const url = `${this.baseUrl}${path}`;
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      if (options?.correlationId) {
+        headers['x-correlation-id'] = options.correlationId;
+      }
+
+      logger.debug({ url, attempt, correlationId: options?.correlationId }, 'Downloading binary from Salesforce');
+
+      const response = await axios({
+        method: 'GET',
+        url,
+        headers,
+        responseType: 'arraybuffer', // Important: return binary data
+      });
+
+      const arrayBuffer = response.data as ArrayBuffer;
+
+      logger.debug(
+        { url, status: response.status, size: arrayBuffer.byteLength, correlationId: options?.correlationId },
+        'Binary download complete'
+      );
+
+      return Buffer.from(arrayBuffer);
+    } catch (error: unknown) {
+      return this.handleBinaryError(error, path, options, attempt, hasRefreshedToken);
+    }
+  }
+
+  /**
+   * Handle errors for binary downloads
+   */
+  private async handleBinaryError(
+    error: unknown,
+    path: string,
+    options: RequestOptions | undefined,
+    attempt: number,
+    hasRefreshedToken: boolean
+  ): Promise<Buffer> {
+    const isAxiosError = (err: unknown): err is { response?: { status: number; data: any } } => {
+      return typeof err === 'object' && err !== null && 'response' in err;
+    };
+
+    if (!isAxiosError(error) || !error.response) {
+      if (attempt <= MAX_RETRIES) {
+        const delay = RETRY_DELAYS_MS[attempt - 1];
+        logger.warn(
+          { error, attempt, delay, correlationId: options?.correlationId },
+          'Network error downloading binary, retrying'
+        );
+        await this.sleep(delay);
+        return this.downloadBinary(path, options, attempt + 1, hasRefreshedToken);
+      }
+      logger.error({ error, correlationId: options?.correlationId }, 'Binary download failed after retries');
+      throw error;
+    }
+
+    const status = error.response.status;
+
+    // Handle 401 - refresh token and retry
+    if (status === 401 && !hasRefreshedToken) {
+      logger.info({ correlationId: options?.correlationId }, 'Received 401 on binary download, refreshing token');
+      this.auth.invalidateToken();
+      return this.downloadBinary(path, options, 1, true);
+    }
+
+    // Handle 5xx - retry with backoff
+    if (status >= 500 && status < 600 && attempt <= MAX_RETRIES) {
+      const delay = RETRY_DELAYS_MS[attempt - 1];
+      logger.warn(
+        { status, attempt, delay, correlationId: options?.correlationId },
+        'Server error on binary download, retrying'
+      );
+      await this.sleep(delay);
+      return this.downloadBinary(path, options, attempt + 1, hasRefreshedToken);
+    }
+
+    logger.error({ status, correlationId: options?.correlationId }, 'Binary download failed');
+    throw new Error(`Failed to download binary from Salesforce: ${status}`);
+  }
+
+  /**
    * Make HTTP request with retry logic
    */
   private async request<T>(

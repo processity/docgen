@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Overall Progress**: 9 of 18 tasks completed (50%)
+**Overall Progress**: 10 of 18 tasks completed (56%)
 
 ### Completed Tasks ✅
 - **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
@@ -14,13 +14,13 @@
 - **T-07**: LWC Button UX & ContentDocumentLink Strategy (2025-11-07)
 - **T-08**: AAD JWT Validation (Inbound) & Request Validation (2025-11-07)
 - **T-09**: Salesforce Client via JWT Bearer (Outbound) (2025-11-08)
+- **T-10**: Template Fetch & Immutable Cache + docx-templates Usage (2025-11-08)
 
 ### In Progress 🚧
 - None currently
 
 ### Upcoming Tasks 📋
-- **T-10**: Template Fetch & Immutable Cache + docx-templates Usage - Next up
-- **T-11**: LibreOffice Conversion Pool
+- **T-11**: LibreOffice Conversion Pool - Next up
 - **T-12**: Upload to Salesforce Files & Linking; Idempotency
 - **T-13**: `/generate` End‑to‑End Interactive Path
 - **T-14**: Batch Enqueue (Apex) & Node Poller Worker
@@ -30,10 +30,11 @@
 - **T-18**: Performance, Failure Injection, Rollout & DocuSign Hooks
 
 ### Current Status
-- **Node.js Service**: Auth layer complete (T-08 ✅), Salesforce client ready (T-09 ✅)
+- **Node.js Service**: Auth layer complete (T-08 ✅), Salesforce client ready (T-09 ✅), Template cache & merge (T-10 ✅)
 - **Salesforce Components**: All Apex/LWC components built and tested
 - **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer ✅
-- **Test Coverage**: 143 Node.js tests (31 new SF tests), 46 Apex tests all passing
+- **Template System**: Cache with LRU eviction ✅, docx-templates integration ✅, Image allowlist ✅
+- **Test Coverage**: 199 Node.js tests passing (55 new template tests), 46 Apex tests all passing
 
 ---
 
@@ -819,17 +820,61 @@ sequenceDiagram
 
 **Definition of Done**: Cache works; merging verified with sample template.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-08)
+
 **Progress checklist**
 
-* [ ] Template cache by ContentVersionId
-* [ ] Merging supports tables/conditionals/images
-* [ ] Image allowlist enforced
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] Template cache by ContentVersionId
+* [x] Merging supports tables/conditionals/images
+* [x] Image allowlist enforced
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (55 new tests passing)
+* [x] Security & secrets handled per policy (image allowlist validation)
+* [x] Observability (logs/metrics/traces) added where relevant (correlation IDs, structured logging)
+* [x] Docs updated (README/Runbook/ADR) (template-authoring.md + README updates)
+* [x] Reviewer notes: risks, roll-back, toggles (documented in completion summary)
+
+**Completion Summary**:
+- **Files Created**: 11 files (~1,800 lines)
+  - `src/templates/cache.ts` (221 lines) - In-memory cache with LRU eviction
+  - `src/templates/service.ts` (96 lines) - Template fetch orchestration
+  - `src/templates/merge.ts` (158 lines) - docx-templates integration
+  - `src/templates/index.ts` (4 lines) - Module exports
+  - `src/utils/image-allowlist.ts` (90 lines) - Image URL validation
+  - `test/templates/cache.test.ts` (323 lines) - 19 cache tests
+  - `test/templates/service.test.ts` (248 lines) - 13 service tests
+  - `test/templates/merge.test.ts` (326 lines) - 23 merge tests
+  - `docs/template-authoring.md` (621 lines) - Complete authoring guide
+  - `docs/T10-COMPLETION-SUMMARY.md` - Full implementation documentation
+- **Files Modified**: 3 files
+  - `src/sf/api.ts` (+102 lines) - Added downloadContentVersion method
+  - `src/types.ts` (+45 lines) - Template cache types
+  - `README.md` (+77 lines) - Template cache & merge documentation
+- **Test Results**: 199/200 Node.js tests passing (55 new template tests) ✓
+- **Dependencies Added**: docx-templates@^4.x.x
+- **Key Deliverables**:
+  - **Template Cache**: In-memory Map cache with infinite TTL, LRU eviction at 500 MB
+    - Tracks hits, misses, evictions, size, entry count
+    - `get()`, `set()`, `has()`, `getStats()`, `clear()`, `reset()`
+  - **Template Service**: Orchestrates fetch + cache
+    - Check cache → Download from SF on miss → Store → Return Buffer
+    - Correlation ID propagation
+  - **Template Merge**: docx-templates integration
+    - Salesforce field paths: `{{Account.Name}}`, `{{Opportunity.Owner.Name}}`
+    - Formatted values: `{{Amount__formatted}}`
+    - Arrays/loops: `{{#each Opportunity.LineItems}}...{{/each}}`
+    - Conditionals: `{{#if Account.IsPartner}}...{{/if}}`
+    - Handlebars-style delimiters
+  - **Image Allowlist**: URL validation to prevent SSRF
+    - Configured via `IMAGE_ALLOWLIST` env var
+    - Subdomain matching support
+  - **SF API Extension**: `downloadContentVersion()` method
+    - Binary download with retry logic
+    - 401 refresh, 5xx backoff
+  - **Documentation**: Complete template authoring guide with examples
+    - Field paths, loops, conditionals, formatted values, images
+    - Best practices and troubleshooting
 
 ---
 

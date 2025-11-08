@@ -114,3 +114,48 @@ export interface CachedToken {
   expiresAt: number; // Unix timestamp in milliseconds
   instanceUrl?: string;
 }
+
+// Template Cache Types (T-10)
+
+/**
+ * Cache entry for a template
+ * Templates are immutable (keyed by ContentVersionId), so no TTL needed
+ */
+export interface TemplateCacheEntry {
+  contentVersionId: string;
+  buffer: Buffer;
+  sizeBytes: number;
+  cachedAt: number; // Unix timestamp in milliseconds
+  lastAccessedAt: number; // For LRU eviction
+}
+
+/**
+ * Template cache statistics
+ */
+export interface TemplateCacheStats {
+  hits: number;
+  misses: number;
+  evictions: number;
+  currentSize: number; // bytes
+  entryCount: number;
+}
+
+/**
+ * Options for template merging
+ */
+export interface MergeOptions {
+  locale: string;
+  timezone: string;
+  imageAllowlist?: string[];
+}
+
+/**
+ * Salesforce ContentVersion metadata
+ */
+export interface ContentVersionMetadata {
+  Id: string;
+  Title: string;
+  VersionData?: string; // URL to binary data
+  FileExtension?: string;
+  ContentSize?: number;
+}
