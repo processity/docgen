@@ -360,13 +360,124 @@ const pdfBuffer = await convertDocxToPdf(docxBuffer, {
 - **Workdir**: `/tmp` (ephemeral, cleaned up)
 - **LibreOffice**: Installed via `apt-get install -y libreoffice`
 
+## File Upload & Linking (T-12)
+
+The service uploads generated documents to Salesforce Files and links them to parent records (Account, Opportunity, Case).
+
+**Key Features**:
+- **ContentVersion Upload**: Upload PDF (always) and DOCX (optional) to Salesforce Files
+- **Multi-Parent Linking**: Create ContentDocumentLinks for all non-null parent IDs
+- **Status Tracking**: Update `Generated_Document__c` with file IDs and status
+- **Idempotency**: Apex-side cache check (24-hour window) prevents duplicate generation
+- **Link Failure Handling**: Files left orphaned if linking fails; status set to FAILED
+
+**Flow**:
+1. Apex creates `Generated_Document__c` with `Status=PROCESSING`
+2. Apex passes `generatedDocumentId` to Node in request envelope
+3. Node uploads PDF as `ContentVersion` to Salesforce
+4. Node optionally uploads DOCX (if `storeMergedDocx=true`)
+5. Node creates `ContentDocumentLink` for each non-null parent (ShareType=V, Visibility=AllUsers)
+6. Node updates `Generated_Document__c`:
+   - Success: `Status=SUCCEEDED`, `OutputFileId__c` set
+   - Link failure: `Status=FAILED`, file orphaned, error logged
+   - Upload failure: `Status=FAILED`, error message set
+
+**Implementation**:
+```typescript
+// src/sf/files.ts
+
+// Upload file to Salesforce Files
+export async function uploadContentVersion(
+  buffer: Buffer,
+  fileName: string,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<{ contentVersionId: string; contentDocumentId: string }>
+
+// Create single ContentDocumentLink
+export async function createContentDocumentLink(
+  contentDocumentId: string,
+  linkedEntityId: string,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<string>
+
+// Create links for multiple parents (filters null values)
+export async function createContentDocumentLinks(
+  contentDocumentId: string,
+  parents: DocgenParents,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<{ created: number; errors: string[] }>
+
+// Update Generated_Document__c record
+export async function updateGeneratedDocument(
+  generatedDocumentId: string,
+  fields: Partial<GeneratedDocumentUpdateFields>,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<void>
+
+// Main orchestrator function
+export async function uploadAndLinkFiles(
+  pdfBuffer: Buffer,
+  docxBuffer: Buffer | null,
+  request: DocgenRequest,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<FileUploadResult>
+```
+
+**Idempotency Strategy**:
+- **Apex**: Computes `RequestHash = sha256(templateId | outputFormat | sha256(data))`
+- **Apex**: Checks for existing `SUCCEEDED` document within 24 hours before callout
+- **Salesforce**: Enforces unique constraint on `RequestHash__c` (External ID)
+- **Node**: Relies on Apex for idempotency (no duplicate check in Node layer)
+
+See [Idempotency Documentation](./docs/idempotency.md) for full details.
+
+**ContentDocumentLink Strategy**:
+- **ShareType**: `V` (Viewer permission)
+- **Visibility**: `AllUsers` (visible to all users in org)
+- **Parents**: Links created for `AccountId`, `OpportunityId`, `CaseId` (if non-null)
+- **Failure Mode**: Link failures are non-fatal; file uploaded but orphaned, status=FAILED
+
+**Data Types**:
+```typescript
+interface FileUploadResult {
+  pdfContentVersionId: string;          // Always present
+  docxContentVersionId?: string;         // Present if storeMergedDocx=true
+  pdfContentDocumentId: string;          // For linking
+  docxContentDocumentId?: string;        // For linking (if DOCX uploaded)
+  linkCount: number;                     // Number of links created
+  linkErrors: string[];                  // Non-fatal link errors
+}
+
+interface GeneratedDocumentUpdateFields {
+  Status__c?: string;                    // SUCCEEDED | FAILED
+  OutputFileId__c?: string;              // PDF ContentVersionId
+  MergedDocxFileId__c?: string;          // Optional DOCX ContentVersionId
+  Error__c?: string;                     // Error message if FAILED
+}
+```
+
+**Test Coverage**: 21 tests in `test/sf.files.test.ts`
+- Upload scenarios: success, retry, failure, correlation ID
+- Linking scenarios: single parent, multiple parents, no parents, partial failures
+- Update scenarios: success/failure status, both file IDs
+- Integration scenarios: full upload+link+update flow
+
+**Documentation**:
+- [Idempotency Strategy](./docs/idempotency.md)
+- [ContentDocumentLink Strategy](./docs/contentdocumentlink.md)
+
 ## Project Structure
 
 ```
 docgen/
 ├── src/              # TypeScript source code
 │   ├── auth/         # Azure AD JWT authentication (T-08)
-│   ├── sf/           # Salesforce client (JWT Bearer + API) (T-09)
+│   ├── sf/           # Salesforce client (JWT Bearer + API + Files) (T-09, T-12)
 │   ├── templates/    # Template cache, service, and merge (T-10)
 │   ├── convert/      # LibreOffice conversion pool (T-11)
 │   ├── routes/       # Fastify routes

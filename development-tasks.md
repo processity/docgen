@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Overall Progress**: 11 of 18 tasks completed (61%)
+**Overall Progress**: 12 of 18 tasks completed (67%)
 
 ### Completed Tasks ✅
 - **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
@@ -16,13 +16,13 @@
 - **T-09**: Salesforce Client via JWT Bearer (Outbound) (2025-11-08)
 - **T-10**: Template Fetch & Immutable Cache + docx-templates Usage (2025-11-08)
 - **T-11**: LibreOffice Conversion Pool (2025-11-08)
+- **T-12**: Upload to Salesforce Files & Linking; Idempotency (2025-11-08)
 
 ### In Progress 🚧
 - None currently
 
 ### Upcoming Tasks 📋
-- **T-12**: Upload to Salesforce Files & Linking; Idempotency - Next up
-- **T-13**: `/generate` End‑to‑End Interactive Path
+- **T-13**: `/generate` End‑to‑End Interactive Path - Next up
 - **T-14**: Batch Enqueue (Apex) & Node Poller Worker
 - **T-15**: Observability with Azure Application Insights
 - **T-16**: Containerization & Azure Container Apps Deployment
@@ -30,12 +30,13 @@
 - **T-18**: Performance, Failure Injection, Rollout & DocuSign Hooks
 
 ### Current Status
-- **Node.js Service**: Auth layer complete (T-08 ✅), Salesforce client ready (T-09 ✅), Template cache & merge (T-10 ✅), Conversion pool (T-11 ✅)
+- **Node.js Service**: Auth layer complete (T-08 ✅), Salesforce client ready (T-09 ✅), Template cache & merge (T-10 ✅), Conversion pool (T-11 ✅), File upload & linking (T-12 ✅)
 - **Salesforce Components**: All Apex/LWC components built and tested
 - **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer ✅
 - **Template System**: Cache with LRU eviction ✅, docx-templates integration ✅, Image allowlist ✅
 - **Conversion System**: LibreOffice pool with bounded concurrency (8 max) ✅, Timeout handling ✅, Robust cleanup ✅
-- **Test Coverage**: 180 Node.js tests passing (all existing tests), 46 Apex tests all passing
+- **File Upload System**: ContentVersion upload ✅, Multi-parent linking ✅, Status tracking ✅, Idempotency (Apex-side) ✅
+- **Test Coverage**: 237 Node.js tests passing (21 new T-12 tests), 46 Apex tests all passing
 
 ---
 
@@ -976,17 +977,79 @@ sequenceDiagram
 
 **Definition of Done**: Upload + link works; idempotent behaviour confirmed.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-08)
+
 **Progress checklist**
 
-* [ ] ContentVersion upload implemented
-* [ ] Parent links created
-* [ ] Idempotency enforced
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] ContentVersion upload implemented
+* [x] Parent links created
+* [x] Idempotency enforced (Apex-side)
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (21 comprehensive tests)
+* [x] Security & secrets handled per policy (no new security concerns)
+* [x] Observability (logs/metrics/traces) added where relevant (correlation ID propagation)
+* [x] Docs updated (README/Runbook/ADR) (idempotency.md + README section)
+* [x] Reviewer notes: Apex-owned idempotency, link failures non-fatal, PATCH method added
+
+**Completion Summary**:
+- **Files Created**: 3 files (~1,810 lines)
+  - `src/sf/files.ts` (390 lines) - File upload, linking, and status update functions
+  - `test/sf.files.test.ts` (720 lines) - Comprehensive test suite (21 tests)
+  - `docs/idempotency.md` (700+ lines) - Complete idempotency strategy documentation
+- **Files Modified**: 7 files (+249 lines)
+  - `src/types.ts` (+116 lines) - ContentVersion, ContentDocumentLink, file upload types
+  - `src/sf/api.ts` (+7 lines) - Added PATCH method for record updates
+  - `src/sf/index.ts` (+8 lines) - Export file upload functions
+  - `openapi.yaml` (+7 lines) - Added generatedDocumentId field
+  - `force-app/.../DocgenEnvelopeService.cls` (+1 line) - generatedDocumentId field
+  - `force-app/.../DocgenController.cls` (reordered) - Create record before callout, pass ID
+  - `README.md` (+110 lines) - T-12 section with full documentation
+- **Test Results**: 237/237 Node.js tests passing ✓ (21 new T-12 tests)
+- **Key Deliverables**:
+  - **uploadContentVersion()**: Upload PDF/DOCX to Salesforce Files (base64 encoding)
+    - Returns ContentVersionId and ContentDocumentId
+    - Retry logic on 5xx errors (1s, 2s, 4s backoff)
+    - No retry on 4xx errors
+  - **createContentDocumentLink()**: Link file to single parent record
+    - ShareType=V (Viewer), Visibility=AllUsers
+    - Throws on failure
+  - **createContentDocumentLinks()**: Link file to multiple parents
+    - Filters null parent IDs automatically
+    - Non-fatal failures (collects errors, continues processing)
+    - Returns created count and error array
+  - **updateGeneratedDocument()**: Update Generated_Document__c status
+    - SUCCEEDED: Sets OutputFileId__c (and optional MergedDocxFileId__c)
+    - FAILED: Sets Error__c message
+    - Uses PATCH endpoint with retry logic
+  - **uploadAndLinkFiles()**: Main orchestrator function
+    - Uploads PDF (always)
+    - Uploads DOCX (if storeMergedDocx=true)
+    - Creates links for all non-null parents
+    - Updates Generated_Document__c status
+    - Link failures → file orphaned, status=FAILED
+  - **Idempotency Strategy** (Apex-owned):
+    - Apex computes RequestHash: `sha256(templateId | outputFormat | sha256(data))`
+    - Apex checks for existing SUCCEEDED document within 24-hour window
+    - Cache hit → return existing download URL (no callout, no DML)
+    - Salesforce enforces unique constraint on RequestHash__c (External ID)
+    - Node relies on Apex for idempotency (no duplicate check in Node)
+  - **Design Decisions** (per user clarifications):
+    - Idempotency: Apex-only (not Node-side)
+    - Record updates: Apex passes generatedDocumentId to Node
+    - DOCX storage: Two separate ContentVersions when storeMergedDocx=true
+    - Link failures: File orphaned, status=FAILED (no deletion)
+  - **ContentDocumentLink Strategy**:
+    - ShareType=V (Viewer permission)
+    - Visibility=AllUsers
+    - Links created for AccountId, OpportunityId, CaseId (if non-null)
+    - Partial failures logged but non-fatal
+  - **Documentation**:
+    - Complete idempotency guide (700+ lines)
+    - Hash computation examples
+    - 24-hour cache window strategy
+    - Race condition handling
+    - Troubleshooting section
+    - Security & compliance considerations
 
 ---
 

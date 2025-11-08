@@ -368,6 +368,13 @@ components:
             If provided, Node checks for an existing `Generated_Document__c` record with this hash.
             If found and status=SUCCEEDED, returns the prior ContentVersionId without reprocessing.
           example: 'sha256:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6'
+        generatedDocumentId:
+          type: string
+          description: |
+            **T-12: Generated_Document__c record ID** (18 chars).
+            Passed by Apex so Node can update the record's status (SUCCEEDED/FAILED) and OutputFileId__c
+            after upload. Optional for backward compatibility, but required for status tracking.
+          example: 'a00xx000000abcdXXX'
 
     DocgenResponse:
       type: object

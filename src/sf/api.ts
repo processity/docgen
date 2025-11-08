@@ -44,6 +44,13 @@ export class SalesforceApi {
   }
 
   /**
+   * PATCH request to Salesforce REST API (for record updates)
+   */
+  async patch<T = any>(path: string, body: any, options?: RequestOptions): Promise<T> {
+    return this.request<T>('PATCH', path, body, options);
+  }
+
+  /**
    * Download ContentVersion binary data (template DOCX file)
    *
    * @param contentVersionId - Salesforce ContentVersionId (18-char ID)
@@ -153,7 +160,7 @@ export class SalesforceApi {
    * Make HTTP request with retry logic
    */
   private async request<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body?: any,
     options?: RequestOptions,
@@ -168,7 +175,7 @@ export class SalesforceApi {
         Authorization: `Bearer ${token}`,
       };
 
-      if (method === 'POST') {
+      if (method === 'POST' || method === 'PATCH') {
         headers['Content-Type'] = 'application/json';
       }
 
@@ -201,7 +208,7 @@ export class SalesforceApi {
    */
   private async handleError<T>(
     error: unknown,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     body: any,
     options: RequestOptions | undefined,

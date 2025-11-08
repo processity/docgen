@@ -17,6 +17,7 @@ public with sharing class DocgenEnvelopeService {
         public Map<String, Object> data;
         public Map<String, String> parents;
         public String requestHash;
+        public String generatedDocumentId; // T-12: For status tracking
     }
 
     /**

@@ -51,10 +51,11 @@ public with sharing class DocgenController {
             // Step 4: Make HTTP callout to Node API (must happen before DML)
             HTTPResponse response = callNodeApi(envelope);
 
-            // Step 5: Create Generated_Document__c record after successful callout
+            // Step 5: Create Generated_Document__c record AFTER successful callout
+            // This avoids the DML-before-callout restriction in Salesforce
             doc = createGeneratedDocument(envelope, template.Id, recordId, correlationId);
 
-            // Step 6: Handle response and update record
+            // Step 6: Handle response and update the record status
             return handleResponse(response, doc, correlationId);
 
         } catch (Exception e) {

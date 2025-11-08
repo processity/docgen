@@ -88,6 +88,7 @@ export interface DocgenRequest {
   data: Record<string, any>;
   parents?: DocgenParents;
   requestHash?: string;
+  generatedDocumentId?: string; // T-12: Apex passes this for status updates
 }
 
 export interface DocgenResponse {
@@ -193,4 +194,118 @@ export interface ConversionPoolStats {
   failedJobs: number;
   /** Total number of conversion attempts (completed + failed) */
   totalConversions: number;
+}
+
+// Salesforce File Upload Types (T-12)
+
+/**
+ * Request payload for creating a ContentVersion in Salesforce
+ * Represents a file upload to Salesforce Files
+ */
+export interface ContentVersionCreateRequest {
+  /** Base64-encoded binary data of the file */
+  VersionData: string;
+  /** Title of the file (displayed in Salesforce UI) */
+  Title: string;
+  /** Full filename with extension (e.g., "Invoice_12345.pdf") */
+  PathOnClient: string;
+  /** Optional: Record ID to link the file to on creation */
+  FirstPublishLocationId?: string;
+}
+
+/**
+ * Salesforce response after creating a ContentVersion
+ */
+export interface ContentVersionCreateResponse {
+  /** ContentVersion record ID (18-char Salesforce ID) */
+  id: string;
+  /** Whether the creation was successful */
+  success: boolean;
+  /** Array of errors if creation failed */
+  errors: Array<{ message: string; statusCode: string }>;
+}
+
+/**
+ * Full ContentVersion record after querying Salesforce
+ * Used to get ContentDocumentId after upload
+ */
+export interface ContentVersionRecord {
+  /** ContentVersion record ID */
+  Id: string;
+  /** Parent ContentDocument ID (needed for linking) */
+  ContentDocumentId: string;
+  /** Title of the file */
+  Title: string;
+  /** File extension */
+  FileExtension?: string;
+  /** Size in bytes */
+  ContentSize?: number;
+}
+
+/**
+ * Request payload for creating a ContentDocumentLink in Salesforce
+ * Links a ContentDocument (file) to a parent record
+ */
+export interface ContentDocumentLinkCreateRequest {
+  /** ContentDocument ID to link */
+  ContentDocumentId: string;
+  /** Parent record ID (Account, Opportunity, Case, etc.) */
+  LinkedEntityId: string;
+  /** Share type: 'V' = Viewer, 'C' = Collaborator, 'I' = Inferred */
+  ShareType: 'V' | 'C' | 'I';
+  /** Visibility: 'AllUsers' | 'InternalUsers' | 'SharedUsers' */
+  Visibility: 'AllUsers' | 'InternalUsers' | 'SharedUsers';
+}
+
+/**
+ * Salesforce response after creating a ContentDocumentLink
+ */
+export interface ContentDocumentLinkCreateResponse {
+  /** ContentDocumentLink record ID */
+  id: string;
+  /** Whether the creation was successful */
+  success: boolean;
+  /** Array of errors if creation failed */
+  errors: Array<{ message: string; statusCode: string }>;
+}
+
+/**
+ * Fields that can be updated on Generated_Document__c
+ */
+export interface GeneratedDocumentUpdateFields {
+  /** Processing status (QUEUED | PROCESSING | SUCCEEDED | FAILED | CANCELED) */
+  Status__c?: string;
+  /** ContentVersionId of the generated PDF */
+  OutputFileId__c?: string;
+  /** Optional: ContentVersionId of the merged DOCX (if storeMergedDocx=true) */
+  MergedDocxFileId__c?: string;
+  /** Error message if Status__c = FAILED */
+  Error__c?: string;
+  /** Number of processing attempts */
+  Attempts__c?: number;
+}
+
+/**
+ * Result of uploading files and creating links
+ */
+export interface FileUploadResult {
+  /** ContentVersionId of the uploaded PDF */
+  pdfContentVersionId: string;
+  /** Optional: ContentVersionId of the uploaded DOCX */
+  docxContentVersionId?: string;
+  /** ContentDocumentId of the PDF (for linking) */
+  pdfContentDocumentId: string;
+  /** Optional: ContentDocumentId of the DOCX */
+  docxContentDocumentId?: string;
+  /** Number of ContentDocumentLinks successfully created */
+  linkCount: number;
+  /** Any errors encountered during linking (non-fatal) */
+  linkErrors: string[];
+}
+
+/**
+ * Options for Salesforce API calls with correlation tracking
+ */
+export interface CorrelationOptions {
+  correlationId?: string;
 }
