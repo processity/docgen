@@ -101,6 +101,44 @@ describe('Config', () => {
       const config = loadConfig();
       expect(config.imageAllowlist).toEqual(['cdn.example.com']);
     });
+
+    it('should load conversion config with default values when env vars are not set', () => {
+      delete process.env.CONVERSION_TIMEOUT;
+      delete process.env.CONVERSION_WORKDIR;
+      delete process.env.CONVERSION_MAX_CONCURRENT;
+
+      const config = loadConfig();
+
+      expect(config.conversionTimeout).toBe(60000);
+      expect(config.conversionWorkdir).toBe('/tmp');
+      expect(config.conversionMaxConcurrent).toBe(8);
+    });
+
+    it('should load conversion config with environment variables when set', () => {
+      process.env.CONVERSION_TIMEOUT = '30000';
+      process.env.CONVERSION_WORKDIR = '/custom/tmp';
+      process.env.CONVERSION_MAX_CONCURRENT = '4';
+
+      const config = loadConfig();
+
+      expect(config.conversionTimeout).toBe(30000);
+      expect(config.conversionWorkdir).toBe('/custom/tmp');
+      expect(config.conversionMaxConcurrent).toBe(4);
+    });
+
+    it('should parse CONVERSION_TIMEOUT as integer', () => {
+      process.env.CONVERSION_TIMEOUT = '45000';
+      const config = loadConfig();
+      expect(config.conversionTimeout).toBe(45000);
+      expect(typeof config.conversionTimeout).toBe('number');
+    });
+
+    it('should parse CONVERSION_MAX_CONCURRENT as integer', () => {
+      process.env.CONVERSION_MAX_CONCURRENT = '16';
+      const config = loadConfig();
+      expect(config.conversionMaxConcurrent).toBe(16);
+      expect(typeof config.conversionMaxConcurrent).toBe('number');
+    });
   });
 
   describe('validateConfig', () => {
@@ -109,6 +147,9 @@ describe('Config', () => {
         port: 8080,
         nodeEnv: 'development',
         logLevel: 'info',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -119,6 +160,9 @@ describe('Config', () => {
         port: 8080,
         nodeEnv: 'test',
         logLevel: 'info',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -132,6 +176,9 @@ describe('Config', () => {
         azureTenantId: 'tenant-id',
         clientId: 'client-id',
         keyVaultUri: 'https://vault.azure.net/',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -147,6 +194,9 @@ describe('Config', () => {
         sfDomain: 'https://example.salesforce.com',
         clientId: 'client-id',
         keyVaultUri: 'https://vault.azure.net/',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -162,6 +212,9 @@ describe('Config', () => {
         sfDomain: 'https://example.salesforce.com',
         azureTenantId: 'tenant-id',
         keyVaultUri: 'https://vault.azure.net/',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -177,6 +230,9 @@ describe('Config', () => {
         sfDomain: 'https://example.salesforce.com',
         azureTenantId: 'tenant-id',
         clientId: 'client-id',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -189,6 +245,9 @@ describe('Config', () => {
         port: 8080,
         nodeEnv: 'production',
         logLevel: 'info',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -211,6 +270,9 @@ describe('Config', () => {
         sfUsername: 'integration@example.com',
         sfClientId: 'sf-client-id',
         sfPrivateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -231,6 +293,9 @@ describe('Config', () => {
         sfUsername: 'integration@example.com',
         sfClientId: 'sf-client-id',
         sfPrivateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
         // imageAllowlist is optional
       };
 

@@ -23,9 +23,7 @@ jest.mock('util', () => {
 });
 
 import { LibreOfficeConverter, convertDocxToPdf } from '../src/convert/soffice';
-
-// Import mocked modules
-const fsPromises = require('fs/promises');
+import { promises as fsPromises } from 'fs';
 
 describe('LibreOfficeConverter', () => {
   let converter: LibreOfficeConverter;
@@ -147,14 +145,10 @@ describe('LibreOfficeConverter', () => {
     });
 
     it('should track queue depth when pool is full', async () => {
-      let activeCount = 0;
-
       // Mock slow conversion
       mockExecFileAsync.mockImplementation(() => {
-        activeCount++;
         return new Promise((resolve) => {
           setTimeout(() => {
-            activeCount--;
             resolve({ stdout: '', stderr: '' });
           }, 100);
         });
