@@ -42,6 +42,7 @@ jobs:
         run: npm test
         env:
           CI: true
+          LOG_LEVEL: error
           SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
@@ -73,6 +74,7 @@ jobs:
         run: npm run test:coverage
         env:
           CI: true
+          LOG_LEVEL: error
           SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}

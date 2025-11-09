@@ -18,10 +18,10 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
     process.env.SF_DOMAIN = 'test.salesforce.com';
     process.env.SF_USERNAME = 'test@example.com';
     process.env.SF_CLIENT_ID = 'test-client-id';
-    // Use the real private key path - this will be loaded by the config loader
-    process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-    // Clear any direct key that might be set
-    delete process.env.SF_PRIVATE_KEY;
+    // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
+    if (!process.env.SF_PRIVATE_KEY) {
+      process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
+    }
 
     // Build the app
     app = await build();

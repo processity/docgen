@@ -20,8 +20,10 @@ describe('Sample Payloads Validation', () => {
     process.env.SF_DOMAIN = 'test.salesforce.com';
     process.env.SF_USERNAME = 'test@example.com';
     process.env.SF_CLIENT_ID = 'test-client-id';
-    process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-    delete process.env.SF_PRIVATE_KEY;
+    // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
+    if (!process.env.SF_PRIVATE_KEY) {
+      process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
+    }
 
     // Pre-generate test DOCX buffer
     testDocxBuffer = await createTestDocxBuffer();
