@@ -28,15 +28,57 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install LibreOffice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice libreoffice-writer --no-install-recommends
+          soffice --version
+
       - name: Run linter
         run: npm run lint
         continue-on-error: true
 
       - name: Run tests
         run: npm test
+        env:
+          CI: true
+          LOG_LEVEL: error
+          SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+
+      - name: Run integration tests
+        run: |
+          echo "Running Salesforce JWT Integration Tests..."
+          if [ -n "${{ secrets.SF_DOMAIN }}" ] && [ -n "${{ secrets.SF_USERNAME }}" ] && [ -n "${{ secrets.SF_CLIENT_ID }}" ] && [ -n "${{ secrets.SF_PRIVATE_KEY }}" ]; then
+            echo "✅ Salesforce JWT credentials configured - running integration tests"
+            npm run test:integration
+          else
+            echo "⚠️ Salesforce JWT credentials not configured - skipping integration tests"
+            echo "To enable integration tests in CI, configure these GitHub secrets:"
+            echo "  - SF_DOMAIN"
+            echo "  - SF_USERNAME"
+            echo "  - SF_CLIENT_ID"
+            echo "  - SF_PRIVATE_KEY"
+          fi
+        env:
+          CI: true
+          SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+        continue-on-error: true
 
       - name: Run tests with coverage
         run: npm run test:coverage
+        env:
+          CI: true
+          LOG_LEVEL: error
+          SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4

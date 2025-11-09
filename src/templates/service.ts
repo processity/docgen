@@ -1,8 +1,8 @@
 import type { SalesforceApi } from '../sf/api';
 import { templateCache } from './cache';
-import pino from 'pino';
+import { createLogger } from '../utils/logger';
 
-const logger = pino({ name: 'templates:service' });
+const logger = createLogger('templates:service');
 
 /**
  * Template Service

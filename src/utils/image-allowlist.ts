@@ -1,6 +1,6 @@
-import pino from 'pino';
+import { createLogger } from './logger';
 
-const logger = pino({ name: 'utils:image-allowlist' });
+const logger = createLogger('utils:image-allowlist');
 
 /**
  * Image allowlist validator

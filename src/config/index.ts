@@ -1,4 +1,28 @@
 import { AppConfig } from '../types';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+/**
+ * Load private key from environment or file
+ */
+function loadPrivateKey(): string | undefined {
+  // First check if key is directly provided
+  if (process.env.SF_PRIVATE_KEY) {
+    return process.env.SF_PRIVATE_KEY;
+  }
+
+  // Then check if a path to the key file is provided
+  if (process.env.SF_PRIVATE_KEY_PATH) {
+    try {
+      const keyPath = resolve(process.cwd(), process.env.SF_PRIVATE_KEY_PATH);
+      return readFileSync(keyPath, 'utf8');
+    } catch (error) {
+      console.error(`Failed to load SF_PRIVATE_KEY from file: ${process.env.SF_PRIVATE_KEY_PATH}`, error);
+    }
+  }
+
+  return undefined;
+}
 
 /**
  * Load configuration from environment variables
@@ -20,7 +44,7 @@ export function loadConfig(): AppConfig {
     // Salesforce JWT Bearer Flow settings (T-09)
     sfUsername: process.env.SF_USERNAME,
     sfClientId: process.env.SF_CLIENT_ID,
-    sfPrivateKey: process.env.SF_PRIVATE_KEY,
+    sfPrivateKey: loadPrivateKey(),
     // LibreOffice conversion settings (T-11)
     conversionTimeout: parseInt(
       process.env.CONVERSION_TIMEOUT || '60000',

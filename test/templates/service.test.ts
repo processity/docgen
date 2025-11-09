@@ -7,7 +7,7 @@ import { templateCache } from '../../src/templates/cache';
 describe('TemplateService', () => {
   let service: TemplateService;
   let sfApi: SalesforceApi;
-  const SF_DOMAIN = 'https://example.my.salesforce.com';
+  const SF_DOMAIN = 'example.my.salesforce.com';
   const CONTENT_VERSION_ID = '068xxx000000001AAA';
 
   beforeAll(() => {
@@ -28,7 +28,7 @@ describe('TemplateService', () => {
       invalidateToken: jest.fn(),
     } as unknown as SalesforceAuth;
 
-    sfApi = new SalesforceApi(mockAuth, SF_DOMAIN);
+    sfApi = new SalesforceApi(mockAuth, `https://${SF_DOMAIN}`);
     service = new TemplateService(sfApi);
   });
 
@@ -41,7 +41,7 @@ describe('TemplateService', () => {
       const templateBuffer = Buffer.from('mock template content');
 
       // Mock Salesforce API call
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, templateBuffer);
 
@@ -55,7 +55,7 @@ describe('TemplateService', () => {
       const templateBuffer = Buffer.from('mock template content');
 
       // Mock Salesforce API call - should only be called once
-      const scope = nock(SF_DOMAIN)
+      const scope = nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, templateBuffer);
 
@@ -84,11 +84,11 @@ describe('TemplateService', () => {
       const id2 = '068xxx000000002AAA';
 
       // Mock both API calls
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${id1}/VersionData`)
         .reply(200, template1);
 
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${id2}/VersionData`)
         .reply(200, template2);
 
@@ -107,7 +107,7 @@ describe('TemplateService', () => {
       const templateBuffer = Buffer.from('test');
       const correlationId = 'test-correlation-123';
 
-      const scope = nock(SF_DOMAIN)
+      const scope = nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .matchHeader('x-correlation-id', correlationId)
         .reply(200, templateBuffer);
@@ -118,7 +118,7 @@ describe('TemplateService', () => {
     });
 
     it('should throw error if SF API fails', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(404, { error: 'Not Found' });
 
@@ -128,7 +128,7 @@ describe('TemplateService', () => {
     });
 
     it('should throw error if SF API returns 500', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(500)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
@@ -142,7 +142,7 @@ describe('TemplateService', () => {
     });
 
     it('should handle network errors', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .replyWithError('Network error')
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
@@ -162,7 +162,7 @@ describe('TemplateService', () => {
     });
 
     it('should return true for cached template', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, Buffer.from('test'));
 
@@ -176,7 +176,7 @@ describe('TemplateService', () => {
     it('should return cache statistics', async () => {
       const template = Buffer.from('test content');
 
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, template);
 
@@ -194,7 +194,7 @@ describe('TemplateService', () => {
 
   describe('clearCache', () => {
     it('should clear all cached templates', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, Buffer.from('test'));
 
@@ -213,7 +213,7 @@ describe('TemplateService', () => {
     it('should safely cache templates by immutable ContentVersionId', async () => {
       const template = Buffer.from('original template');
 
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(200, template);
 
@@ -236,7 +236,7 @@ describe('TemplateService', () => {
 
   describe('error handling with detailed messages', () => {
     it('should provide clear error message with ContentVersionId', async () => {
-      nock(SF_DOMAIN)
+      nock(`https://${SF_DOMAIN}`)
         .get(`/services/data/v59.0/sobjects/ContentVersion/${CONTENT_VERSION_ID}/VersionData`)
         .reply(404);
 

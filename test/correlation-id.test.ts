@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import type { FastifyInstance } from 'fastify';
+import nock from 'nock';
 import { build } from '../src/server';
 import { generateCorrelationId } from '../src/utils/correlation-id';
+import { createTestDocxBuffer } from './helpers/test-docx';
 
 describe('Correlation ID', () => {
   describe('generateCorrelationId', () => {
@@ -47,11 +49,25 @@ describe('Correlation ID', () => {
 
   describe('getCorrelationId', () => {
     let app: FastifyInstance;
+    let testDocxBuffer: Buffer;
 
     beforeAll(async () => {
+      // Clean up any previous nock interceptors
+      nock.cleanAll();
+
       // Set up environment to bypass auth in development mode
       process.env.NODE_ENV = 'development';
       process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+      process.env.SF_DOMAIN = 'test.salesforce.com';
+      process.env.SF_USERNAME = 'test@example.com';
+      process.env.SF_CLIENT_ID = 'test-client-id';
+      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
+      if (!process.env.SF_PRIVATE_KEY) {
+        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
+      }
+
+      // Pre-generate test DOCX buffer
+      testDocxBuffer = await createTestDocxBuffer();
 
       app = await build();
       await app.ready();
@@ -59,8 +75,70 @@ describe('Correlation ID', () => {
 
     afterAll(async () => {
       await app.close();
+      nock.cleanAll();
       // Clean up environment
       delete process.env.AUTH_BYPASS_DEVELOPMENT;
+    });
+
+    beforeEach(() => {
+      // Reset nock interceptors before each test
+      nock.cleanAll();
+
+      // Mock Salesforce JWT token exchange (persist for multiple calls)
+      nock('https://login.salesforce.com')
+        .persist()
+        .post('/services/oauth2/token')
+        .reply(200, {
+          access_token: 'test-access-token',
+          instance_url: 'https://test.salesforce.com',
+        });
+
+      // Mock template fetch for both template IDs (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdXXX/VersionData')
+        .reply(200, testDocxBuffer);
+
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdYYY/VersionData')
+        .reply(200, testDocxBuffer);
+
+      // Mock ContentVersion creation for document upload (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, {
+          id: '068TestContentVersionId',
+          success: true,
+          errors: [],
+        });
+
+      // Mock ContentVersion query to get ContentDocumentId (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          records: [{
+            ContentDocumentId: '069TestContentDocId',
+          }],
+        });
+
+      // Mock ContentDocumentLink creation (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, {
+          id: '06ATestContentDocLinkId',
+          success: true,
+          errors: [],
+        });
+    });
+
+    afterEach(() => {
+      // Clean up nock after each test
+      nock.cleanAll();
     });
 
     it('should extract correlation ID from string header', async () => {
@@ -82,11 +160,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toBe(customId);
     });
@@ -112,11 +190,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toBe(customId);
     });
@@ -135,11 +213,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -165,11 +243,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       // Should preserve the uppercase format from header
       expect(body.correlationId).toBe(customId);
@@ -194,11 +272,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       // Should pass through any string value
       expect(body.correlationId).toBe(customId);
@@ -221,11 +299,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       // Empty string should trigger generation of new UUID
       expect(body.correlationId).toMatch(
@@ -250,11 +328,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       // Whitespace-only should trigger generation of new UUID
       expect(body.correlationId).toMatch(
@@ -281,7 +359,7 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
@@ -301,12 +379,12 @@ describe('Correlation ID', () => {
             storeMergedDocx: true,
             returnDocxToBrowser: false,
           },
-          data: { Opportunity: { Name: 'Test Opp' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response1.statusCode).toBe(202);
-      expect(response2.statusCode).toBe(202);
+      expect(response1.statusCode).toBe(200);
+      expect(response2.statusCode).toBe(200);
 
       const body1 = JSON.parse(response1.body);
       const body2 = JSON.parse(response2.body);
@@ -318,11 +396,25 @@ describe('Correlation ID', () => {
 
   describe('Response behavior', () => {
     let app: FastifyInstance;
+    let testDocxBuffer: Buffer;
 
     beforeAll(async () => {
+      // Clean up any previous nock interceptors
+      nock.cleanAll();
+
       // Set up environment to bypass auth in development mode
       process.env.NODE_ENV = 'development';
       process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+      process.env.SF_DOMAIN = 'test.salesforce.com';
+      process.env.SF_USERNAME = 'test@example.com';
+      process.env.SF_CLIENT_ID = 'test-client-id';
+      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
+      if (!process.env.SF_PRIVATE_KEY) {
+        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
+      }
+
+      // Pre-generate test DOCX buffer
+      testDocxBuffer = await createTestDocxBuffer();
 
       app = await build();
       await app.ready();
@@ -330,8 +422,70 @@ describe('Correlation ID', () => {
 
     afterAll(async () => {
       await app.close();
+      nock.cleanAll();
       // Clean up environment
       delete process.env.AUTH_BYPASS_DEVELOPMENT;
+    });
+
+    beforeEach(() => {
+      // Reset nock interceptors before each test
+      nock.cleanAll();
+
+      // Mock Salesforce JWT token exchange (persist for multiple calls)
+      nock('https://login.salesforce.com')
+        .persist()
+        .post('/services/oauth2/token')
+        .reply(200, {
+          access_token: 'test-access-token',
+          instance_url: 'https://test.salesforce.com',
+        });
+
+      // Mock template fetch for both template IDs (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdXXX/VersionData')
+        .reply(200, testDocxBuffer);
+
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdYYY/VersionData')
+        .reply(200, testDocxBuffer);
+
+      // Mock ContentVersion creation for document upload (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, {
+          id: '068TestContentVersionId',
+          success: true,
+          errors: [],
+        });
+
+      // Mock ContentVersion query to get ContentDocumentId (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          records: [{
+            ContentDocumentId: '069TestContentDocId',
+          }],
+        });
+
+      // Mock ContentDocumentLink creation (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, {
+          id: '06ATestContentDocLinkId',
+          success: true,
+          errors: [],
+        });
+    });
+
+    afterEach(() => {
+      // Clean up nock after each test
+      nock.cleanAll();
     });
 
     it('should include correlation ID in response body', async () => {
@@ -353,11 +507,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toBe(customId);
     });
@@ -376,11 +530,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.correlationId).toBeDefined();
       expect(body.correlationId).toMatch(
@@ -402,11 +556,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
 
       // Response header should match body correlationId
@@ -433,11 +587,11 @@ describe('Correlation ID', () => {
             storeMergedDocx: false,
             returnDocxToBrowser: true,
           },
-          data: { Account: { Name: 'Test' } },
+          data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
         },
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
 
       // Custom ID should be in both header and body
       expect(response.headers['x-correlation-id']).toBe(customId);
@@ -448,11 +602,25 @@ describe('Correlation ID', () => {
 
   describe('Integration: correlation ID flow', () => {
     let app: FastifyInstance;
+    let testDocxBuffer: Buffer;
 
     beforeAll(async () => {
+      // Clean up any previous nock interceptors
+      nock.cleanAll();
+
       // Set up environment to bypass auth in development mode
       process.env.NODE_ENV = 'development';
       process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+      process.env.SF_DOMAIN = 'test.salesforce.com';
+      process.env.SF_USERNAME = 'test@example.com';
+      process.env.SF_CLIENT_ID = 'test-client-id';
+      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
+      if (!process.env.SF_PRIVATE_KEY) {
+        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
+      }
+
+      // Pre-generate test DOCX buffer
+      testDocxBuffer = await createTestDocxBuffer();
 
       app = await build();
       await app.ready();
@@ -460,8 +628,70 @@ describe('Correlation ID', () => {
 
     afterAll(async () => {
       await app.close();
+      nock.cleanAll();
       // Clean up environment
       delete process.env.AUTH_BYPASS_DEVELOPMENT;
+    });
+
+    beforeEach(() => {
+      // Reset nock interceptors before each test
+      nock.cleanAll();
+
+      // Mock Salesforce JWT token exchange (persist for multiple calls)
+      nock('https://login.salesforce.com')
+        .persist()
+        .post('/services/oauth2/token')
+        .reply(200, {
+          access_token: 'test-access-token',
+          instance_url: 'https://test.salesforce.com',
+        });
+
+      // Mock template fetch for both template IDs (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdXXX/VersionData')
+        .reply(200, testDocxBuffer);
+
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/sobjects/ContentVersion/068xx000000abcdYYY/VersionData')
+        .reply(200, testDocxBuffer);
+
+      // Mock ContentVersion creation for document upload (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, {
+          id: '068TestContentVersionId',
+          success: true,
+          errors: [],
+        });
+
+      // Mock ContentVersion query to get ContentDocumentId (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          records: [{
+            ContentDocumentId: '069TestContentDocId',
+          }],
+        });
+
+      // Mock ContentDocumentLink creation (persist for multiple calls)
+      nock('https://test.salesforce.com')
+        .persist()
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, {
+          id: '06ATestContentDocLinkId',
+          success: true,
+          errors: [],
+        });
+    });
+
+    afterEach(() => {
+      // Clean up nock after each test
+      nock.cleanAll();
     });
 
     it('should include correlation ID in error response body and headers', async () => {
@@ -509,32 +739,36 @@ describe('Correlation ID', () => {
       expect(response.headers['x-correlation-id']).toBe(body.correlationId);
     });
 
-    it('should generate unique IDs for parallel requests without headers', async () => {
-      const requests = Array.from({ length: 10 }, () =>
-        app.inject({
-          method: 'POST',
-          url: '/generate',
-          payload: {
-            templateId: '068xx000000abcdXXX',
-            outputFileName: 'test.pdf',
-            outputFormat: 'PDF',
-            locale: 'en-GB',
-            timezone: 'Europe/London',
-            options: {
-              storeMergedDocx: false,
-              returnDocxToBrowser: true,
+    it(
+      'should generate unique IDs for parallel requests without headers',
+      async () => {
+        const requests = Array.from({ length: 10 }, () =>
+          app.inject({
+            method: 'POST',
+            url: '/generate',
+            payload: {
+              templateId: '068xx000000abcdXXX',
+              outputFileName: 'test.pdf',
+              outputFormat: 'PDF',
+              locale: 'en-GB',
+              timezone: 'Europe/London',
+              options: {
+                storeMergedDocx: false,
+                returnDocxToBrowser: true,
+              },
+              data: { Name: 'Test', Account: { Name: 'Test Account' }, GeneratedDate__formatted: '5 Nov 2025' },
             },
-            data: { Account: { Name: 'Test' } },
-          },
-        })
-      );
+          })
+        );
 
-      const responses = await Promise.all(requests);
-      const correlationIds = responses.map((r) => JSON.parse(r.body).correlationId);
+        const responses = await Promise.all(requests);
+        const correlationIds = responses.map((r) => JSON.parse(r.body).correlationId);
 
-      // All correlation IDs should be unique
-      const uniqueIds = new Set(correlationIds);
-      expect(uniqueIds.size).toBe(10);
-    });
+        // All correlation IDs should be unique
+        const uniqueIds = new Set(correlationIds);
+        expect(uniqueIds.size).toBe(10);
+      },
+      30000
+    ); // 30 second timeout for parallel LibreOffice conversions
   });
 });

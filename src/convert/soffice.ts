@@ -2,10 +2,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import pino from 'pino';
 import type { ConversionOptions, ConversionPoolStats } from '../types';
+import { createLogger } from '../utils/logger';
 
-const logger = pino({ name: 'convert:soffice' });
+const logger = createLogger('convert:soffice');
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT = 60000; // 60 seconds

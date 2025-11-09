@@ -59,20 +59,19 @@ describe('Azure AD JWT Authentication', () => {
         .persist();
     });
 
-    it('should accept valid token and return 202', async () => {
+    it('should accept valid token and return 200', async () => {
       const validToken = generateTestToken();
       const response = await app.inject({
         method: 'POST',
-        url: '/generate',
+        url: '/auth-test',
         headers: {
           Authorization: `Bearer ${validToken}`,
-          'Content-Type': 'application/json',
         },
-        payload: validPayload,
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
       expect(response.json()).toHaveProperty('correlationId');
+      expect(response.json()).toHaveProperty('message', 'Authenticated');
     });
 
     it('should handle token with valid signature and claims', async () => {
@@ -85,14 +84,14 @@ describe('Azure AD JWT Authentication', () => {
 
       const response = await app.inject({
         method: 'POST',
-        url: '/generate',
+        url: '/auth-test',
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        payload: validPayload,
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('message', 'Authenticated');
     });
 
     it('should cache JWKS keys to reduce external calls', async () => {
@@ -101,24 +100,23 @@ describe('Azure AD JWT Authentication', () => {
       // First request - should fetch JWKS
       await app.inject({
         method: 'POST',
-        url: '/generate',
+        url: '/auth-test',
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        payload: validPayload,
       });
 
       // Second request - should use cached JWKS
       const response = await app.inject({
         method: 'POST',
-        url: '/generate',
+        url: '/auth-test',
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        payload: validPayload,
       });
 
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('message', 'Authenticated');
       // Nock will throw if called more than once without persist
     });
   });
@@ -423,15 +421,15 @@ describe('Azure AD JWT Authentication', () => {
 
       const response = await app.inject({
         method: 'POST',
-        url: '/generate',
+        url: '/auth-test',
         headers: {
           // No Authorization header
         },
-        payload: validPayload,
       });
 
       // Should accept request without auth in dev mode
-      expect(response.statusCode).toBe(202);
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('message', 'Authenticated');
 
       // Clean up
       delete process.env.AUTH_BYPASS_DEVELOPMENT;

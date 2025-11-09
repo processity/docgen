@@ -1,7 +1,7 @@
 import type { TemplateCacheEntry, TemplateCacheStats } from '../types';
-import pino from 'pino';
+import { createLogger } from '../utils/logger';
 
-const logger = pino({ name: 'templates:cache' });
+const logger = createLogger('templates:cache');
 
 // Maximum cache size in bytes (500 MB)
 const MAX_CACHE_SIZE_BYTES = 500 * 1024 * 1024;

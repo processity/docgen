@@ -1,9 +1,15 @@
+import dotenv from 'dotenv';
 import Fastify, { FastifyInstance } from 'fastify';
 import { healthRoutes } from './routes/health';
 import { generateRoutes } from './routes/generate';
+import { authTestRoutes } from './routes/auth-test';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
+import { createSalesforceAuth } from './sf/auth';
+
+// Load environment variables from .env file
+dotenv.config();
 
 /**
  * Build and configure the Fastify application
@@ -11,6 +17,16 @@ import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
  */
 export async function build(): Promise<FastifyInstance> {
   const config = loadConfig();
+
+  // Initialize Salesforce authentication if configured
+  if (config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey) {
+    createSalesforceAuth({
+      sfDomain: config.sfDomain,
+      sfUsername: config.sfUsername,
+      sfClientId: config.sfClientId,
+      sfPrivateKey: config.sfPrivateKey,
+    });
+  }
 
   // Create Fastify instance with JSON logger and custom schema error formatter
   const app = Fastify({
@@ -60,6 +76,7 @@ export async function build(): Promise<FastifyInstance> {
   // Register routes
   await app.register(healthRoutes);
   await app.register(generateRoutes);
+  await app.register(authTestRoutes);
 
   return app;
 }

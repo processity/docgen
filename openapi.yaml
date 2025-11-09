@@ -245,6 +245,17 @@ paths:
                 statusCode: 403
                 error: Forbidden
                 message: 'Token audience does not match expected client ID'
+        '404':
+          description: Template not found in Salesforce
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                statusCode: 404
+                error: Not Found
+                message: 'Template not found'
+                correlationId: '12345678-1234-4567-89ab-123456789012'
         '500':
           description: Internal server error
           content:
@@ -254,7 +265,18 @@ paths:
               example:
                 statusCode: 500
                 error: Internal Server Error
+                message: 'Unexpected server error'
+        '502':
+          description: Bad Gateway - LibreOffice conversion or Salesforce upload failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                statusCode: 502
+                error: Bad Gateway
                 message: 'LibreOffice conversion failed'
+                correlationId: '12345678-1234-4567-89ab-123456789012'
 
 components:
   securitySchemes:
