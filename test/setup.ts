@@ -1,6 +1,10 @@
 // Jest global setup file
 // This file is executed before all tests run
 
+// Load environment variables from .env file FIRST
+import { config } from 'dotenv';
+config();
+
 // Set test environment variables
 process.env.NODE_ENV = 'test';
 process.env.PORT = '3000';
