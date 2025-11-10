@@ -84,7 +84,17 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Generated_Document__c.MergedDocxFileId__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Generated_Document__c.RequestedBy__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Generated_Document__c.ScheduledRetryTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
 

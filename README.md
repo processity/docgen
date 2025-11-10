@@ -471,6 +471,174 @@ interface GeneratedDocumentUpdateFields {
 - [Idempotency Strategy](./docs/idempotency.md)
 - [ContentDocumentLink Strategy](./docs/contentdocumentlink.md)
 
+## Batch Processing & Worker Poller (T-14)
+
+**Purpose**: Enable mass document generation at scale via Apex Batch/Queueable and Node.js poller worker.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      BATCH GENERATION FLOW                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  1. Apex Batch/Queueable                                         │
+│     └─> Inserts Generated_Document__c records (Status=QUEUED)   │
+│         - RequestJSON__c: Full DocgenRequest envelope           │
+│         - RequestHash__c: Idempotency key (External ID)         │
+│         - Priority__c: Optional priority (higher = first)       │
+│                                                                   │
+│  2. Node Poller (every 15s active / 60s idle)                   │
+│     └─> Query: Up to 20 QUEUED records not locked              │
+│     └─> Lock: Sequential PATCH (Status=PROCESSING,             │
+│         LockedUntil=now+2m)                                     │
+│     └─> Process: Concurrent (max 8 via LibreOffice pool)       │
+│         ├─> Fetch template                                     │
+│         ├─> Merge + Convert                                    │
+│         ├─> Upload to Salesforce Files                         │
+│         └─> Link to parents                                    │
+│     └─> Update: Status=SUCCEEDED/FAILED with retry backoff    │
+│                                                                   │
+│  3. Retry Strategy                                               │
+│     - Attempt 1: Requeue after 1 minute                         │
+│     - Attempt 2: Requeue after 5 minutes                        │
+│     - Attempt 3: Requeue after 15 minutes                       │
+│     - Attempt 4+: Mark as FAILED permanently                    │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Salesforce: Batch Enqueue
+
+**Class**: `BatchDocgenEnqueue` (implements `Database.Batchable<Id>`)
+
+```apex
+// Enqueue 100 documents for a template
+List<Id> recordIds = new List<Id>{/* Account IDs */};
+Id templateId = 'a01xx000000abcdXXX';
+String outputFormat = 'PDF';
+
+BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+  templateId,
+  recordIds,
+  outputFormat
+);
+Database.executeBatch(batch, 200); // Batch size
+```
+
+**What it does**:
+1. Validates template exists
+2. For each record: builds envelope via `DocgenEnvelopeService`
+3. Inserts `Generated_Document__c` with Status=QUEUED
+4. Tracks success/failure counts across batches
+
+**Test Coverage**: 7 tests in `force-app/main/default/classes/BatchDocgenEnqueueTest.cls`
+- 10 and 50 record batches
+- RequestHash uniqueness and idempotency
+- DOCX output format support
+- Error handling for missing templates
+
+### Node.js: Worker Poller
+
+**Class**: `PollerService` (`src/worker/poller.ts`)
+
+**API Endpoints** (all require AAD authentication):
+- **POST /worker/start**: Start the poller
+- **POST /worker/stop**: Stop gracefully (waits for in-flight jobs)
+- **GET /worker/status**: Current state (running, queue depth, last poll time)
+- **GET /worker/stats**: Detailed metrics (processed, succeeded, failed, retries, uptime)
+
+**Configuration** (environment variables):
+```env
+POLLER_ENABLED=false           # Default: disabled (API-controlled)
+POLLER_INTERVAL_MS=15000       # Active polling interval (15s)
+POLLER_IDLE_INTERVAL_MS=60000  # Idle polling interval (60s)
+POLLER_BATCH_SIZE=20           # Documents per poll (reduced from 50)
+POLLER_LOCK_TTL_MS=120000      # Lock duration (2 minutes)
+POLLER_MAX_ATTEMPTS=3          # Max retry attempts
+```
+
+**Adaptive Polling**:
+- **Active mode** (15s): When documents found in previous poll
+- **Idle mode** (60s): When no documents found (reduces API calls)
+
+**Locking Strategy**:
+- **Sequential PATCH**: Each document locked individually before processing
+- **Lock TTL**: 2 minutes (prevents stuck locks)
+- **Expired locks**: Automatically reclaimed on next poll
+- **Conflict resolution**: If lock fails (409), skip document
+
+**Concurrency**:
+- **Fetch**: Up to 20 documents per poll
+- **Processing**: Max 8 concurrent (enforced by LibreOffice pool)
+- **Queue management**: Remaining documents queue internally
+
+**Retry Backoff**:
+```typescript
+Attempt 1 → Requeue after 1m   (60,000ms)
+Attempt 2 → Requeue after 5m   (300,000ms)
+Attempt 3 → Requeue after 15m  (900,000ms)
+Attempt 4+ → FAILED permanently
+```
+
+**Retryable vs Non-Retryable Errors**:
+- **Non-retryable** (immediate FAILED): Template not found (404), invalid request (400)
+- **Retryable** (backoff): Conversion timeout, upload failure (5xx), network errors
+
+**Graceful Shutdown**:
+1. Clear polling timer
+2. Wait for all in-flight jobs to complete
+3. Update stats and log shutdown
+4. Called automatically on SIGTERM/SIGINT
+
+**Example Usage**:
+```bash
+# Start poller
+curl -X POST https://docgen.azurecontainerapps.io/worker/start \
+  -H "Authorization: Bearer $AAD_TOKEN"
+
+# Check status
+curl -X GET https://docgen.azurecontainerapps.io/worker/status \
+  -H "Authorization: Bearer $AAD_TOKEN"
+
+# Get detailed stats
+curl -X GET https://docgen.azurecontainerapps.io/worker/stats \
+  -H "Authorization: Bearer $AAD_TOKEN"
+
+# Stop poller
+curl -X POST https://docgen.azurecontainerapps.io/worker/stop \
+  -H "Authorization: Bearer $AAD_TOKEN"
+```
+
+**Test Coverage**: 39 tests across 2 test files
+- `test/worker/poller.test.ts` (19 tests): Fetch, lock, process, retry, backoff, adaptive polling, shutdown
+- `test/routes/worker.test.ts` (20 tests): API endpoints, auth, error handling, status/stats
+
+**Key Implementation Files**:
+- `src/worker/poller.ts` (430 lines): Core PollerService class
+- `src/routes/worker.ts` (200 lines): API endpoints
+- `src/server.ts`: Worker routes registration + shutdown hook
+- `force-app/.../BatchDocgenEnqueue.cls` (248 lines): Apex batch class
+
+**Monitoring & Observability**:
+- Correlation IDs propagated through all operations
+- Structured logging with Pino
+- Stats tracking: processed, succeeded, failed, retries, uptime
+- Ready for Azure Application Insights integration (T-15)
+
+**API Call Efficiency**:
+- **Per Poll Cycle** (20 documents):
+  - 1 SOQL query (fetch documents)
+  - 20 PATCH calls (lock documents)
+  - ~80-100 API calls (template download, upload, links, status updates)
+  - **Total**: ~100-120 calls per 15s cycle
+  - **Burst**: ~400-480 calls/minute during active processing
+- **Mitigation**: Adaptive polling reduces calls during idle periods
+
+**See Also**:
+- [OpenAPI Worker Endpoints](./openapi.yaml#L283-L482) - Complete API documentation
+- [T-14 Implementation Plan](./t14-PLAN.MD) - Detailed design decisions
+
 ## Project Structure
 
 ```
@@ -480,17 +648,25 @@ docgen/
 │   ├── sf/           # Salesforce client (JWT Bearer + API + Files) (T-09, T-12)
 │   ├── templates/    # Template cache, service, and merge (T-10)
 │   ├── convert/      # LibreOffice conversion pool (T-11)
-│   ├── routes/       # Fastify routes
-│   ├── plugins/      # Fastify plugins
+│   ├── worker/       # Batch poller worker (T-14)
+│   ├── routes/       # Fastify routes (generate, health, worker)
+│   ├── plugins/      # Fastify plugins (auth)
 │   ├── config/       # Configuration management
-│   └── utils/        # Utility functions (image allowlist)
+│   └── utils/        # Utility functions (image allowlist, correlation ID)
 ├── test/             # Jest tests
 │   ├── templates/    # Template cache, service, merge tests
+│   ├── worker/       # Poller tests (unit + integration)
+│   ├── routes/       # Route tests (generate, health, worker)
 │   ├── convert.test.ts  # Conversion pool tests
-│   └── helpers/      # Test utilities (JWT helpers)
+│   └── helpers/      # Test utilities (JWT helpers, test DOCX generation)
 ├── force-app/        # Salesforce Apex and metadata
+│   └── main/default/
+│       ├── classes/  # Apex classes (controllers, batch, services, tests)
+│       └── lwc/      # Lightning Web Components (docgenButton)
 ├── docs/             # Documentation and ADRs
-│   └── template-authoring.md  # Template authoring guide
+│   ├── template-authoring.md  # Template authoring guide
+│   ├── idempotency.md         # Idempotency strategy
+│   └── adr/          # Architecture Decision Records
 └── dist/             # Compiled JavaScript (gitignored)
 ```
 

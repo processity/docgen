@@ -202,3 +202,6 @@ export async function getMockJWKS() {
     ],
   };
 }
+
+// Alias for consistency with test naming
+export const generateValidJWT = generateTestToken;

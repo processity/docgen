@@ -88,7 +88,7 @@ describe('Salesforce JWT Bearer Authentication - Integration', () => {
         expect(token.length).toBeGreaterThan(20);
 
         // Salesforce tokens contain alphanumeric characters, dots, underscores, hyphens, and exclamation marks
-        expect(token).toMatch(/^[\w\-\.!]+$/);
+        expect(token).toMatch(/^[\w.!-]+$/);
       }, 30000); // Extended timeout for network request
 
       it('should return the same token on subsequent calls (caching)', async () => {
@@ -109,7 +109,7 @@ describe('Salesforce JWT Bearer Authentication - Integration', () => {
         expect(authAny.cachedToken).toBeDefined();
         expect(authAny.cachedToken.accessToken).toBe(token);
         expect(authAny.cachedToken.instanceUrl).toBeTruthy();
-        expect(authAny.cachedToken.instanceUrl).toMatch(/^https:\/\/[\w\-]+\.(my\.)?salesforce\.com$/);
+        expect(authAny.cachedToken.instanceUrl).toMatch(/^https:\/\/[\w-]+\.(my\.)?salesforce\.com$/);
       }, 30000);
     });
 

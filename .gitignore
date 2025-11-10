@@ -71,3 +71,5 @@ test-results/
 keys/server.crt
 keys/server.csr
 sf-conn.md
+t14-PLAN.MD
+T14-COMPLETION-SUMMARY.md

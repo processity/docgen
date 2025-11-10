@@ -35,6 +35,8 @@ tags:
     description: Health and readiness endpoints
   - name: document-generation
     description: Document generation endpoints
+  - name: worker
+    description: Worker poller control endpoints
 
 paths:
   /healthz:
@@ -278,6 +280,207 @@ paths:
                 message: 'LibreOffice conversion failed'
                 correlationId: '12345678-1234-4567-89ab-123456789012'
 
+  /worker/start:
+    post:
+      summary: Start the poller service
+      description: |
+        Starts the batch document generation poller. The poller runs every 15 seconds (active) or 60 seconds (idle),
+        fetching up to 20 QUEUED documents from Salesforce and processing them with up to 8 concurrent conversions.
+
+        **Flow:**
+        1. Query for QUEUED documents not locked or with expired locks
+        2. Lock documents sequentially (PATCH Status=PROCESSING, LockedUntil=now+2m)
+        3. Process documents concurrently (max 8 LibreOffice conversions)
+        4. Update status to SUCCEEDED/FAILED with retry backoff (1m/5m/15m)
+
+        **Adaptive Polling:**
+        - 15s interval when queue has work
+        - 60s interval when queue is idle
+
+        **Idempotent:** Returns 409 if poller is already running.
+      tags:
+        - worker
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Poller started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  isRunning:
+                    type: boolean
+                  correlationId:
+                    type: string
+              example:
+                message: 'Poller started successfully'
+                isRunning: true
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '409':
+          description: Poller is already running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  correlationId:
+                    type: string
+              example:
+                error: 'Poller is already running'
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /worker/stop:
+    post:
+      summary: Stop the poller service
+      description: |
+        Stops the batch document generation poller gracefully. Waits for in-flight jobs to complete
+        before shutting down.
+
+        **Graceful Shutdown:**
+        - Clears polling timer
+        - Waits for all in-flight document processing to complete
+        - Updates stats and logs shutdown
+
+        **Idempotent:** Returns 200 even if poller is not running.
+      tags:
+        - worker
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Poller stopped successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  isRunning:
+                    type: boolean
+                  correlationId:
+                    type: string
+              example:
+                message: 'Poller stopped successfully'
+                isRunning: false
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /worker/status:
+    get:
+      summary: Get current poller status
+      description: |
+        Returns the current operational status of the poller service.
+        Useful for health checks and monitoring.
+      tags:
+        - worker
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Current poller status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isRunning:
+                    type: boolean
+                    description: Whether the poller is currently running
+                  currentQueueDepth:
+                    type: number
+                    description: Number of documents found in last poll
+                  lastPollTime:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    description: Timestamp of last poll cycle
+                  correlationId:
+                    type: string
+              example:
+                isRunning: true
+                currentQueueDepth: 15
+                lastPollTime: '2025-11-10T10:30:45Z'
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /worker/stats:
+    get:
+      summary: Get detailed poller statistics
+      description: |
+        Returns comprehensive statistics about poller performance and processing history.
+        Useful for monitoring, dashboards, and alerting.
+      tags:
+        - worker
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Detailed poller statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isRunning:
+                    type: boolean
+                    description: Whether the poller is currently running
+                  currentQueueDepth:
+                    type: number
+                    description: Number of documents found in last poll
+                  totalProcessed:
+                    type: number
+                    description: Total documents processed since start
+                  totalSucceeded:
+                    type: number
+                    description: Total documents successfully completed
+                  totalFailed:
+                    type: number
+                    description: Total documents permanently failed
+                  totalRetries:
+                    type: number
+                    description: Total retry attempts across all documents
+                  lastPollTime:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    description: Timestamp of last poll cycle
+                  uptimeSeconds:
+                    type: number
+                    description: Seconds since poller was started
+                  correlationId:
+                    type: string
+              example:
+                isRunning: true
+                currentQueueDepth: 15
+                totalProcessed: 1234
+                totalSucceeded: 1200
+                totalFailed: 34
+                totalRetries: 89
+                lastPollTime: '2025-11-10T10:30:45Z'
+                uptimeSeconds: 3600
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     oauth2:
@@ -444,3 +647,28 @@ components:
           type: string
           description: Human-readable error message
           example: "body must have required property 'templateId'"
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid AAD JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            statusCode: 401
+            error: Unauthorized
+            message: 'Missing or invalid Bearer token'
+            correlationId: '12345678-1234-4567-89ab-123456789012'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            statusCode: 500
+            error: Internal Server Error
+            message: 'Unexpected server error'
+            correlationId: '12345678-1234-4567-89ab-123456789012'

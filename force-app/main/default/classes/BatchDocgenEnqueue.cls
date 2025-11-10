@@ -1,0 +1,247 @@
+/**
+ * Batch class for mass enqueueing of document generation jobs
+ *
+ * This batch class creates Generated_Document__c records with Status__c = 'QUEUED'
+ * for mass document generation. The Node.js poller worker will pick up these
+ * queued records and process them asynchronously.
+ *
+ * Usage:
+ *   List<Id> accountIds = new List<Id>{acc1.Id, acc2.Id, acc3.Id};
+ *   BatchDocgenEnqueue batch = new BatchDocgenEnqueue(templateId, accountIds, 'PDF');
+ *   Database.executeBatch(batch, 200);
+ *
+ * @group Batch
+ * @see Generated_Document__c
+ * @see DocgenEnvelopeService
+ */
+public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, Database.Stateful {
+
+    // State variables
+    private Id templateId;
+    private List<Id> recordIds;
+    private String outputFormat;
+    private Docgen_Template__c template;
+
+    // Statistics (tracked across batches via Database.Stateful)
+    private Integer successCount = 0;
+    private Integer failureCount = 0;
+    private List<String> errors = new List<String>();
+
+    /**
+     * Constructor
+     * @param templateId ID of the Docgen_Template__c record
+     * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
+     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @throws QueryException if template not found
+     */
+    public BatchDocgenEnqueue(Id templateId, List<Id> recordIds, String outputFormat) {
+        this.templateId = templateId;
+        this.recordIds = recordIds;
+        this.outputFormat = outputFormat;
+
+        // Validate and load template
+        if (templateId == null) {
+            throw new IllegalArgumentException('templateId cannot be null');
+        }
+
+        if (recordIds == null || recordIds.isEmpty()) {
+            throw new IllegalArgumentException('recordIds cannot be null or empty');
+        }
+
+        if (outputFormat != 'PDF' && outputFormat != 'DOCX') {
+            throw new IllegalArgumentException('outputFormat must be PDF or DOCX');
+        }
+
+        // Load template (will throw QueryException if not found)
+        List<Docgen_Template__c> templates = [
+            SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
+                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+            FROM Docgen_Template__c
+            WHERE Id = :templateId
+            LIMIT 1
+        ];
+
+        if (templates.isEmpty()) {
+            throw new QueryException('Template not found: ' + templateId);
+        }
+
+        this.template = templates[0];
+    }
+
+    /**
+     * Start method - returns iterable of record IDs
+     * @param bc BatchableContext
+     * @return Iterable of record IDs to process
+     */
+    public Iterable<Id> start(Database.BatchableContext bc) {
+        System.debug('BatchDocgenEnqueue starting: ' + recordIds.size() + ' records to process');
+        return recordIds;
+    }
+
+    /**
+     * Execute method - processes a batch of record IDs
+     * Creates Generated_Document__c records with Status=QUEUED for each record
+     * @param bc BatchableContext
+     * @param scope List of record IDs in this batch chunk
+     */
+    public void execute(Database.BatchableContext bc, List<Id> scope) {
+        System.debug('BatchDocgenEnqueue executing batch of ' + scope.size() + ' records');
+
+        List<Generated_Document__c> documentsToInsert = new List<Generated_Document__c>();
+
+        for (Id recordId : scope) {
+            try {
+                // Build envelope using DocgenEnvelopeService
+                DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.build(
+                    recordId,
+                    this.template,
+                    this.outputFormat,
+                    'en-GB', // Default locale (could be parameterized in future)
+                    'Europe/London' // Default timezone (could be parameterized in future)
+                );
+
+                // Serialize envelope to JSON
+                String requestJSON = DocgenEnvelopeService.toJSON(envelope);
+
+                // Generate correlation ID (for Generated_Document__c tracking only)
+                String correlationId = generateCorrelationId();
+
+                // Create Generated_Document__c record
+                Generated_Document__c doc = new Generated_Document__c(
+                    Template__c = this.templateId,
+                    Status__c = 'QUEUED',
+                    RequestJSON__c = requestJSON,
+                    RequestHash__c = envelope.requestHash,
+                    CorrelationId__c = correlationId,
+                    OutputFormat__c = this.outputFormat,
+                    Priority__c = 0, // Default priority
+                    Attempts__c = 0  // Start with 0 attempts
+                );
+
+                // Set parent lookups based on record type
+                setParentLookup(doc, recordId, envelope.parents);
+
+                documentsToInsert.add(doc);
+                successCount++;
+
+            } catch (Exception e) {
+                // Log error but continue processing other records
+                failureCount++;
+                String errorMsg = 'Error processing record ' + recordId + ': ' + e.getMessage();
+                errors.add(errorMsg);
+                System.debug(LoggingLevel.ERROR, errorMsg);
+            }
+        }
+
+        // Insert Generated_Document__c records
+        if (!documentsToInsert.isEmpty()) {
+            try {
+                Database.SaveResult[] results = Database.insert(documentsToInsert, false);
+
+                // Check for partial failures
+                for (Integer i = 0; i < results.size(); i++) {
+                    if (!results[i].isSuccess()) {
+                        successCount--; // Decrement success count
+                        failureCount++; // Increment failure count
+
+                        Database.Error error = results[i].getErrors()[0];
+                        String errorMsg = 'DML Error for record ' + scope[i] + ': ' +
+                                        error.getStatusCode() + ' - ' + error.getMessage();
+                        errors.add(errorMsg);
+                        System.debug(LoggingLevel.ERROR, errorMsg);
+                    }
+                }
+            } catch (DmlException e) {
+                // Handle batch insert failure
+                failureCount += documentsToInsert.size();
+                String errorMsg = 'Batch DML Exception: ' + e.getMessage();
+                errors.add(errorMsg);
+                System.debug(LoggingLevel.ERROR, errorMsg);
+            }
+        }
+    }
+
+    /**
+     * Finish method - logs completion statistics
+     * @param bc BatchableContext
+     */
+    public void finish(Database.BatchableContext bc) {
+        System.debug('========================================');
+        System.debug('BatchDocgenEnqueue completed');
+        System.debug('Template: ' + template.Name + ' (' + templateId + ')');
+        System.debug('Output Format: ' + outputFormat);
+        System.debug('Records Processed: ' + (successCount + failureCount));
+        System.debug('Successes: ' + successCount);
+        System.debug('Failures: ' + failureCount);
+
+        if (!errors.isEmpty()) {
+            System.debug('Errors encountered (' + errors.size() + '):');
+            for (String error : errors) {
+                System.debug('  - ' + error);
+            }
+        }
+
+        System.debug('========================================');
+
+        // Query actual count of queued documents for verification
+        Integer queuedCount = [
+            SELECT COUNT()
+            FROM Generated_Document__c
+            WHERE Template__c = :templateId
+            AND Status__c = 'QUEUED'
+        ];
+
+        System.debug('Total QUEUED documents for this template: ' + queuedCount);
+    }
+
+    /**
+     * Set parent lookup field based on record type
+     * @param doc Generated_Document__c record to update
+     * @param recordId ID of the parent record
+     * @param parents Map of parent IDs from envelope
+     */
+    private void setParentLookup(Generated_Document__c doc, Id recordId, Map<String, Id> parents) {
+        // Determine parent type from recordId prefix
+        String objectType = recordId.getSObjectType().getDescribe().getName();
+
+        if (objectType == 'Account') {
+            doc.Account__c = recordId;
+        } else if (objectType == 'Opportunity') {
+            doc.Opportunity__c = recordId;
+        } else if (objectType == 'Case') {
+            doc.Case__c = recordId;
+        }
+
+        // Also set additional parent lookups from envelope if available
+        if (parents != null) {
+            if (parents.containsKey('AccountId') && parents.get('AccountId') != null) {
+                doc.Account__c = parents.get('AccountId');
+            }
+            if (parents.containsKey('OpportunityId') && parents.get('OpportunityId') != null) {
+                doc.Opportunity__c = parents.get('OpportunityId');
+            }
+            if (parents.containsKey('CaseId') && parents.get('CaseId') != null) {
+                doc.Case__c = parents.get('CaseId');
+            }
+        }
+    }
+
+    /**
+     * Generate a UUID-style correlation ID
+     * @return String correlation ID (UUID v4 format)
+     */
+    private String generateCorrelationId() {
+        // Generate UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+        Blob b = Crypto.generateAESKey(128);
+        String hex = EncodingUtil.convertToHex(b);
+
+        // Format as UUID v4
+        String guid = hex.substring(0, 8) + '-' +
+                     hex.substring(8, 12) + '-' +
+                     '4' + hex.substring(13, 16) + '-' +
+                     hex.substring(16, 20) + '-' +
+                     hex.substring(20, 32);
+
+        return guid.toLowerCase();
+    }
+}

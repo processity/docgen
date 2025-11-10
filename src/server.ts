@@ -3,10 +3,12 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { healthRoutes } from './routes/health';
 import { generateRoutes } from './routes/generate';
 import { authTestRoutes } from './routes/auth-test';
+import { workerRoutes } from './routes/worker';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
 import { createSalesforceAuth } from './sf/auth';
+import { pollerService } from './worker';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -77,6 +79,7 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(generateRoutes);
   await app.register(authTestRoutes);
+  await app.register(workerRoutes, { prefix: '/worker' });
 
   return app;
 }
@@ -111,6 +114,16 @@ if (require.main === module) {
   const shutdown = async (signal: string) => {
     // eslint-disable-next-line no-console
     console.log(`\nReceived ${signal}, shutting down gracefully...`);
+
+    // Stop the poller if it's running
+    if (pollerService.isRunning()) {
+      // eslint-disable-next-line no-console
+      console.log('Stopping poller service...');
+      await pollerService.stop();
+      // eslint-disable-next-line no-console
+      console.log('Poller service stopped');
+    }
+
     process.exit(0);
   };
 

@@ -150,6 +150,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -163,6 +171,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -179,6 +195,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -197,6 +221,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -215,6 +247,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -233,6 +273,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -248,6 +296,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -273,6 +329,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -296,6 +360,14 @@ describe('Config', () => {
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
         // imageAllowlist is optional
       };
 

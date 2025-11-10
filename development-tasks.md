@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Overall Progress**: 13 of 18 tasks completed (72%)
+**Overall Progress**: 14 of 18 tasks completed (78%)
 
 ### Completed Tasks ✅
 - **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
@@ -18,26 +18,27 @@
 - **T-11**: LibreOffice Conversion Pool (2025-11-08)
 - **T-12**: Upload to Salesforce Files & Linking; Idempotency (2025-11-08)
 - **T-13**: `/generate` End-to-End Interactive Path (2025-11-09)
+- **T-14**: Batch Enqueue (Apex) & Node Poller Worker (2025-11-10)
 
 ### In Progress 🚧
 - None currently
 
 ### Upcoming Tasks 📋
-- **T-14**: Batch Enqueue (Apex) & Node Poller Worker - Next up
-- **T-15**: Observability with Azure Application Insights
+- **T-15**: Observability with Azure Application Insights - Next up
 - **T-16**: Containerization & Azure Container Apps Deployment
 - **T-17**: Security & Compliance Hardening
 - **T-18**: Performance, Failure Injection, Rollout & DocuSign Hooks
 
 ### Current Status
-- **Node.js Service**: Complete end-to-end interactive pipeline (T-13 ✅), Auth layer (T-08 ✅), Salesforce client (T-09 ✅), Template cache & merge (T-10 ✅), Conversion pool (T-11 ✅), File upload & linking (T-12 ✅)
+- **Node.js Service**: Complete end-to-end interactive pipeline (T-13 ✅), Auth layer (T-08 ✅), Salesforce client (T-09 ✅), Template cache & merge (T-10 ✅), Conversion pool (T-11 ✅), File upload & linking (T-12 ✅), Batch poller worker (T-14 ✅)
 - **Salesforce Components**: All Apex/LWC components built and tested
 - **Authentication**: Inbound AAD JWT ✅, Outbound JWT Bearer ✅
 - **Template System**: Cache with LRU eviction ✅, docx-templates integration ✅, Image allowlist ✅
 - **Conversion System**: LibreOffice pool with bounded concurrency (8 max) ✅, Timeout handling ✅, Robust cleanup ✅
 - **File Upload System**: ContentVersion upload ✅, Multi-parent linking ✅, Status tracking ✅, Idempotency (Apex-side) ✅
 - **Interactive Pipeline**: Full E2E `/generate` route ✅, Correlation ID tracing ✅, Error handling & status codes ✅, Metrics placeholders ✅
-- **Test Coverage**: 242 Node.js tests passing (22 new T-13 tests), 46 Apex tests all passing
+- **Batch Pipeline**: Node poller worker ✅, Lock management (2min TTL) ✅, Retry with backoff (1m/5m/15m) ✅, Status tracking & error handling ✅, Worker routes (start/stop/status/stats) ✅
+- **Test Coverage**: 290 Node.js tests passing (including 3 integration tests), 46 Apex tests all passing
 
 ---
 
@@ -1204,17 +1205,84 @@ sequenceDiagram
 
 **Definition of Done**: Poller processes queue deterministically; backoff & retries verified.
 **Timebox**: ≤2–3 days
+**Status**: ✅ **COMPLETED** (2025-11-10)
+
 **Progress checklist**
 
-* [ ] Apex batch/queueable created
-* [ ] Poller loop implemented (15s cadence)
-* [ ] Locking/backoff tested
-  **PR checklist**
-* [ ] Tests cover external behaviour and edge cases
-* [ ] Security & secrets handled per policy
-* [ ] Observability (logs/metrics/traces) added where relevant
-* [ ] Docs updated (README/Runbook/ADR)
-* [ ] Reviewer notes: risks, roll-back, toggles
+* [x] Apex batch/queueable created
+* [x] Poller loop implemented (15s cadence)
+* [x] Locking/backoff tested
+
+**PR checklist**
+* [x] Tests cover external behaviour and edge cases (290 Node.js tests passing)
+* [x] Security & secrets handled per policy (AAD auth on worker routes)
+* [x] Observability (logs/metrics/traces) added where relevant (structured logging, stats tracking)
+* [x] Docs updated (README/Runbook/ADR) (t14-PLAN.MD documented implementation)
+* [x] Reviewer notes: All 3 integration tests passing; worker routes functional
+
+**Completion Summary**:
+- **Branch**: feature/T-14
+- **Test Results**: 290 Node.js tests passing (including 3 new integration tests) ✅ | 46 Apex tests passing ✅
+- **Files Created**: 8 new files (~2,500 lines)
+  - `src/worker/poller.ts` (547 lines) - Main poller service with lock management & retry logic
+  - `src/worker/index.ts` (4 lines) - Module exports
+  - `src/routes/worker.ts` (383 lines) - Worker control routes (start/stop/status/stats)
+  - `test/worker/poller.test.ts` (634 lines) - 28 unit tests for poller service
+  - `test/worker/poller.integration.test.ts` (435 lines) - 3 integration tests with real Salesforce
+  - `test/routes/worker.test.ts` (383 lines) - 18 worker route tests
+  - `force-app/.../Generated_Document__c/fields/MergedDocxFileId__c.field-meta.xml` - New field
+  - `force-app/.../Generated_Document__c/fields/ScheduledRetryTime__c.field-meta.xml` - New field
+- **Files Modified**: 5 files
+  - `src/types.ts` (+52 lines) - PollerConfig, QueuedDocument, ProcessingResult interfaces
+  - `src/config/index.ts` (+22 lines) - Poller configuration (enabled, intervals, batch size, lock TTL, max attempts)
+  - `src/server.ts` (+17 lines) - Optional poller startup based on POLLER_ENABLED flag
+  - `force-app/.../permissionsets/Docgen_User.permissionset-meta.xml` (+10 lines) - Field permissions for new fields
+  - `test/config.test.ts` (+55 lines) - Added poller config to all test mocks
+- **Key Deliverables**:
+  - **PollerService Class**: Complete batch processing worker with resilience patterns
+    - Configurable polling: 15s active interval, 60s idle interval (when queue empty)
+    - Batch fetching: Up to 20 documents per poll (configurable via POLLER_BATCH_SIZE)
+    - Lock management: 2-minute TTL with LockedUntil__c field
+    - Concurrency control: Max 8 concurrent document processing (respects LibreOffice pool)
+    - Retry logic: Max 3 attempts with exponential backoff (1min → 5min → 15min)
+    - Error classification: Retryable (5xx, timeouts) vs non-retryable (404, 400, "not found")
+    - Status tracking: QUEUED → PROCESSING → SUCCEEDED/FAILED
+    - In-flight promise tracking: Graceful shutdown waits for active jobs
+    - Stats collection: totalProcessed, totalSucceeded, totalFailed, totalRetries, queue depth
+  - **Worker Control Routes** (AAD-protected):
+    - `POST /worker/start` - Start the poller service
+    - `POST /worker/stop` - Gracefully stop the poller (waits for in-flight jobs)
+    - `GET /worker/status` - Current status (running, queue depth, last poll time)
+    - `GET /worker/stats` - Detailed statistics (processed, succeeded, failed, retries)
+  - **Salesforce Fields** (deployed):
+    - `MergedDocxFileId__c` - ContentVersionId for merged DOCX (optional)
+    - `ScheduledRetryTime__c` - DateTime for next retry attempt
+  - **Integration Tests** (3 scenarios with real Salesforce):
+    - End-to-end document processing (QUEUED → SUCCEEDED)
+    - 404 template error handling (non-retryable → FAILED immediately)
+    - Lock TTL respect (prevents double-processing)
+  - **Test Fixes & Infrastructure**:
+    - Fixed Salesforce auth initialization in integration tests (`createSalesforceAuth()` before `getSalesforceAuth()`)
+    - Fixed property access errors (`appConfig.auth.tenantId` → `appConfig.azureTenantId`)
+    - Fixed JWKS mocking in worker route tests (use real JWK from helper)
+    - Added poller cleanup in afterEach to prevent hanging tests
+    - Added missing Salesforce fields and deployed to org
+    - Fixed error detection logic for 404 responses (" 404" pattern matching)
+    - Added `GeneratedDate__formatted` to test data
+    - Correlation ID length fixed (under 36 chars)
+  - **Configuration**:
+    - `POLLER_ENABLED` - Enable/disable poller (default: false)
+    - `POLLER_INTERVAL_MS` - Active polling interval (default: 15000ms)
+    - `POLLER_IDLE_INTERVAL_MS` - Idle polling interval when queue empty (default: 60000ms)
+    - `POLLER_BATCH_SIZE` - Documents per poll (default: 20)
+    - `POLLER_LOCK_TTL_MS` - Lock duration (default: 120000ms = 2 minutes)
+    - `POLLER_MAX_ATTEMPTS` - Retry limit (default: 3)
+  - **Observability**:
+    - Structured logging with correlation IDs throughout
+    - Per-document correlation ID for tracing
+    - Poll cycle metrics (duration, count, queue depth)
+    - Statistics tracking for monitoring
+    - Graceful error handling with detailed logging
 
 ---
 

@@ -35,6 +35,8 @@ export interface AppConfig {
   conversionTimeout: number;
   conversionWorkdir: string;
   conversionMaxConcurrent: number;
+  // Worker Poller settings (T-14)
+  poller: PollerConfig;
 }
 
 export interface CorrelationContext {
@@ -308,4 +310,84 @@ export interface FileUploadResult {
  */
 export interface CorrelationOptions {
   correlationId?: string;
+}
+
+// Worker Poller Types (T-14)
+
+/**
+ * Queued document record from Salesforce
+ * Represents a Generated_Document__c record with Status__c = 'QUEUED'
+ */
+export interface QueuedDocument {
+  Id: string;
+  Status__c: 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
+  RequestJSON__c: string;
+  CorrelationId__c: string;
+  Template__c: string;
+  Attempts__c: number;
+  CreatedDate: string;
+  Account__c?: string | null;
+  Opportunity__c?: string | null;
+  Case__c?: string | null;
+  LockedUntil__c?: string | null;
+  Priority__c?: number;
+  Error__c?: string | null;
+}
+
+/**
+ * Configuration for the poller worker
+ */
+export interface PollerConfig {
+  /** Whether the poller is enabled (default: false) */
+  enabled: boolean;
+  /** Polling interval in milliseconds when active (default: 15000 = 15s) */
+  intervalMs: number;
+  /** Polling interval in milliseconds when idle (default: 60000 = 60s) */
+  idleIntervalMs: number;
+  /** Number of documents to fetch per batch (default: 20) */
+  batchSize: number;
+  /** Lock TTL in milliseconds (default: 120000 = 2min) */
+  lockTtlMs: number;
+  /** Maximum number of retry attempts (default: 3) */
+  maxAttempts: number;
+}
+
+/**
+ * Runtime statistics for the poller
+ */
+export interface PollerStats {
+  /** Whether the poller is currently running */
+  isRunning: boolean;
+  /** Current queue depth (documents found in last poll) */
+  currentQueueDepth: number;
+  /** Last poll timestamp (ISO 8601) */
+  lastPollTime: string | null;
+  /** Total documents processed since startup */
+  totalProcessed: number;
+  /** Total successful completions since startup */
+  totalSucceeded: number;
+  /** Total failures since startup */
+  totalFailed: number;
+  /** Total retries since startup */
+  totalRetries: number;
+  /** Uptime in seconds since poller started */
+  uptimeSeconds: number;
+}
+
+/**
+ * Result of processing a single document
+ */
+export interface ProcessingResult {
+  /** Document ID */
+  documentId: string;
+  /** Whether processing succeeded */
+  success: boolean;
+  /** ContentVersionId if successful */
+  contentVersionId?: string;
+  /** Error message if failed */
+  error?: string;
+  /** Whether the error is retryable */
+  retryable?: boolean;
+  /** Whether a retry was scheduled */
+  retried?: boolean;
 }

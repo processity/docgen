@@ -55,6 +55,15 @@ export function loadConfig(): AppConfig {
       process.env.CONVERSION_MAX_CONCURRENT || '8',
       10
     ),
+    // Worker Poller settings (T-14)
+    poller: {
+      enabled: process.env.POLLER_ENABLED === 'true',
+      intervalMs: parseInt(process.env.POLLER_INTERVAL_MS || '15000', 10),
+      idleIntervalMs: parseInt(process.env.POLLER_IDLE_INTERVAL_MS || '60000', 10),
+      batchSize: parseInt(process.env.POLLER_BATCH_SIZE || '20', 10),
+      lockTtlMs: parseInt(process.env.POLLER_LOCK_TTL_MS || '120000', 10),
+      maxAttempts: parseInt(process.env.POLLER_MAX_ATTEMPTS || '3', 10),
+    },
   };
 }
 
