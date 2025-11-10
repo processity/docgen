@@ -158,6 +158,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -179,6 +180,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -203,6 +205,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -229,6 +232,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -255,6 +259,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -281,6 +286,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -304,6 +310,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).toThrow(
@@ -337,6 +344,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
       };
 
       expect(() => validateConfig(config)).not.toThrow();
@@ -368,6 +376,7 @@ describe('Config', () => {
           lockTtlMs: 120000,
           maxAttempts: 3,
         },
+        enableTelemetry: true,
         // imageAllowlist is optional
       };
 

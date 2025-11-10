@@ -8,6 +8,7 @@ import { mergeTemplate } from '../templates/merge';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { loadConfig } from '../config';
+import { trackMetric } from '../obs';
 
 // Extend FastifyInstance type to include authenticate
 declare module 'fastify' {
@@ -214,7 +215,15 @@ async function generateHandler(
     // Calculate duration for metrics
     const duration = Date.now() - startTime;
 
-    // Emit metrics (placeholder for future metrics library integration in T-15)
+    // Track metrics with App Insights
+    trackMetric('docgen_duration_ms', duration, {
+      templateId: request.body.templateId,
+      outputFormat: request.body.outputFormat,
+      mode: 'interactive',
+      correlationId,
+    });
+
+    // Also log for debugging
     request.log.info(
       {
         metric: 'docgen_duration_ms',
@@ -224,7 +233,7 @@ async function generateHandler(
         mode: 'interactive',
         correlationId,
       },
-      'Metric: Document generation duration'
+      'Document generation duration tracked'
     );
 
     // Log success
@@ -268,7 +277,16 @@ async function generateHandler(
       }
     }
 
-    // Emit failure metric
+    // Track failure metric with App Insights
+    trackMetric('docgen_failures_total', 1, {
+      reason: failureReason,
+      templateId: request.body.templateId,
+      outputFormat: request.body.outputFormat,
+      mode: 'interactive',
+      correlationId,
+    });
+
+    // Also log for debugging
     request.log.info(
       {
         metric: 'docgen_failures_total',
@@ -279,7 +297,7 @@ async function generateHandler(
         correlationId,
         duration,
       },
-      'Metric: Document generation failure'
+      'Document generation failure tracked'
     );
 
     // Log the error with details

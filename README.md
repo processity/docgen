@@ -639,6 +639,132 @@ curl -X POST https://docgen.azurecontainerapps.io/worker/stop \
 - [OpenAPI Worker Endpoints](./openapi.yaml#L283-L482) - Complete API documentation
 - [T-14 Implementation Plan](./t14-PLAN.MD) - Detailed design decisions
 
+---
+
+## Observability & Monitoring (T-15)
+
+The service integrates **Azure Application Insights** via OpenTelemetry for comprehensive observability.
+
+### Metrics Tracked
+
+#### Document Generation Metrics
+
+| Metric | Type | Dimensions | Description |
+|--------|------|------------|-------------|
+| `docgen_duration_ms` | Histogram | templateId, outputFormat, mode, correlationId | Document generation duration (for P50/P95/P99 analysis) |
+| `docgen_failures_total` | Counter | reason, templateId, outputFormat, mode, correlationId | Failure counter with categorized reasons |
+| `queue_depth` | Gauge | correlationId | Current number of queued documents (poller only) |
+| `retries_total` | Counter | attempt, documentId, reason, correlationId | Retry attempts counter |
+
+#### Cache Metrics
+
+| Metric | Type | Dimensions | Description |
+|--------|------|------------|-------------|
+| `template_cache_hit` | Counter | templateId | Template cache hit counter |
+| `template_cache_miss` | Counter | templateId | Template cache miss counter |
+
+#### Conversion Pool Metrics
+
+| Metric | Type | Dimensions | Description |
+|--------|------|------------|-------------|
+| `conversion_pool_active` | Gauge | - | Active conversion jobs |
+| `conversion_pool_queued` | Gauge | - | Queued conversion jobs |
+
+### Dependency Tracking
+
+All external dependencies are tracked with duration, success/failure status, and correlation IDs:
+
+- **Salesforce REST API**: Template downloads, file uploads, record updates
+- **LibreOffice**: DOCX→PDF conversion operations
+
+### Failure Reasons
+
+Failures are categorized for targeted troubleshooting:
+
+- `template_not_found` - Template missing or invalid ContentVersionId
+- `validation_error` - Invalid request payload
+- `conversion_timeout` - LibreOffice conversion exceeded timeout (default 60s)
+- `conversion_failed` - LibreOffice process crashed or failed
+- `upload_failed` - Salesforce file upload or API error
+- `unknown` - Uncategorized errors
+
+### Correlation ID Propagation
+
+Every request/document includes a correlation ID that flows through:
+1. HTTP request headers (`x-correlation-id`)
+2. All log entries (structured JSON logging via Pino)
+3. All metrics and dependencies (as dimension)
+4. Salesforce API calls (propagated via header)
+5. Error responses (included in response body)
+
+This enables **distributed tracing** across Salesforce, Node.js service, and LibreOffice conversions.
+
+### Configuration
+
+```bash
+# Azure Application Insights connection string (required for production)
+AZURE_MONITOR_CONNECTION_STRING=InstrumentationKey=<key>;IngestionEndpoint=https://<region>.in.applicationinsights.azure.com/
+
+# Optional: Disable telemetry (enabled by default in non-test environments)
+ENABLE_TELEMETRY=false
+```
+
+### Dashboards & Alerts
+
+Pre-built dashboards and alert rules are documented in [docs/dashboards.md](./docs/dashboards.md):
+
+- **Overview Dashboard**: Request rate, success rate, P95 duration, failure breakdown
+- **Performance Dashboard**: Duration distribution, dependency performance, cache hit rate
+- **Reliability Dashboard**: Failure trends, retry analysis, error breakdown
+- **Capacity Dashboard**: Queue depth, conversion pool utilization, processing rate
+
+### Key Performance Indicators (KPIs)
+
+| KPI | Target | Warning | Critical |
+|-----|--------|---------|----------|
+| Success Rate | ≥99.5% | <97% | <95% |
+| P95 Duration | ≤10s | >15s | >30s |
+| Queue Depth | <50 | >100 | >500 |
+| Retry Rate | <5% | >10% | >25% |
+| Cache Hit Rate | ≥95% | <80% | <70% |
+
+### Sample KQL Queries
+
+**Request Rate**:
+```kusto
+customMetrics
+| where name == "docgen_duration_ms"
+| where timestamp > ago(1h)
+| summarize RequestCount = count() by bin(timestamp, 1m)
+| render timechart
+```
+
+**P95 Duration**:
+```kusto
+customMetrics
+| where name == "docgen_duration_ms"
+| where timestamp > ago(1h)
+| summarize P95 = percentile(value, 95) by bin(timestamp, 5m)
+| render timechart
+```
+
+**Failure Breakdown**:
+```kusto
+customMetrics
+| where name == "docgen_failures_total"
+| where timestamp > ago(24h)
+| extend reason = tostring(customDimensions.reason)
+| summarize FailureCount = sum(value) by reason
+| render piechart
+```
+
+**See Also**:
+- [Dashboards & Monitoring Guide](./docs/dashboards.md) - Complete KQL queries, alerts, and runbooks
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/) - OpenTelemetry concepts
+- [Azure Application Insights](https://learn.microsoft.com/en-us/azure/azure-monitor/app/app-insights-overview) - App Insights overview
+
+---
+
 ## Project Structure
 
 ```
@@ -649,6 +775,7 @@ docgen/
 │   ├── templates/    # Template cache, service, and merge (T-10)
 │   ├── convert/      # LibreOffice conversion pool (T-11)
 │   ├── worker/       # Batch poller worker (T-14)
+│   ├── obs/          # Observability (Azure App Insights + OpenTelemetry) (T-15)
 │   ├── routes/       # Fastify routes (generate, health, worker)
 │   ├── plugins/      # Fastify plugins (auth)
 │   ├── config/       # Configuration management
@@ -658,6 +785,7 @@ docgen/
 │   ├── worker/       # Poller tests (unit + integration)
 │   ├── routes/       # Route tests (generate, health, worker)
 │   ├── convert.test.ts  # Conversion pool tests
+│   ├── obs.test.ts   # Observability tests (metrics, dependencies)
 │   └── helpers/      # Test utilities (JWT helpers, test DOCX generation)
 ├── force-app/        # Salesforce Apex and metadata
 │   └── main/default/
@@ -666,6 +794,7 @@ docgen/
 ├── docs/             # Documentation and ADRs
 │   ├── template-authoring.md  # Template authoring guide
 │   ├── idempotency.md         # Idempotency strategy
+│   ├── dashboards.md          # Monitoring dashboards & KQL queries (T-15)
 │   └── adr/          # Architecture Decision Records
 └── dist/             # Compiled JavaScript (gitignored)
 ```

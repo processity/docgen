@@ -4,6 +4,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { ConversionOptions, ConversionPoolStats } from '../types';
 import { createLogger } from '../utils/logger';
+import { trackDependency } from '../obs';
 
 const logger = createLogger('convert:soffice');
 const execFileAsync = promisify(execFile);
@@ -82,6 +83,8 @@ export class LibreOfficeConverter {
     // Acquire slot in the pool (may queue if pool is full)
     await this.acquireSlot(correlationId);
 
+    const startTime = Date.now();
+
     try {
       this.stats.activeJobs = this.activeJobs;
       this.stats.totalConversions++;
@@ -93,6 +96,17 @@ export class LibreOfficeConverter {
         workdir,
         correlationId
       );
+
+      const duration = Date.now() - startTime;
+
+      // Track successful dependency
+      trackDependency({
+        type: 'LibreOffice',
+        name: 'DOCX to PDF conversion',
+        duration,
+        success: true,
+        correlationId,
+      });
 
       this.stats.completedJobs++;
       logger.info(
@@ -106,11 +120,24 @@ export class LibreOfficeConverter {
 
       return result;
     } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Track failed dependency
+      trackDependency({
+        type: 'LibreOffice',
+        name: 'DOCX to PDF conversion',
+        duration,
+        success: false,
+        correlationId,
+        error: errorMessage,
+      });
+
       this.stats.failedJobs++;
       logger.error(
         {
           correlationId,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
           stats: this.stats,
         },
         'Conversion failed'

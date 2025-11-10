@@ -9,6 +9,7 @@ import { loadConfig } from './config';
 import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
 import { createSalesforceAuth } from './sf/auth';
 import { pollerService } from './worker';
+import { initializeAppInsights } from './obs';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -19,6 +20,9 @@ dotenv.config();
  */
 export async function build(): Promise<FastifyInstance> {
   const config = loadConfig();
+
+  // Initialize Azure Application Insights (T-15)
+  initializeAppInsights();
 
   // Initialize Salesforce authentication if configured
   if (config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey) {

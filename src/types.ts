@@ -37,6 +37,9 @@ export interface AppConfig {
   conversionMaxConcurrent: number;
   // Worker Poller settings (T-14)
   poller: PollerConfig;
+  // Azure Application Insights settings (T-15)
+  azureMonitorConnectionString?: string;
+  enableTelemetry: boolean;
 }
 
 export interface CorrelationContext {

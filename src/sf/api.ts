@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { SalesforceAuth } from './auth';
 import { createLogger } from '../utils/logger';
+import { trackDependency } from '../obs';
 
 const logger = createLogger('sf:api');
 
@@ -185,19 +186,49 @@ export class SalesforceApi {
 
       logger.debug({ method, url, attempt, correlationId: options?.correlationId }, 'Salesforce API request');
 
-      const response = await axios({
-        method,
-        url,
-        headers,
-        data: body,
-      });
+      const startTime = Date.now();
 
-      logger.debug(
-        { method, url, status: response.status, correlationId: options?.correlationId },
-        'Salesforce API response'
-      );
+      try {
+        const response = await axios({
+          method,
+          url,
+          headers,
+          data: body,
+        });
 
-      return response.data as T;
+        const duration = Date.now() - startTime;
+
+        // Track successful dependency
+        trackDependency({
+          type: 'Salesforce REST API',
+          name: `${method} ${path}`,
+          duration,
+          success: true,
+          correlationId: options?.correlationId || 'unknown',
+        });
+
+        logger.debug(
+          { method, url, status: response.status, correlationId: options?.correlationId },
+          'Salesforce API response'
+        );
+
+        return response.data as T;
+      } catch (err) {
+        const duration = Date.now() - startTime;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+
+        // Track failed dependency
+        trackDependency({
+          type: 'Salesforce REST API',
+          name: `${method} ${path}`,
+          duration,
+          success: false,
+          correlationId: options?.correlationId || 'unknown',
+          error: errorMessage,
+        });
+
+        throw err;
+      }
     } catch (error: unknown) {
       return this.handleError<T>(error, method, path, body, options, attempt, hasRefreshedToken);
     }

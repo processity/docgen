@@ -10,6 +10,7 @@ import {
   createContentDocumentLinks,
   updateGeneratedDocument,
 } from '../sf/files';
+import { trackMetric, trackGauge } from '../obs';
 import type {
   QueuedDocument,
   PollerStats,
@@ -168,6 +169,11 @@ export class PollerService {
       const documents = await this.fetchQueuedDocuments();
       this.setQueueDepth(documents.length);
 
+      // Track queue depth metric
+      trackGauge('queue_depth', documents.length, {
+        correlationId,
+      });
+
       if (documents.length === 0) {
         log.debug('No documents to process');
         return;
@@ -309,6 +315,9 @@ export class PollerService {
 
     log.info('Processing document');
 
+    const startTime = Date.now(); // Track start time for metrics
+    const request: DocgenRequest = JSON.parse(doc.RequestJSON__c); // Parse once for the whole function
+
     try {
       // Initialize Salesforce API and template service
       const sfAuth = getSalesforceAuth();
@@ -317,9 +326,6 @@ export class PollerService {
       }
       const sfApi = new SalesforceApi(sfAuth, `https://${config.sfDomain}`);
       const templateService = new TemplateService(sfApi);
-
-      // Parse request JSON
-      const request: DocgenRequest = JSON.parse(doc.RequestJSON__c);
 
       // Fetch template
       log.debug({ templateId: request.templateId }, 'Fetching template');
@@ -389,6 +395,15 @@ export class PollerService {
       // Update document status to SUCCEEDED
       await this.handleSuccess(doc.Id, uploadResult.contentVersionId, mergedDocxFileId);
 
+      // Track success metrics
+      const duration = Date.now() - startTime;
+      trackMetric('docgen_duration_ms', duration, {
+        templateId: request.templateId,
+        outputFormat: request.outputFormat,
+        mode: 'batch',
+        correlationId: doc.CorrelationId__c,
+      });
+
       log.info({ contentVersionId: uploadResult.contentVersionId }, 'Document processed successfully');
 
       return {
@@ -399,11 +414,36 @@ export class PollerService {
     } catch (error: any) {
       log.error({ error }, 'Failed to process document');
 
+      // Determine failure reason for metrics
+      let failureReason = 'unknown';
+      if (error instanceof Error) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          failureReason = 'template_not_found';
+        } else if (error.message.includes('validation') || error.message.includes('invalid')) {
+          failureReason = 'validation_error';
+        } else if (error.message.includes('timeout')) {
+          failureReason = 'conversion_timeout';
+        } else if (error.message.includes('conversion failed')) {
+          failureReason = 'conversion_failed';
+        } else if (error.message.includes('upload failed') || error.message.includes('Salesforce API')) {
+          failureReason = 'upload_failed';
+        }
+      }
+
+      // Track failure metrics
+      trackMetric('docgen_failures_total', 1, {
+        reason: failureReason,
+        templateId: request.templateId,
+        outputFormat: request.outputFormat,
+        mode: 'batch',
+        correlationId: doc.CorrelationId__c,
+      });
+
       // Determine if error is retryable
       const retryable = this.isRetryableError(error);
 
       // Handle failure
-      await this.handleFailure(doc.Id, doc.Attempts__c, error.message, retryable);
+      await this.handleFailure(doc.Id, doc.Attempts__c, error.message, retryable, doc.CorrelationId__c);
 
       return {
         success: false,
@@ -454,7 +494,8 @@ export class PollerService {
     documentId: string,
     currentAttempts: number,
     errorMessage: string,
-    retryable: boolean
+    retryable: boolean,
+    correlationId?: string
   ): Promise<void> {
     const newAttempts = currentAttempts + 1;
 
@@ -477,6 +518,14 @@ export class PollerService {
           Attempts__c: newAttempts,
           Error__c: `Attempt ${newAttempts} failed: ${errorMessage}`,
           ScheduledRetryTime__c: scheduledRetryTime,
+        });
+
+        // Track retry metric
+        trackMetric('retries_total', 1, {
+          attempt: newAttempts,
+          documentId,
+          reason: retryable ? errorMessage.substring(0, 50) : 'non_retryable',
+          correlationId: correlationId || documentId,
         });
 
         logger.info(

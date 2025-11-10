@@ -64,6 +64,9 @@ export function loadConfig(): AppConfig {
       lockTtlMs: parseInt(process.env.POLLER_LOCK_TTL_MS || '120000', 10),
       maxAttempts: parseInt(process.env.POLLER_MAX_ATTEMPTS || '3', 10),
     },
+    // Azure Application Insights settings (T-15)
+    azureMonitorConnectionString: process.env.AZURE_MONITOR_CONNECTION_STRING,
+    enableTelemetry: process.env.ENABLE_TELEMETRY !== 'false', // Enabled by default, can be explicitly disabled
   };
 }
 
