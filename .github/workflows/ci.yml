@@ -31,7 +31,7 @@ jobs:
       - name: Install LibreOffice
         run: |
           sudo apt-get update
-          sudo apt-get install -y libreoffice libreoffice-writer --no-install-recommends
+          sudo apt-get install -y libreoffice libreoffice-writer libreoffice-java-common default-jre --no-install-recommends
           soffice --version
 
       - name: Run linter
