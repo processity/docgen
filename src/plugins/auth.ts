@@ -47,15 +47,15 @@ export function createAuthPreHandler(): preHandlerHookHandler {
     }
 
     if (!verifier) {
-      // In non-production environments without AAD config, allow requests through
-      // This allows local development and testing without full Azure AD setup
-      if (config.nodeEnv !== 'production') {
-        request.log.warn({ correlationId }, 'AAD verifier not initialized - allowing request in non-production');
+      // In development without AAD config, allow requests through
+      // This allows local development without full Azure AD setup
+      if (config.nodeEnv === 'development') {
+        request.log.warn({ correlationId }, 'AAD verifier not initialized - allowing request in development');
         return;
       }
 
-      // In production, AAD configuration is required
-      request.log.error({ correlationId }, 'AAD verifier not initialized in production');
+      // In production or test, AAD configuration is required
+      request.log.error({ correlationId }, 'AAD verifier not initialized');
       reply.code(500).send({
         error: 'Internal Server Error',
         message: 'Authentication service not configured',
