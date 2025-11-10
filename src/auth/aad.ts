@@ -85,7 +85,7 @@ export class AADJWTVerifier {
    * Verify JWT token
    */
   async verifyToken(token: string): Promise<DecodedToken> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       // First decode to get the kid
       const decoded = jwt.decode(token, { complete: true });
 
@@ -100,56 +100,56 @@ export class AADJWTVerifier {
         return;
       }
 
-      try {
-        // Get the signing key from JWKS
-        const signingKey = await this.getSigningKey(kid);
-
-        // Verify the token
-        jwt.verify(
-          token,
-          signingKey,
-          {
-            algorithms: ['RS256'],
-            issuer: this.issuer,
-            audience: this.audience,
-          },
-          (err, decoded) => {
-            if (err) {
-              if (err.name === 'TokenExpiredError') {
-                reject(new Error('Token has expired'));
-              } else if (err.name === 'NotBeforeError') {
-                reject(new Error('Token is not yet valid'));
-              } else if (err.name === 'JsonWebTokenError') {
-                if (err.message.includes('audience')) {
-                  reject(new Error(`Invalid audience: expected ${this.audience}`));
-                } else if (err.message.includes('issuer')) {
-                  reject(new Error(`Invalid issuer: expected ${this.issuer}`));
-                } else if (err.message.includes('signature')) {
-                  reject(new Error('Invalid token signature'));
+      // Get the signing key from JWKS (async operation)
+      this.getSigningKey(kid)
+        .then((signingKey) => {
+          // Verify the token
+          jwt.verify(
+            token,
+            signingKey,
+            {
+              algorithms: ['RS256'],
+              issuer: this.issuer,
+              audience: this.audience,
+            },
+            (err, decoded) => {
+              if (err) {
+                if (err.name === 'TokenExpiredError') {
+                  reject(new Error('Token has expired'));
+                } else if (err.name === 'NotBeforeError') {
+                  reject(new Error('Token is not yet valid'));
+                } else if (err.name === 'JsonWebTokenError') {
+                  if (err.message.includes('audience')) {
+                    reject(new Error(`Invalid audience: expected ${this.audience}`));
+                  } else if (err.message.includes('issuer')) {
+                    reject(new Error(`Invalid issuer: expected ${this.issuer}`));
+                  } else if (err.message.includes('signature')) {
+                    reject(new Error('Invalid token signature'));
+                  } else {
+                    reject(new Error(`Invalid token: ${err.message}`));
+                  }
                 } else {
-                  reject(new Error(`Invalid token: ${err.message}`));
+                  reject(err);
                 }
-              } else {
-                reject(err);
+                return;
               }
-              return;
-            }
 
-            if (!decoded || typeof decoded === 'string') {
-              reject(new Error('Invalid token payload'));
-              return;
-            }
+              if (!decoded || typeof decoded === 'string') {
+                reject(new Error('Invalid token payload'));
+                return;
+              }
 
-            resolve(decoded as DecodedToken);
+              resolve(decoded as DecodedToken);
+            }
+          );
+        })
+        .catch((error) => {
+          if (error instanceof Error) {
+            reject(new Error(`Unable to verify token: ${error.message}`));
+          } else {
+            reject(new Error('Unable to verify token'));
           }
-        );
-      } catch (error) {
-        if (error instanceof Error) {
-          reject(new Error(`Unable to verify token: ${error.message}`));
-        } else {
-          reject(new Error('Unable to verify token'));
-        }
-      }
+        });
     });
   }
 
@@ -164,12 +164,7 @@ export class AADJWTVerifier {
       throw new Error('Missing authorization header or invalid format');
     }
 
-    try {
-      return await this.verifyToken(token);
-    } catch (error) {
-      // Re-throw with appropriate error message
-      throw error;
-    }
+    return await this.verifyToken(token);
   }
 
   /**
