@@ -1,18 +1,52 @@
+import { config as dotenvConfig } from 'dotenv';
 import supertest from 'supertest';
 import nock from 'nock';
 import { build } from '../../src/server';
 import { loadConfig } from '../../src/config';
+import { createSalesforceAuth } from '../../src/sf/auth';
 import { generateValidJWT } from '../helpers/jwt-helper';
 import type { FastifyInstance } from 'fastify';
 
-describe('Worker Routes', () => {
+// Load environment variables
+dotenvConfig();
+
+// Check if we have Salesforce credentials
+const appConfig = loadConfig();
+const hasCredentials = !!(
+  appConfig.sfDomain &&
+  appConfig.sfUsername &&
+  appConfig.sfClientId &&
+  appConfig.sfPrivateKey
+);
+
+// Skip tests if credentials are not available
+const describeWithAuth = hasCredentials ? describe : describe.skip;
+
+if (!hasCredentials) {
+  console.log(`
+================================================================================
+SKIPPING WORKER ROUTE TESTS: Missing Salesforce credentials.
+
+To run these tests locally, create a .env file with Salesforce credentials.
+================================================================================
+  `);
+}
+
+describeWithAuth('Worker Routes', () => {
   let app: FastifyInstance;
   let request: ReturnType<typeof supertest>;
-  const config = loadConfig();
-  const sfDomain = config.sfDomain;
+  const sfDomain = appConfig.sfDomain;
   const baseUrl = `https://${sfDomain}`;
 
   beforeAll(async () => {
+    // Initialize real Salesforce auth
+    createSalesforceAuth({
+      sfDomain: appConfig.sfDomain!,
+      sfUsername: appConfig.sfUsername!,
+      sfClientId: appConfig.sfClientId!,
+      sfPrivateKey: appConfig.sfPrivateKey!,
+    });
+
     app = await build();
     await app.ready();
     request = supertest(app.server);
@@ -25,29 +59,20 @@ describe('Worker Routes', () => {
   beforeEach(() => {
     nock.cleanAll();
 
-    // Mock SF auth
-    nock(baseUrl)
-      .post('/services/oauth2/token')
-      .reply(200, {
-        access_token: 'test-token',
-        instance_url: baseUrl,
-        token_type: 'Bearer',
-        issued_at: Date.now().toString(),
-      })
-      .persist();
+    // Note: We don't mock /services/oauth2/token - auth is real!
 
     // Mock JWKS for AAD validation
-    const jwksUri = `https://login.microsoftonline.com/${config.auth.tenantId}/discovery/v2.0/keys`;
+    const jwksUri = `https://login.microsoftonline.com/${appConfig.auth.tenantId}/discovery/v2.0/keys`;
     nock('https://login.microsoftonline.com')
-      .get(`/${config.auth.tenantId}/v2.0/.well-known/openid-configuration`)
+      .get(`/${appConfig.auth.tenantId}/v2.0/.well-known/openid-configuration`)
       .reply(200, {
-        issuer: `https://login.microsoftonline.com/${config.auth.tenantId}/v2.0`,
+        issuer: `https://login.microsoftonline.com/${appConfig.auth.tenantId}/v2.0`,
         jwks_uri: jwksUri,
       })
       .persist();
 
     nock('https://login.microsoftonline.com')
-      .get(`/${config.auth.tenantId}/discovery/v2.0/keys`)
+      .get(`/${appConfig.auth.tenantId}/discovery/v2.0/keys`)
       .reply(200, {
         keys: [
           {
