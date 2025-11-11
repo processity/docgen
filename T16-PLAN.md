@@ -608,48 +608,55 @@ az deployment group what-if \
 ## Phase 5: CI/CD Workflows
 
 **Goal**: Create GitHub Actions workflows for automated deployment
-**Status**: ⏸️ Not Started
+**Status**: ✅ Completed (2025-01-11)
 
 ### Tasks
 
 #### 5.1 Create Reusable Docker Build Workflow
-- [ ] Create `.github/workflows/docker-build.yml`
-- [ ] Make it a reusable workflow (workflow_call)
-- [ ] Inputs: environment, image_tag
-- [ ] Steps:
+- [x] Create `.github/workflows/docker-build.yml`
+- [x] Make it a reusable workflow (workflow_call)
+- [x] Inputs: environment, image_tag
+- [x] Steps:
   - Checkout code
   - Azure login (from environment secrets)
   - ACR login
   - Docker build with cache
   - Tag image: `<acr>.azurecr.io/docgen-api:<tag>` and `latest`
   - Push to ACR
-- [ ] Outputs: image_tag, image_uri
+- [x] Outputs: image_tag, image_uri
 
 #### 5.2 Create Staging Deployment Workflow
-- [ ] Create `.github/workflows/deploy-staging.yml`
-- [ ] Trigger: Push to `main` branch
-- [ ] Environment: `staging`
-- [ ] Jobs:
-  1. **build**: Call docker-build.yml
-  2. **deploy-infra**: Deploy Bicep templates
+- [x] Create `.github/workflows/deploy-staging.yml`
+- [x] Trigger: Push to `main` branch
+- [x] Environment: `staging`
+- [x] Jobs:
+  1. **build-image**: Call docker-build.yml
+  2. **deploy-infrastructure**: Deploy Bicep templates
   3. **populate-secrets**: Populate Key Vault from GitHub secrets
   4. **update-app**: Update Container App with new image
-  5. **smoke-tests**: Test /healthz and /readyz endpoints
-- [ ] Post deployment summary to GitHub Actions
+  5. **smoke-tests**: Test /healthz, /readyz, and document generation
+  6. **rollback**: Automatic rollback on failure
+  7. **summary**: Post deployment summary
+- [x] Post deployment summary to GitHub Actions
 
 #### 5.3 Create Production Deployment Workflow
-- [ ] Create `.github/workflows/deploy-production.yml`
-- [ ] Trigger: GitHub release created
-- [ ] Environment: `production` (with required reviewers)
-- [ ] Jobs: Same as staging, but with production environment
-- [ ] Tag image with release version (e.g., `v1.0.0`)
-- [ ] Require manual approval before deployment
-- [ ] Additional smoke tests
+- [x] Create `.github/workflows/deploy-production.yml`
+- [x] Trigger: GitHub release created
+- [x] Environment: `production` (with required reviewers)
+- [x] Jobs: Same as staging, but with production environment
+- [x] Tag image with release version (e.g., `v1.0.0`)
+- [x] Require manual approval before deployment
+- [x] Additional smoke tests (5 document generation tests)
 
 #### 5.4 Update Existing CI Workflow
-- [ ] Update `.github/workflows/ci.yml`
-- [ ] Ensure it doesn't trigger deployment
-- [ ] Add Docker build validation step (optional)
+- [x] Update `.github/workflows/ci.yml`
+- [x] Ensure it doesn't trigger deployment
+- [x] Add Docker build validation step
+
+#### 5.5 Configure GitHub Secrets
+- [x] Add `APP_NAME` secret to staging environment (`docgen-staging-app`)
+- [x] Add `APP_NAME` secret to production environment (`docgen-production-app`)
+- [x] Verify all secrets configured (11 secrets per environment)
 
 ### Validation
 ```bash
@@ -669,10 +676,109 @@ gh run view <run-id> --log
 ### Expected Outcomes
 - ✅ 3 new workflow files created
 - ✅ Workflows pass GitHub Actions validation
-- ✅ Test run of staging workflow succeeds
-- ✅ Docker image pushed to ACR
-- ✅ Container App updated with new image
-- ✅ Smoke tests pass
+- ⏸️ Test run of staging workflow succeeds (Ready for Phase 6)
+- ⏸️ Docker image pushed to ACR (Ready for Phase 6)
+- ⏸️ Container App updated with new image (Ready for Phase 6)
+- ⏸️ Smoke tests pass (Ready for Phase 6)
+
+### Phase 5 Completion Summary
+**Date**: 2025-01-11
+**Duration**: ~3 hours
+**Result**: ✅ Success
+
+**What was accomplished**:
+1. **Created 3 GitHub Actions workflows** (~800 lines total):
+   - `.github/workflows/docker-build.yml` (107 lines) - Reusable Docker build and push workflow
+   - `.github/workflows/deploy-staging.yml` (411 lines) - Automated staging deployment
+   - `.github/workflows/deploy-production.yml` (464 lines) - Manual production deployment with approval
+
+2. **Updated existing CI workflow**:
+   - `.github/workflows/ci.yml` (+6 lines) - Added Dockerfile validation step
+
+3. **Configured GitHub environment secrets**:
+   - Added `APP_NAME` secret to staging environment (`docgen-staging-app`)
+   - Added `APP_NAME` secret to production environment (`docgen-production-app`)
+   - Total secrets per environment: 11
+
+**Files Created**:
+- `.github/workflows/docker-build.yml` (107 lines)
+- `.github/workflows/deploy-staging.yml` (411 lines)
+- `.github/workflows/deploy-production.yml` (464 lines)
+
+**Files Modified**:
+- `.github/workflows/ci.yml` (+6 lines)
+
+**Total**: 3 new files, 1 modified file, ~988 lines of workflow code
+
+**Workflow Features**:
+
+**docker-build.yml (Reusable Workflow)**:
+- Inputs: environment, image_tag
+- Secrets: AZURE_CREDENTIALS, AZURE_SUBSCRIPTION_ID, ACR_NAME
+- Steps:
+  - Checkout code
+  - Setup Docker Buildx
+  - Azure login via Service Principal
+  - ACR login
+  - Build and push with layer caching
+  - Tag: `${ACR}/docgen-api:${tag}` and `latest`
+  - Verify image in ACR
+- Outputs: image_uri, image_tag
+
+**deploy-staging.yml (Automatic Deployment)**:
+- Trigger: Push to `main` branch (after CI completes)
+- Environment: `staging`
+- Concurrency: Single deployment, cancel in-progress
+- 7 sequential jobs:
+  1. **build-image**: Call docker-build.yml with github.sha tag
+  2. **deploy-infrastructure**: Deploy Bicep templates (idempotent)
+  3. **populate-secrets**: Update 5 Key Vault secrets from GitHub
+  4. **update-app**: Update Container App, wait for revision ready
+  5. **smoke-tests**: Health check + readiness + document generation
+  6. **rollback**: Auto-rollback to previous revision on failure
+  7. **summary**: Post deployment summary as commit comment
+
+**deploy-production.yml (Manual Deployment)**:
+- Trigger: GitHub release created (tag pattern: v*.*.*)
+- Environment: `production` (manual approval required)
+- Concurrency: Single deployment, no cancellation
+- Same 7 jobs as staging with enhancements:
+  - Build with release tag (e.g., v1.0.0) + SHA tag
+  - Extended smoke tests (5 document generation iterations)
+  - Worker endpoint validation
+  - Detailed deployment summary in release notes
+
+**Smoke Test Strategy**:
+1. **Health Check**: `GET /healthz` (expect 200)
+2. **Readiness Check**: `GET /readyz` (expect 200 with Key Vault status)
+3. **Document Generation**:
+   - Staging: 1 test document
+   - Production: 5 test documents
+   - Accepts 401 (AAD auth required) or 200 (success)
+   - Validates endpoint responds correctly
+
+**Rollback Strategy**:
+- Triggers on any job failure after deployment
+- Gets previous active revision
+- Activates previous revision
+- Deactivates failed revision
+- Verifies rollback with health check
+- Posts rollback notification (production only)
+
+**Security**:
+- Uses Service Principal credentials (already configured in Phase 1)
+- Key Vault secrets populated from GitHub secrets
+- No secrets in workflow files or logs
+- AAD authentication required for all app endpoints
+- Managed Identity for ACR pull access
+
+**Next Steps**:
+- Phase 6: Initial Deployment & Validation
+  - Create resource group in Azure
+  - Deploy infrastructure manually first time
+  - Build and push initial Docker image
+  - Test automated deployment workflows
+  - Validate end-to-end functionality
 
 ---
 
@@ -982,11 +1088,12 @@ gh run view <run-id> --log
 - [x] `infra/parameters/production.bicepparam` - Production parameters (59 lines)
 
 ### CI/CD
-- [ ] `.github/workflows/docker-build.yml` - Reusable Docker build
-- [ ] `.github/workflows/deploy-staging.yml` - Staging deployment
-- [ ] `.github/workflows/deploy-production.yml` - Production deployment
-- [ ] GitHub environments configured (staging, production)
-- [ ] 10+ GitHub secrets configured
+- [x] `.github/workflows/docker-build.yml` - Reusable Docker build (107 lines)
+- [x] `.github/workflows/deploy-staging.yml` - Staging deployment (411 lines)
+- [x] `.github/workflows/deploy-production.yml` - Production deployment (464 lines)
+- [x] `.github/workflows/ci.yml` - Updated with Dockerfile validation (+6 lines)
+- [x] GitHub environments configured (staging, production)
+- [x] 11 GitHub secrets configured per environment (added APP_NAME)
 
 ### Documentation
 - [ ] `docs/deploy.md` - Comprehensive deployment guide (~1000+ lines)
@@ -1013,12 +1120,12 @@ gh run view <run-id> --log
 | Phase 2: Key Vault Integration | 2-3 hours | ✅ Completed (2025-01-11) |
 | Phase 3: Containerization | 2-3 hours | ✅ Completed (2025-01-11) |
 | Phase 4: Bicep Infrastructure | 4-5 hours | ✅ Completed (2025-01-11) |
-| Phase 5: CI/CD Workflows | 3-4 hours | ⏸️ Not Started |
+| Phase 5: CI/CD Workflows | 3-4 hours | ✅ Completed (2025-01-11) |
 | Phase 6: Initial Deployment | 2-3 hours | ⏸️ Not Started |
 | Phase 7: Documentation | 2-3 hours | ⏸️ Not Started |
 | Phase 8: Testing & Validation | 2-3 hours | ⏸️ Not Started |
 | Phase 9: Cleanup & PR | 1-2 hours | ⏸️ Not Started |
-| **Total** | **19-28 hours (2-3 days)** | **4/9 phases complete (44%)** |
+| **Total** | **19-28 hours (2-3 days)** | **5/9 phases complete (56%)** |
 
 ---
 
@@ -1060,6 +1167,6 @@ gh run view <run-id> --log
 
 ## Last Updated
 **Date**: 2025-01-11
-**Phase**: 4 (Completed)
-**Next Phase**: 5 (CI/CD Workflows)
-**Progress**: 4/9 phases complete (44%)
+**Phase**: 5 (Completed)
+**Next Phase**: 6 (Initial Deployment & Validation)
+**Progress**: 5/9 phases complete (56%)

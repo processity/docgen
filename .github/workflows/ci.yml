@@ -136,6 +136,12 @@ jobs:
           fi
           echo "Build successful: dist/server.js exists"
 
+      - name: Validate Dockerfile
+        run: |
+          echo "🐳 Validating Dockerfile..."
+          docker build --target builder -t docgen-api:ci-test .
+          echo "✅ Dockerfile validation successful"
+
   salesforce:
     name: Salesforce Validation
     runs-on: ubuntu-latest

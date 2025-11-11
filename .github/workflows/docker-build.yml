@@ -1,0 +1,97 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (staging or production)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag (e.g., github.sha or v1.0.0)'
+        required: true
+        type: string
+    secrets:
+      AZURE_CREDENTIALS:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+      ACR_NAME:
+        required: true
+    outputs:
+      image_uri:
+        description: 'Full URI of the pushed Docker image'
+        value: ${{ jobs.build.outputs.image_uri }}
+      image_tag:
+        description: 'Tag used for the Docker image'
+        value: ${{ jobs.build.outputs.image_tag }}
+
+jobs:
+  build:
+    name: Build and Push to ACR
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-push.outputs.image_uri }}
+      image_tag: ${{ inputs.image_tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: |
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          az account show
+
+      - name: Login to Azure Container Registry
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:${{ inputs.image_tag }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:latest
+          cache-from: type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:buildcache
+          cache-to: type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:buildcache,mode=max
+          build-args: |
+            NODE_ENV=production
+
+      - name: Set output
+        id: set-output
+        run: |
+          IMAGE_URI="${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:${{ inputs.image_tag }}"
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "✅ Docker image built and pushed successfully"
+          echo "📦 Image URI: ${IMAGE_URI}"
+          echo "🏷️ Tags: ${{ inputs.image_tag }}, latest"
+
+      - name: Verify image in ACR
+        run: |
+          echo "Verifying image exists in ACR..."
+          az acr repository show \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository docgen-api \
+            --output table
+
+          echo "Image tags:"
+          az acr repository show-tags \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository docgen-api \
+            --orderby time_desc \
+            --output table \
+            | head -10

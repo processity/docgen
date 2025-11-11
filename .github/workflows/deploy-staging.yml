@@ -1,0 +1,490 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: true
+
+env:
+  AZURE_REGION: eastus
+
+jobs:
+  build-image:
+    name: Build and Push Docker Image
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      environment: staging
+      image_tag: ${{ github.sha }}
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+
+  deploy-infrastructure:
+    name: Deploy Azure Infrastructure
+    runs-on: ubuntu-latest
+    needs: build-image
+    environment: staging
+    outputs:
+      app_url: ${{ steps.get-url.outputs.app_url }}
+      app_insights_connection_string: ${{ steps.deploy.outputs.appInsightsConnectionString }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep template
+        id: deploy
+        run: |
+          echo "🚀 Deploying infrastructure to staging..."
+
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/staging.bicepparam \
+            --parameters imageTag=${{ github.sha }} \
+            --output json)
+
+          echo "✅ Infrastructure deployment completed"
+
+          # Extract outputs
+          APP_FQDN=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appFqdn.value')
+          APP_INSIGHTS_CONN=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appInsightsConnectionString.value')
+
+          echo "app_fqdn=${APP_FQDN}" >> $GITHUB_OUTPUT
+          echo "appInsightsConnectionString=${APP_INSIGHTS_CONN}" >> $GITHUB_OUTPUT
+
+          echo "📍 App URL: https://${APP_FQDN}"
+
+      - name: Get Container App URL
+        id: get-url
+        run: |
+          APP_FQDN=$(az containerapp show \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+
+          APP_URL="https://${APP_FQDN}"
+          echo "app_url=${APP_URL}" >> $GITHUB_OUTPUT
+          echo "📍 Container App URL: ${APP_URL}"
+
+      - name: Verify resources deployed
+        run: |
+          echo "Verifying deployed resources..."
+          az resource list \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --output table
+
+  populate-secrets:
+    name: Populate Key Vault Secrets
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    environment: staging
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set Salesforce secrets
+        run: |
+          echo "🔐 Populating Key Vault secrets..."
+
+          # Set SF_CLIENT_ID
+          az keyvault secret set \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --name SF-CLIENT-ID \
+            --value "${{ secrets.SF_CLIENT_ID }}" \
+            --output none
+          echo "✅ SF-CLIENT-ID set"
+
+          # Set SF_USERNAME
+          az keyvault secret set \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --name SF-USERNAME \
+            --value "${{ secrets.SF_USERNAME }}" \
+            --output none
+          echo "✅ SF-USERNAME set"
+
+          # Set SF_DOMAIN
+          az keyvault secret set \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --name SF-DOMAIN \
+            --value "${{ secrets.SF_DOMAIN }}" \
+            --output none
+          echo "✅ SF-DOMAIN set"
+
+      - name: Set SF_PRIVATE_KEY secret
+        run: |
+          # Create temp file for private key
+          echo "${{ secrets.SF_PRIVATE_KEY }}" > /tmp/sf_private_key.pem
+
+          # Set private key from file
+          az keyvault secret set \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --name SF-PRIVATE-KEY \
+            --file /tmp/sf_private_key.pem \
+            --output none
+
+          # Clean up temp file
+          rm /tmp/sf_private_key.pem
+          echo "✅ SF-PRIVATE-KEY set"
+
+      - name: Set Application Insights connection string
+        run: |
+          # Get App Insights connection string from deployment output
+          CONN_STRING=$(az monitor app-insights component show \
+            --app docgen-staging-insights \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query connectionString -o tsv)
+
+          az keyvault secret set \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --name AZURE-MONITOR-CONNECTION-STRING \
+            --value "${CONN_STRING}" \
+            --output none
+          echo "✅ AZURE-MONITOR-CONNECTION-STRING set"
+
+      - name: Verify secrets
+        run: |
+          echo "Verifying Key Vault secrets..."
+          az keyvault secret list \
+            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
+            --query "[].{Name:name, Enabled:attributes.enabled}" \
+            --output table
+
+  update-app:
+    name: Update Container App
+    runs-on: ubuntu-latest
+    needs: [build-image, deploy-infrastructure, populate-secrets]
+    environment: staging
+    outputs:
+      revision_name: ${{ steps.update.outputs.revision_name }}
+      previous_revision: ${{ steps.get-current.outputs.current_revision }}
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get current active revision
+        id: get-current
+        run: |
+          CURRENT_REV=$(az containerapp revision list \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query "[?properties.active==\`true\`].name | [0]" -o tsv)
+
+          echo "current_revision=${CURRENT_REV}" >> $GITHUB_OUTPUT
+          echo "📌 Current active revision: ${CURRENT_REV}"
+
+      - name: Update Container App with new image
+        id: update
+        run: |
+          echo "🔄 Updating Container App with image: ${{ needs.build-image.outputs.image_uri }}"
+
+          az containerapp update \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image ${{ needs.build-image.outputs.image_uri }} \
+            --output none
+
+          echo "✅ Container App updated"
+
+      - name: Wait for new revision to be ready
+        id: wait-revision
+        run: |
+          echo "⏳ Waiting for new revision to become active..."
+
+          MAX_ATTEMPTS=30
+          SLEEP_SECONDS=10
+          ATTEMPT=0
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            REVISION_STATUS=$(az containerapp revision list \
+              --name ${{ secrets.APP_NAME }} \
+              --resource-group ${{ secrets.RESOURCE_GROUP }} \
+              --query "[?properties.active==\`true\`] | [0].properties.provisioningState" -o tsv)
+
+            echo "Attempt $((ATTEMPT+1))/$MAX_ATTEMPTS: Revision status: ${REVISION_STATUS}"
+
+            if [ "$REVISION_STATUS" == "Provisioned" ]; then
+              NEW_REV=$(az containerapp revision list \
+                --name ${{ secrets.APP_NAME }} \
+                --resource-group ${{ secrets.RESOURCE_GROUP }} \
+                --query "[?properties.active==\`true\`].name | [0]" -o tsv)
+
+              echo "revision_name=${NEW_REV}" >> $GITHUB_OUTPUT
+              echo "✅ New revision is active: ${NEW_REV}"
+              exit 0
+            fi
+
+            ATTEMPT=$((ATTEMPT+1))
+            sleep $SLEEP_SECONDS
+          done
+
+          echo "❌ Timeout waiting for revision to become active"
+          exit 1
+
+      - name: Show revision details
+        run: |
+          echo "📋 Active revisions:"
+          az containerapp revision list \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query "[?properties.active==\`true\`].{Name:name, Created:properties.createdTime, Replicas:properties.replicas, Traffic:properties.trafficWeight}" \
+            --output table
+
+  smoke-tests:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, update-app]
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for app to be ready
+        run: |
+          echo "⏳ Waiting for app to be fully ready..."
+          sleep 30
+
+      - name: Test /healthz endpoint
+        run: |
+          echo "🏥 Testing health endpoint..."
+          APP_URL="${{ needs.deploy-infrastructure.outputs.app_url }}"
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" ${APP_URL}/healthz)
+
+          if [ "$RESPONSE" != "200" ]; then
+            echo "❌ Health check failed with status: ${RESPONSE}"
+            exit 1
+          fi
+
+          echo "✅ Health check passed"
+
+      - name: Test /readyz endpoint
+        run: |
+          echo "🔍 Testing readiness endpoint..."
+          APP_URL="${{ needs.deploy-infrastructure.outputs.app_url }}"
+
+          RESPONSE=$(curl -s ${APP_URL}/readyz)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${APP_URL}/readyz)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Readiness check failed with status: ${HTTP_CODE}"
+            echo "Response: ${RESPONSE}"
+            exit 1
+          fi
+
+          echo "✅ Readiness check passed"
+          echo "Response: ${RESPONSE}"
+
+      - name: Test document generation
+        run: |
+          echo "📄 Testing document generation..."
+          APP_URL="${{ needs.deploy-infrastructure.outputs.app_url }}"
+
+          # Create test payload
+          cat > /tmp/test-payload.json <<'EOF'
+          {
+            "templateId": "068Qy000000L6MNIA0",
+            "outputFileName": "Test_Document.pdf",
+            "outputFormat": "PDF",
+            "locale": "en-GB",
+            "timezone": "Europe/London",
+            "generatedDocumentId": "a00Qy000000TEST123",
+            "options": {
+              "storeMergedDocx": false,
+              "returnDocxToBrowser": false
+            },
+            "parents": {
+              "AccountId": "001Qy00000TEST123",
+              "OpportunityId": null,
+              "CaseId": null
+            },
+            "data": {
+              "Account": {
+                "Name": "Smoke Test Account",
+                "BillingCity": "London",
+                "AnnualRevenue__formatted": "£100,000"
+              }
+            },
+            "requestHash": "sha256:smoketest$(date +%s)"
+          }
+          EOF
+
+          # Note: This will fail without valid AAD token authentication
+          # For now, we'll just verify the endpoint responds (even with 401)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d @/tmp/test-payload.json \
+            ${APP_URL}/generate)
+
+          # Accept 401 (auth required) or 200 (success) as valid responses
+          if [ "$HTTP_CODE" != "401" ] && [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Document generation test failed with unexpected status: ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "✅ Document generation endpoint responding (status: ${HTTP_CODE})"
+          rm /tmp/test-payload.json
+
+      - name: Summary
+        run: |
+          echo "🎉 All smoke tests passed!"
+          echo "📍 App URL: ${{ needs.deploy-infrastructure.outputs.app_url }}"
+          echo "🏷️ Image Tag: ${{ github.sha }}"
+          echo "📦 Revision: ${{ needs.update-app.outputs.revision_name }}"
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [update-app, smoke-tests]
+    if: failure()
+    environment: staging
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get previous revision
+        id: get-previous
+        run: |
+          PREV_REV="${{ needs.update-app.outputs.previous_revision }}"
+          echo "previous_revision=${PREV_REV}" >> $GITHUB_OUTPUT
+          echo "🔄 Rolling back to previous revision: ${PREV_REV}"
+
+      - name: Activate previous revision
+        run: |
+          PREV_REV="${{ steps.get-previous.outputs.previous_revision }}"
+
+          if [ -z "$PREV_REV" ] || [ "$PREV_REV" == "null" ]; then
+            echo "⚠️ No previous revision found, cannot rollback"
+            exit 1
+          fi
+
+          echo "🔄 Activating previous revision: ${PREV_REV}"
+
+          az containerapp revision activate \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --revision ${PREV_REV}
+
+          echo "✅ Rollback completed successfully"
+
+      - name: Verify rollback
+        run: |
+          echo "🔍 Verifying rollback..."
+
+          ACTIVE_REV=$(az containerapp revision list \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query "[?properties.active==\`true\`].name | [0]" -o tsv)
+
+          echo "📌 Active revision after rollback: ${ACTIVE_REV}"
+
+          # Test health endpoint
+          APP_URL=$(az containerapp show \
+            --name ${{ secrets.APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+
+          sleep 15  # Wait for rollback to stabilize
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://${APP_URL}/healthz)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Health check failed after rollback: ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "✅ Rollback verified, app is healthy"
+
+      - name: Deactivate failed revision
+        run: |
+          FAILED_REV="${{ needs.update-app.outputs.revision_name }}"
+
+          if [ -n "$FAILED_REV" ] && [ "$FAILED_REV" != "null" ]; then
+            echo "🗑️ Deactivating failed revision: ${FAILED_REV}"
+
+            az containerapp revision deactivate \
+              --name ${{ secrets.APP_NAME }} \
+              --resource-group ${{ secrets.RESOURCE_GROUP }} \
+              --revision ${FAILED_REV} || true
+
+            echo "✅ Failed revision deactivated"
+          fi
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [build-image, deploy-infrastructure, update-app, smoke-tests]
+    if: always()
+    environment: staging
+
+    steps:
+      - name: Post deployment summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deploymentStatus = '${{ needs.smoke-tests.result }}';
+            const statusEmoji = deploymentStatus === 'success' ? '✅' : '❌';
+            const statusText = deploymentStatus === 'success' ? 'SUCCESS' : 'FAILED';
+
+            const summary = `## ${statusEmoji} Staging Deployment ${statusText}
+
+            **Commit:** \`${{ github.sha }}\`
+            **Triggered by:** @${{ github.actor }}
+            **App URL:** ${{ needs.deploy-infrastructure.outputs.app_url }}
+
+            ### Deployment Details
+            - **Image Tag:** \`${{ github.sha }}\`
+            - **Image URI:** \`${{ needs.build-image.outputs.image_uri }}\`
+            - **Revision:** \`${{ needs.update-app.outputs.revision_name }}\`
+            - **Resource Group:** \`${{ secrets.RESOURCE_GROUP }}\`
+            - **Container App:** \`${{ secrets.APP_NAME }}\`
+
+            ### Job Results
+            - Build Image: ${{ needs.build-image.result }}
+            - Deploy Infrastructure: ${{ needs.deploy-infrastructure.result }}
+            - Update App: ${{ needs.update-app.result }}
+            - Smoke Tests: ${{ needs.smoke-tests.result }}
+
+            **Workflow Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: summary
+            });
