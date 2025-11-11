@@ -1,0 +1,62 @@
+# Dependencies (will be installed in container)
+node_modules
+
+# Build artifacts (will be compiled in container)
+dist
+*.tsbuildinfo
+
+# Test files and coverage
+test
+coverage
+.nyc_output
+jest.config*.js
+
+# E2E tests
+e2e
+playwright-report
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Salesforce files (not needed in Node.js container)
+force-app
+.sfdx
+.sf
+
+# Infrastructure code (not needed in runtime)
+infra
+
+# Git and GitHub
+.git
+.gitignore
+.github
+
+# Environment and secrets (should be provided at runtime)
+.env
+.env.*
+keys
+*.pem
+*.key
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp
+temp
+*.tmp
