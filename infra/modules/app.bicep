@@ -277,15 +277,16 @@ resource existingKeyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
 }
 
 // Grant Container App Managed Identity the "Key Vault Secrets User" role on Key Vault
-resource keyVaultSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVaultId, containerApp.id, keyVaultSecretsUserRoleId)
-  scope: existingKeyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
-    principalId: containerApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// TEMPORARILY COMMENTED OUT - Role assignment already exists and was created manually
+// resource keyVaultSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVaultId, containerApp.id, keyVaultSecretsUserRoleId)
+//   scope: existingKeyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
+//     principalId: containerApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
 
 // Reference to existing Container Registry (to create role assignment on it)
 resource existingAcr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
@@ -293,15 +294,16 @@ resource existingAcr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview'
 }
 
 // Grant Container App Managed Identity the "AcrPull" role on Container Registry
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acrId, containerApp.id, acrPullRoleId)
-  scope: existingAcr
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
-    principalId: containerApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// TEMPORARILY COMMENTED OUT - Role assignment already exists and was created manually
+// resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(acrId, containerApp.id, acrPullRoleId)
+//   scope: existingAcr
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+//     principalId: containerApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
 
 // ============================================================================
 // Outputs
