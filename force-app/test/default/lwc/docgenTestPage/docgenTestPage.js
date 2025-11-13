@@ -1,5 +1,5 @@
 import { LightningElement, wire, track } from 'lwc';
-import { CurrentPageReference } from 'lightning/navigation';
+import { CurrentPageReference, NavigationMixin } from 'lightning/navigation';
 import { getRecord } from 'lightning/uiRecordApi';
 import getGeneratedDocuments from '@salesforce/apex/DocgenTestPageController.getGeneratedDocuments';
 
@@ -43,27 +43,60 @@ const COLUMNS = [
     }
 ];
 
-export default class DocgenTestPage extends LightningElement {
+export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     @track recordId;
     @track generatedDocuments;
-    @track showError = false;
     columns = COLUMNS;
+    pageRef;
 
     // Get the current page reference to read URL parameters
     @wire(CurrentPageReference)
     getPageReference(pageRef) {
+        this.pageRef = pageRef;
         if (pageRef && pageRef.state) {
             // Read c__recordId from URL parameters
             const recordIdParam = pageRef.state.c__recordId;
-            if (recordIdParam) {
+            if (recordIdParam && recordIdParam !== this.recordId) {
                 this.recordId = recordIdParam;
-                this.showError = false;
                 this.loadGeneratedDocuments();
-            } else {
-                this.showError = true;
-                this.recordId = null;
             }
         }
+    }
+
+    // Handle account selection from lookup
+    handleAccountSelection(event) {
+        this.recordId = event.detail.recordId;
+
+        if (this.recordId) {
+            // Update URL to include the selected account ID
+            this.updateUrlWithRecordId(this.recordId);
+            this.loadGeneratedDocuments();
+        } else {
+            // Clear the recordId from URL
+            this.updateUrlWithRecordId(null);
+            this.generatedDocuments = null;
+        }
+    }
+
+    // Update the URL with the recordId parameter
+    updateUrlWithRecordId(recordId) {
+        const newState = {
+            ...this.pageRef.state
+        };
+
+        if (recordId) {
+            newState.c__recordId = recordId;
+        } else {
+            delete newState.c__recordId;
+        }
+
+        this[NavigationMixin.Navigate]({
+            type: 'standard__navItemPage',
+            attributes: {
+                apiName: this.pageRef.attributes.apiName
+            },
+            state: newState
+        }, true); // true = replace current history entry
     }
 
     // Load generated documents for the account

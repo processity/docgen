@@ -1,15 +1,22 @@
 <template>
     <lightning-card title="Docgen E2E Test Page" icon-name="custom:custom78">
-        <!-- Error message if no recordId provided -->
-        <template if:true={showError}>
-            <div class="slds-m-around_medium slds-text-color_error">
-                <lightning-icon icon-name="utility:error" size="small" variant="error" class="slds-m-right_x-small"></lightning-icon>
-                <strong>Error:</strong> No Account record ID provided. Please add c__recordId parameter to the URL.
-            </div>
-        </template>
+        <!-- Account Lookup Section (always shown) -->
+        <div class="slds-m-around_medium">
+            <lightning-card title="Select an Account" icon-name="standard:account">
+                <div class="slds-p-around_medium">
+                    <lightning-record-picker
+                        label="Account"
+                        placeholder="Search Accounts..."
+                        object-api-name="Account"
+                        value={recordId}
+                        onchange={handleAccountSelection}>
+                    </lightning-record-picker>
+                </div>
+            </lightning-card>
+        </div>
 
         <!-- Main content when recordId is available -->
-        <template if:false={showError}>
+        <template if:true={recordId}>
             <!-- Account Details Section -->
             <div class="slds-m-around_medium">
                 <lightning-card title="Account Details" icon-name="standard:account">
