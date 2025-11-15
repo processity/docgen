@@ -94,7 +94,7 @@ jobs:
 
           echo "✅ Named Credential configured with CI backend URL"
 
-      - name: Configure External Credential with AAD secrets (Apex)
+      - name: Configure External Credential with AAD secrets
         id: apex-config
         continue-on-error: true
         env:
@@ -103,39 +103,10 @@ jobs:
         run: |
           echo "Configuring External Credential with AAD client credentials via Apex..."
 
-          # Create temporary Apex script with environment variables injected
-          cat > /tmp/configure-cred.apex << 'APEX_SCRIPT'
-          String clientId = '${{ secrets.AAD_CLIENT_ID }}';
-          String clientSecret = '${{ secrets.AAD_CLIENT_SECRET }}';
-
-          try {
-              ConnectApi.CredentialInput credentialInput = new ConnectApi.CredentialInput();
-              credentialInput.authenticationProtocol = ConnectApi.CredentialAuthenticationProtocol.Oauth;
-              credentialInput.externalCredential = 'Docgen_AAD_Credential_CI';
-              credentialInput.principalType = ConnectApi.CredentialPrincipalType.NamedPrincipal;
-              credentialInput.principalName = 'CI';
-
-              Map<String, ConnectApi.CredentialValueInput> credentials = new Map<String, ConnectApi.CredentialValueInput>();
-
-              ConnectApi.CredentialValueInput clientIdInput = new ConnectApi.CredentialValueInput();
-              clientIdInput.value = clientId;
-              clientIdInput.encrypted = false;
-              credentials.put('ClientId', clientIdInput);
-
-              ConnectApi.CredentialValueInput clientSecretInput = new ConnectApi.CredentialValueInput();
-              clientSecretInput.value = clientSecret;
-              clientSecretInput.encrypted = true;
-              credentials.put('ClientSecret', clientSecretInput);
-
-              credentialInput.credentials = credentials;
-
-              ConnectApi.NamedCredentials.patchCredential(credentialInput);
-              System.debug('✅ External Credential configured successfully via Apex');
-          } catch (Exception e) {
-              System.debug('❌ Failed: ' + e.getMessage());
-              throw e;
-          }
-          APEX_SCRIPT
+          # Replace placeholders in template and create temporary Apex script
+          sed -e "s|{{CLIENT_ID}}|$AAD_CLIENT_ID|g" \
+              -e "s|{{CLIENT_SECRET}}|$AAD_CLIENT_SECRET|g" \
+              scripts/ConfigureExternalCredential.apex > /tmp/configure-cred.apex
 
           # Execute Apex script
           sf apex run --file /tmp/configure-cred.apex
@@ -143,26 +114,7 @@ jobs:
           if [ $? -eq 0 ]; then
             echo "✅ External Credential configured successfully via Apex ConnectApi"
           else
-            echo "⚠️  Apex configuration failed, will try Playwright fallback"
-            exit 1
-          fi
-
-      - name: Configure External Credential with AAD secrets (Playwright fallback)
-        if: steps.apex-config.outcome == 'failure'
-        env:
-          AAD_CLIENT_ID: ${{ secrets.AAD_CLIENT_ID }}
-          AAD_CLIENT_SECRET: ${{ secrets.AAD_CLIENT_SECRET }}
-        run: |
-          echo "Configuring External Credential via Playwright UI automation (fallback)..."
-
-          npx ts-node e2e/helpers/configure-external-credential.ts \
-            --client-id="${{ secrets.AAD_CLIENT_ID }}" \
-            --client-secret="${{ secrets.AAD_CLIENT_SECRET }}"
-
-          if [ $? -eq 0 ]; then
-            echo "✅ External Credential configured successfully via Playwright"
-          else
-            echo "❌ Both Apex and Playwright configuration failed"
+            echo "⚠️  Apex configuration failed to set credentials"
             exit 1
           fi
 
