@@ -357,7 +357,7 @@ test.describe('docgenButton Component - Real Backend Tests', () => {
 
     // Verify OutputFileId is populated
     expect(doc.OutputFileId__c).toBeTruthy();
-    expect(doc.OutputFileId__c).toMatch(/^069/); // ContentVersion ID prefix
+    expect(doc.OutputFileId__c).toMatch(/^068/); // ContentVersion ID prefix
 
     // Query ContentVersion to verify PDF was uploaded
     console.log('\nVerifying PDF file was uploaded to Salesforce...');
