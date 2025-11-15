@@ -64,17 +64,9 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy main metadata
+      - name: Deploy Salesforce metadata
         run: |
-          sf project deploy start \
-            --source-dir force-app/main \
-            --wait 10
-
-      - name: Deploy test metadata
-        run: |
-          sf project deploy start \
-            --source-dir force-app/test \
-            --wait 10
+          sf project deploy start --source-dir force-app --wait 10
 
       - name: Configure Named Credential with CI backend URL
         run: |
