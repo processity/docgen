@@ -25,6 +25,7 @@ jobs:
   ensure-resource-group:
     name: Ensure CI Resource Group Exists
     runs-on: ubuntu-latest
+    environment: ci
 
     steps:
       - name: Azure Login
@@ -68,6 +69,7 @@ jobs:
     name: Deploy CI Backend Infrastructure
     runs-on: ubuntu-latest
     needs: build-image
+    environment: ci
     outputs:
       backend_url: ${{ steps.get-url.outputs.backend_url }}
 
@@ -121,6 +123,7 @@ jobs:
     name: Populate CI Key Vault Secrets
     runs-on: ubuntu-latest
     needs: deploy-ci-backend
+    environment: ci
 
     steps:
       - name: Azure Login
