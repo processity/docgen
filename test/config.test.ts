@@ -199,7 +199,7 @@ describe('Config', () => {
       expect(() => validateConfig(config)).not.toThrow();
     });
 
-    it('should throw error for production with missing sfDomain', () => {
+    it('should throw error for production with missing Salesforce auth (no JWT or SFDX Auth URL)', () => {
       const config: AppConfig = {
         port: 8080,
         nodeEnv: 'production',
@@ -207,6 +207,9 @@ describe('Config', () => {
         azureTenantId: 'tenant-id',
         clientId: 'client-id',
         keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
         conversionTimeout: 60000,
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
@@ -222,7 +225,7 @@ describe('Config', () => {
       };
 
       expect(() => validateConfig(config)).toThrow(
-        'Missing required configuration in production: sfDomain'
+        /requires Salesforce authentication.*JWT Bearer.*SFDX_AUTH_URL/i
       );
     });
 
@@ -327,7 +330,7 @@ describe('Config', () => {
       };
 
       expect(() => validateConfig(config)).toThrow(
-        'Missing required configuration in production: sfDomain, azureTenantId, clientId, keyVaultUri, issuer, audience, jwksUri'
+        'Missing required configuration in production: azureTenantId, clientId, keyVaultUri, issuer, audience, jwksUri'
       );
     });
 
@@ -529,6 +532,123 @@ describe('Config', () => {
       expect(config.sfUsername).toBe('kv-user@example.com');
       // Env var used where KV doesn't have it
       expect(config.sfClientId).toBe('env-client-id');
+    });
+  });
+
+  describe('SFDX Auth URL Configuration', () => {
+    it('should load sfdxAuthUrl from environment variable', async () => {
+      process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';
+
+      const config = await loadConfig();
+
+      expect(config.sfdxAuthUrl).toBe('force://PlatformCLI::refresh-token@test.salesforce.com');
+    });
+
+    it('should load SFDX_AUTH_URL from Key Vault in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+
+      mockLoadSecretsFromKeyVault.mockResolvedValue({
+        sfdxAuthUrl: 'force://PlatformCLI::kv-refresh-token@kv.salesforce.com',
+      });
+
+      const config = await loadConfig();
+
+      expect(config.sfdxAuthUrl).toBe('force://PlatformCLI::kv-refresh-token@kv.salesforce.com');
+    });
+
+    it('should override environment SFDX_AUTH_URL with Key Vault value', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+      process.env.SFDX_AUTH_URL = 'force://PlatformCLI::env-token@env.salesforce.com';
+
+      mockLoadSecretsFromKeyVault.mockResolvedValue({
+        sfdxAuthUrl: 'force://PlatformCLI::kv-token@kv.salesforce.com',
+      });
+
+      const config = await loadConfig();
+
+      expect(config.sfdxAuthUrl).toBe('force://PlatformCLI::kv-token@kv.salesforce.com');
+    });
+
+    it('should accept production config with SFDX Auth URL only (no JWT config)', () => {
+      const config: AppConfig = {
+        port: 8080,
+        nodeEnv: 'production',
+        logLevel: 'info',
+        azureTenantId: 'tenant-id',
+        clientId: 'client-id',
+        keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
+        sfdxAuthUrl: 'force://PlatformCLI::refresh-token@test.salesforce.com',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
+        enableTelemetry: true,
+      };
+
+      expect(() => validateConfig(config)).not.toThrow();
+    });
+
+    it('should accept production config with both JWT and SFDX Auth URL', () => {
+      const config: AppConfig = {
+        port: 8080,
+        nodeEnv: 'production',
+        logLevel: 'info',
+        sfDomain: 'https://example.salesforce.com',
+        sfUsername: 'integration@example.com',
+        sfClientId: 'sf-client-id',
+        sfPrivateKey: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+        sfdxAuthUrl: 'force://PlatformCLI::refresh-token@test.salesforce.com',
+        azureTenantId: 'tenant-id',
+        clientId: 'client-id',
+        keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
+        poller: {
+          enabled: false,
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
+        enableTelemetry: true,
+      };
+
+      // Should not throw - validates that either auth method is acceptable
+      expect(() => validateConfig(config)).not.toThrow();
+    });
+
+    it('should load and validate production config with SFDX Auth URL from env', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.SFDX_AUTH_URL = 'force://PlatformCLI::token@test.salesforce.com';
+      process.env.AZURE_TENANT_ID = 'tenant-id';
+      process.env.CLIENT_ID = 'client-id';
+      process.env.KEY_VAULT_URI = 'https://vault.azure.net/';
+      process.env.ISSUER = 'https://login.microsoftonline.com/tenant-id/v2.0';
+      process.env.AUDIENCE = 'api://client-id';
+      process.env.JWKS_URI = 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys';
+
+      mockLoadSecretsFromKeyVault.mockResolvedValue({});
+
+      const config = await loadConfig();
+      expect(() => validateConfig(config)).not.toThrow();
+      expect(config.sfdxAuthUrl).toBe('force://PlatformCLI::token@test.salesforce.com');
     });
   });
 });

@@ -92,9 +92,19 @@ param tags = {
 // These overrides may require modifications to modules/app.bicep
 // to accept optional CPU/memory parameters
 //
-// Secrets in CI Key Vault:
+// Secrets in CI Key Vault (Two Authentication Options):
+//
+// Option 1: JWT Bearer Flow (Traditional)
 //   - SF-PRIVATE-KEY (test/CI Integration User private key)
 //   - SF-CLIENT-ID (Connected App for CI)
 //   - SF-USERNAME (CI Integration User, e.g., ci-integration@yourorg.com)
-//   - SF-DOMAIN (scratch org domain - may need dynamic update)
+//   - SF-DOMAIN (scratch org domain - needs dynamic update per test)
+//
+// Option 2: SFDX Auth URL (Recommended for Scratch Orgs)
+//   - SFDX-AUTH-URL (Complete auth URL from sf CLI)
+//     Get via: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
+//     Format: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>
+//     Benefits: Single secret, no Connected App needed, simpler setup
+//
+// Common:
 //   - AZURE-MONITOR-CONNECTION-STRING (App Insights for CI environment)

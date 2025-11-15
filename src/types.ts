@@ -31,6 +31,8 @@ export interface AppConfig {
   sfUsername?: string;
   sfClientId?: string;
   sfPrivateKey?: string;
+  // Salesforce SFDX Auth URL (alternative to JWT Bearer)
+  sfdxAuthUrl?: string;
   // LibreOffice conversion settings (T-11)
   conversionTimeout: number;
   conversionWorkdir: string;

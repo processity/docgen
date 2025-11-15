@@ -15,25 +15,45 @@ function isAxiosError(error: unknown): error is { response?: { status: number; d
 }
 
 export interface SalesforceAuthConfig {
-  sfDomain: string;
-  sfUsername: string;
-  sfClientId: string;
-  sfPrivateKey: string;
+  // JWT Bearer Flow fields (production/Connected App)
+  sfDomain?: string;
+  sfUsername?: string;
+  sfClientId?: string;
+  sfPrivateKey?: string;
+  // SFDX Auth URL (development/scratch orgs)
+  sfdxAuthUrl?: string;
 }
 
 /**
- * Salesforce JWT Bearer Flow Authentication
+ * Parsed SFDX Auth URL components
+ * Format: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>
+ */
+interface ParsedSfdxAuthUrl {
+  clientId: string;
+  clientSecret?: string;
+  refreshToken: string;
+  instanceUrl: string;
+}
+
+/**
+ * Salesforce Authentication
  *
- * Implements OAuth 2.0 JWT Bearer Token Flow for server-to-server auth.
+ * Supports two authentication methods:
+ * 1. JWT Bearer Flow (production/Connected App) - Server-to-server auth with private key
+ * 2. SFDX Auth URL (development/scratch orgs) - Refresh token flow from sf CLI
+ *
+ * SFDX Auth URL takes precedence if both are configured.
  * Caches tokens with TTL and 60-second expiry buffer.
  *
  * References:
- * - https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_jwt_flow.htm
+ * - JWT Bearer: https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_jwt_flow.htm
+ * - Refresh Token: https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_refresh_token_flow.htm
  */
 export class SalesforceAuth {
   private config: SalesforceAuthConfig;
   private cachedToken: CachedToken | null = null;
   private tokenRefreshPromise: Promise<string> | null = null;
+  private parsedSfdxAuth: ParsedSfdxAuthUrl | null = null;
 
   constructor(config: SalesforceAuthConfig) {
     this.validateConfig(config);
@@ -42,16 +62,80 @@ export class SalesforceAuth {
 
   /**
    * Validate required configuration
+   *
+   * Requires either:
+   * - JWT Bearer: sfDomain, sfUsername, sfClientId, sfPrivateKey
+   * - SFDX Auth URL: sfdxAuthUrl
    */
   private validateConfig(config: SalesforceAuthConfig): void {
-    const required = ['sfDomain', 'sfUsername', 'sfClientId', 'sfPrivateKey'];
-    const missing = required.filter((key) => !config[key as keyof SalesforceAuthConfig]);
+    const hasJwtConfig = !!(
+      config.sfDomain &&
+      config.sfUsername &&
+      config.sfClientId &&
+      config.sfPrivateKey
+    );
+    const hasSfdxConfig = !!config.sfdxAuthUrl;
 
-    if (missing.length > 0) {
+    if (!hasJwtConfig && !hasSfdxConfig) {
       throw new Error(
-        `Missing required Salesforce configuration: ${missing.join(', ')}`
+        'Salesforce authentication requires either:\n' +
+        '  1. JWT Bearer Flow: SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY\n' +
+        '  2. SFDX Auth URL: SFDX_AUTH_URL\n' +
+        'Get SFDX Auth URL via: sf org display --verbose --json | jq -r \'.result.sfdxAuthUrl\''
       );
     }
+
+    if (hasJwtConfig && hasSfdxConfig) {
+      logger.warn(
+        'Both JWT Bearer and SFDX Auth URL configured. SFDX Auth URL takes precedence.'
+      );
+    }
+
+    // Parse and validate SFDX Auth URL if provided
+    if (config.sfdxAuthUrl) {
+      try {
+        this.parsedSfdxAuth = this.parseSfdxAuthUrl(config.sfdxAuthUrl);
+        logger.info(
+          { instanceUrl: this.parsedSfdxAuth.instanceUrl },
+          'Using SFDX Auth URL authentication'
+        );
+      } catch (error) {
+        throw new Error(
+          `Invalid SFDX Auth URL: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    } else {
+      logger.info('Using JWT Bearer Flow authentication');
+    }
+  }
+
+  /**
+   * Parse SFDX Auth URL
+   *
+   * Format: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>
+   * Example: force://PlatformCLI::!refreshToken123@test.salesforce.com
+   */
+  private parseSfdxAuthUrl(authUrl: string): ParsedSfdxAuthUrl {
+    const match = authUrl.match(/^force:\/\/([^:]+):([^:]*):([^@]+)@(.+)$/);
+
+    if (!match) {
+      throw new Error(
+        'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
+      );
+    }
+
+    const [, clientId, clientSecret, refreshToken, instanceUrl] = match;
+
+    if (!clientId || !refreshToken || !instanceUrl) {
+      throw new Error('Missing required components in SFDX Auth URL');
+    }
+
+    return {
+      clientId,
+      clientSecret: clientSecret || undefined,
+      refreshToken,
+      instanceUrl: instanceUrl.replace(/\/$/, ''), // Remove trailing slash
+    };
   }
 
   /**
@@ -107,8 +191,99 @@ export class SalesforceAuth {
 
   /**
    * Fetch new access token from Salesforce
+   *
+   * Routes to appropriate authentication method:
+   * - SFDX Auth URL (refresh token flow) if configured
+   * - JWT Bearer Flow otherwise
    */
   private async fetchAccessToken(): Promise<string> {
+    // Prefer SFDX Auth URL if configured
+    if (this.config.sfdxAuthUrl && this.parsedSfdxAuth) {
+      return this.fetchAccessTokenFromRefreshToken();
+    }
+
+    // Fallback to JWT Bearer Flow
+    return this.fetchAccessTokenViaJwt();
+  }
+
+  /**
+   * Fetch access token using SFDX Auth URL (refresh token flow)
+   */
+  private async fetchAccessTokenFromRefreshToken(): Promise<string> {
+    if (!this.parsedSfdxAuth) {
+      throw new Error('SFDX Auth URL not configured');
+    }
+
+    try {
+      const { clientId, clientSecret, refreshToken, instanceUrl } = this.parsedSfdxAuth;
+
+      const tokenUrl = `https://${instanceUrl}/services/oauth2/token`;
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        refresh_token: refreshToken,
+      });
+
+      if (clientSecret) {
+        body.append('client_secret', clientSecret);
+      }
+
+      logger.debug({ tokenUrl, instanceUrl }, 'Requesting Salesforce access token via refresh token');
+
+      const response = await axios.post<SalesforceTokenResponse>(tokenUrl, body.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      const tokenResponse = response.data;
+
+      if (!tokenResponse.access_token) {
+        logger.error({ tokenResponse }, 'Malformed token response from Salesforce');
+        throw new Error('Malformed token response: missing access_token');
+      }
+
+      // Cache token with expiry
+      const expiresIn = tokenResponse.expires_in || 7200;
+      const expiresAt = Date.now() + expiresIn * 1000;
+      this.cachedToken = {
+        accessToken: tokenResponse.access_token,
+        expiresAt,
+        instanceUrl: tokenResponse.instance_url || `https://${instanceUrl}`,
+      };
+
+      logger.info(
+        {
+          expiresIn,
+          expiresAt: new Date(expiresAt).toISOString(),
+          instanceUrl: this.cachedToken.instanceUrl,
+        },
+        'Salesforce access token acquired via refresh token'
+      );
+
+      return tokenResponse.access_token;
+    } catch (error: unknown) {
+      logger.error({ error }, 'Failed to fetch Salesforce access token via refresh token');
+
+      // Re-throw axios errors with better messages
+      if (isAxiosError(error) && error.response) {
+        const errorBody =
+          typeof error.response.data === 'string'
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+        throw new Error(
+          `Salesforce refresh token exchange failed: ${error.response.status} - ${errorBody}`
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch access token using JWT Bearer Flow
+   */
+  private async fetchAccessTokenViaJwt(): Promise<string> {
     try {
       // Sign JWT assertion
       const assertion = this.signJWT();
@@ -181,6 +356,16 @@ export class SalesforceAuth {
    * - exp: Expiration (5 minutes from now)
    */
   private signJWT(): string {
+    if (!this.config.sfPrivateKey) {
+      throw new Error('SF_PRIVATE_KEY is required for JWT Bearer Flow');
+    }
+    if (!this.config.sfClientId) {
+      throw new Error('SF_CLIENT_ID is required for JWT Bearer Flow');
+    }
+    if (!this.config.sfUsername) {
+      throw new Error('SF_USERNAME is required for JWT Bearer Flow');
+    }
+
     const now = Math.floor(Date.now() / 1000);
     const exp = now + 300; // 5 minutes
 

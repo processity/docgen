@@ -25,12 +25,17 @@ export async function build(): Promise<FastifyInstance> {
   initializeAppInsights();
 
   // Initialize Salesforce authentication if configured
-  if (config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey) {
+  // Supports both JWT Bearer Flow and SFDX Auth URL
+  const hasJwtConfig = !!(config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey);
+  const hasSfdxConfig = !!config.sfdxAuthUrl;
+
+  if (hasJwtConfig || hasSfdxConfig) {
     createSalesforceAuth({
       sfDomain: config.sfDomain,
       sfUsername: config.sfUsername,
       sfClientId: config.sfClientId,
       sfPrivateKey: config.sfPrivateKey,
+      sfdxAuthUrl: config.sfdxAuthUrl,
     });
   }
 

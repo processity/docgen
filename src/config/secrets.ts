@@ -12,6 +12,7 @@ export interface KeyVaultSecrets {
   sfClientId?: string;
   sfUsername?: string;
   sfDomain?: string;
+  sfdxAuthUrl?: string;
   azureMonitorConnectionString?: string;
 }
 
@@ -23,6 +24,7 @@ const SECRET_NAMES = {
   SF_CLIENT_ID: 'SF-CLIENT-ID',
   SF_USERNAME: 'SF-USERNAME',
   SF_DOMAIN: 'SF-DOMAIN',
+  SFDX_AUTH_URL: 'SFDX-AUTH-URL',
   AZURE_MONITOR_CONNECTION_STRING: 'AZURE-MONITOR-CONNECTION-STRING',
 } as const;
 
@@ -105,6 +107,9 @@ export async function loadSecretsFromKeyVault(keyVaultUri: string): Promise<KeyV
             break;
           case 'SF_DOMAIN':
             secrets.sfDomain = value;
+            break;
+          case 'SFDX_AUTH_URL':
+            secrets.sfdxAuthUrl = value;
             break;
           case 'AZURE_MONITOR_CONNECTION_STRING':
             secrets.azureMonitorConnectionString = value;

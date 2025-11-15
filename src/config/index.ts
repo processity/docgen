@@ -58,6 +58,8 @@ export async function loadConfig(): Promise<AppConfig> {
     sfUsername: process.env.SF_USERNAME,
     sfClientId: process.env.SF_CLIENT_ID,
     sfPrivateKey: loadPrivateKey(),
+    // Salesforce SFDX Auth URL (alternative to JWT Bearer)
+    sfdxAuthUrl: process.env.SFDX_AUTH_URL,
     // LibreOffice conversion settings (T-11)
     conversionTimeout: parseInt(
       process.env.CONVERSION_TIMEOUT || '60000',
@@ -103,6 +105,9 @@ export async function loadConfig(): Promise<AppConfig> {
     if (kvSecrets.azureMonitorConnectionString) {
       config.azureMonitorConnectionString = kvSecrets.azureMonitorConnectionString;
     }
+    if (kvSecrets.sfdxAuthUrl) {
+      config.sfdxAuthUrl = kvSecrets.sfdxAuthUrl;
+    }
   }
 
   return config;
@@ -110,26 +115,35 @@ export async function loadConfig(): Promise<AppConfig> {
 
 /**
  * Validate required configuration for production
+ *
+ * Note: Salesforce auth validation is handled in SalesforceAuth class.
+ * Either JWT Bearer config or SFDX Auth URL is required, but not enforced here.
  */
 export function validateConfig(config: AppConfig): void {
   if (config.nodeEnv === 'production') {
     const required = [
-      'sfDomain',
       'azureTenantId',
       'clientId',
       'keyVaultUri',
       'issuer',
       'audience',
       'jwksUri',
-      'sfUsername',
-      'sfClientId',
-      'sfPrivateKey',
     ];
     const missing = required.filter((key) => !config[key as keyof AppConfig]);
 
     if (missing.length > 0) {
       throw new Error(
         `Missing required configuration in production: ${missing.join(', ')}`
+      );
+    }
+
+    // Validate that at least one Salesforce auth method is configured
+    const hasJwtConfig = !!(config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey);
+    const hasSfdxConfig = !!config.sfdxAuthUrl;
+
+    if (!hasJwtConfig && !hasSfdxConfig) {
+      throw new Error(
+        'Production requires Salesforce authentication: either JWT Bearer config (SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY) or SFDX_AUTH_URL'
       );
     }
   }
