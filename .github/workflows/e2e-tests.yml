@@ -141,6 +141,12 @@ jobs:
 
           echo "✅ Container App restart initiated"
 
+          # Wait for container to fully restart and reload secrets
+          echo "Waiting 30 seconds for container to restart and reload secrets from Key Vault..."
+          sleep 30
+
+          echo "✅ Container App should now have reloaded with new scratch org credentials"
+
       - name: Get org credentials
         id: org-info
         run: |
