@@ -125,7 +125,66 @@ sf apex run test --test-level RunLocalTests --result-format human
 - `DocgenController` - Interactive document generation controller (calls Node API via Named Credential)
 - `docgenButton` - LWC component for interactive PDF/DOCX generation (deployable to Record/App/Home pages)
 - `docgenTestPage` - LWC wrapper component for e2e testing on App pages (reads recordId from URL parameters)
-- Apex test classes: 6 test classes with 44 test methods (all passing)
+- Apex test classes: 7 test classes with 50 test methods (all passing)
+
+### Object Configuration
+
+The system uses **Custom Metadata Types** to control which Salesforce objects can generate documents. This enables admins to add support for new objects (Contact, Lead, custom objects) without code deployments.
+
+**Configuration Object:** `Supported_Object__mdt`
+
+**Fields:**
+- `Object_API_Name__c` *(Text, Required)* - API name of the supported object (e.g., "Account", "Contact", "Custom__c")
+- `Lookup_Field_API_Name__c` *(Text, Required)* - Lookup field on `Generated_Document__c` that references this object (e.g., "Account__c", "Contact__c")
+- `Is_Active__c` *(Checkbox, Default: true)* - Enable/disable object without deleting configuration
+- `Display_Order__c` *(Number)* - Sort order for UI picklists (optional)
+- `Description__c` *(Text Area)* - Admin notes about this object configuration
+
+**Pre-configured Objects:**
+
+| Object | Lookup Field | Display Order | Status |
+|--------|--------------|---------------|--------|
+| Account | Account__c | 10 | Active |
+| Opportunity | Opportunity__c | 20 | Active |
+| Case | Case__c | 30 | Active |
+| Contact | Contact__c | 40 | Active |
+| Lead | Lead__c | 50 | Active |
+
+**How to Add Support for a New Object** (e.g., Contact):
+
+1. **Create lookup field** on `Generated_Document__c`:
+   ```bash
+   # Via Salesforce CLI or Setup UI
+   # Field: Contact__c → Lookup(Contact)
+   # Delete Constraint: Set Null
+   # Required: false
+   ```
+
+2. **Add Custom Metadata record** in Setup:
+   - Go to **Setup → Custom Metadata Types → Supported Object → Manage Records**
+   - Click **New**
+   - Set `Object_API_Name__c` = "Contact"
+   - Set `Lookup_Field_API_Name__c` = "Contact__c"
+   - Set `Is_Active__c` = true
+   - Set `Display_Order__c` = 40 (or any order)
+   - Save
+
+3. **Grant field permissions**:
+   - Add `Contact__c` field to `Docgen_User` permission set
+   - Grant Read and Edit access
+
+4. **Test** by generating a document from a Contact record
+
+**Documentation:**
+- **[Admin Guide](docs/ADMIN_GUIDE.md)** - Step-by-step guide for Salesforce Admins to add new objects
+- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Upgrade guide for existing installations (fully backward compatible)
+- **[Admin Runbook](docs/ADMIN_RUNBOOK.md)** - Operational procedures and troubleshooting
+- **[Implementation Playbook](docs/OBJECT_CONFIGURABILITY_PLAYBOOK.md)** - Detailed technical design and implementation steps
+
+**Sample Files:**
+- `samples/contact.json` - Sample request payload for Contact object
+- `samples/lead.json` - Sample request payload for Lead object
+- `samples/templates/README.md` - Template examples (Contact, Lead, Asset) with SOQL queries
 
 ### Named Credential Setup
 
@@ -1012,7 +1071,17 @@ npm run test:coverage
 
 # Or manually
 sf apex run test --test-level RunLocalTests --code-coverage --result-format human
+
+# Run specific test classes
+sf apex run test --class-names DocgenMultiObjectIntegrationTest --code-coverage --result-format human
 ```
+
+**Test Coverage**:
+- **112 Apex tests** with **86% code coverage** (exceeds 75% requirement)
+- **Multi-object support**: Account, Opportunity, Case, Contact, Lead
+- **Test Data Factory**: `DocgenTestDataFactory.cls` provides reusable scenario builders
+- **Bulk testing**: Validates 200+ record operations
+- **Integration tests**: `DocgenMultiObjectIntegrationTest.cls` tests end-to-end flows across all supported objects
 
 ### LWC Tests
 
@@ -1092,6 +1161,9 @@ npm run test:e2e:debug    # Debug with Playwright Inspector
 - ✅ File upload and ContentDocumentLink creation
 - ✅ Generated_Document__c status tracking
 - ✅ Error handling and toast notifications
+- ✅ **Multi-object support**: Contact, Lead, Opportunity document generation (`e2e/tests/multi-object.spec.ts`)
+- ✅ **Dynamic lookup fields**: Validates Contact__c, Lead__c, Opportunity__c lookup field assignment
+- ✅ **Parent relationship extraction**: Tests multi-parent scenarios (Opportunity → Account)
 
 **See also**:
 - [E2E Testing Guide](./e2e/README.md) - Setup, running tests, troubleshooting

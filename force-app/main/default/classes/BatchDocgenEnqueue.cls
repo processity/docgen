@@ -195,33 +195,39 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
     }
 
     /**
-     * Set parent lookup field based on record type
+     * Set parent lookup field based on record type using dynamic reflection
      * @param doc Generated_Document__c record to update
      * @param recordId ID of the parent record
      * @param parents Map of parent IDs from envelope
      */
     private void setParentLookup(Generated_Document__c doc, Id recordId, Map<String, Id> parents) {
-        // Determine parent type from recordId prefix
-        String objectType = recordId.getSObjectType().getDescribe().getName();
+        // Get object type from recordId
+        String objectApiName = recordId.getSObjectType().getDescribe().getName();
 
-        if (objectType == 'Account') {
-            doc.Account__c = recordId;
-        } else if (objectType == 'Opportunity') {
-            doc.Opportunity__c = recordId;
-        } else if (objectType == 'Case') {
-            doc.Case__c = recordId;
-        }
+        // Validate object is supported and get configuration
+        DocgenObjectConfigService.validateObjectSupported(objectApiName);
+        Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+
+        // Dynamically set the parent lookup field using reflection
+        doc.put(config.Lookup_Field_API_Name__c, recordId);
 
         // Also set additional parent lookups from envelope if available
-        if (parents != null) {
-            if (parents.containsKey('AccountId') && parents.get('AccountId') != null) {
-                doc.Account__c = parents.get('AccountId');
-            }
-            if (parents.containsKey('OpportunityId') && parents.get('OpportunityId') != null) {
-                doc.Opportunity__c = parents.get('OpportunityId');
-            }
-            if (parents.containsKey('CaseId') && parents.get('CaseId') != null) {
-                doc.Case__c = parents.get('CaseId');
+        // This handles cases where a record has multiple parent relationships
+        // (e.g., Opportunity has both OpportunityId and AccountId)
+        if (parents != null && !parents.isEmpty()) {
+            for (String parentKey : parents.keySet()) {
+                Id parentId = parents.get(parentKey);
+                if (parentId != null) {
+                    // Extract object name from the key (e.g., 'AccountId' -> 'Account')
+                    String parentObjectName = parentKey.replace('Id', '');
+
+                    // Check if this parent object is configured
+                    if (DocgenObjectConfigService.isObjectSupported(parentObjectName)) {
+                        Supported_Object__mdt parentConfig = DocgenObjectConfigService.getConfigForObject(parentObjectName);
+                        // Set the additional parent lookup dynamically
+                        doc.put(parentConfig.Lookup_Field_API_Name__c, parentId);
+                    }
+                }
             }
         }
     }

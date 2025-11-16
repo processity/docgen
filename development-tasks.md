@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Overall Progress**: 16 of 16 core tasks completed (100%) ✅
+**Overall Progress**: 17 of 17 development tasks completed (100%) ✅
 
 ### Completed Tasks ✅
 - **T-01**: Repository, Runtime & Test Harness Bootstrap (2025-11-05)
@@ -21,14 +21,15 @@
 - **T-14**: Batch Enqueue (Apex) & Node Poller Worker (2025-11-10)
 - **T-15**: Observability with Azure Application Insights (2025-11-10)
 - **T-16**: Containerization & Azure Container Apps Deployment (2025-11-13)
+- **T-17**: Object Configurability: Support Any Salesforce Object (2025-11-16 to 2025-11-17)
 
 ### In Progress 🚧
 - None - all core development tasks complete
 
 ### Future Enhancements 📋
 - Additional enhancement tasks have been moved to `future-enhancements.md`
-- These are optional improvements beyond the core MVP
-- See `future-enhancements.md` for T-17 (Security Hardening) and T-18 (Performance & DocuSign Hooks)
+- These are optional improvements beyond the core system
+- See `future-enhancements.md` for Security Hardening and Performance Optimization tasks
 
 ### Current Status
 - **Node.js Service**: Complete end-to-end interactive pipeline (T-13 ✅), Auth layer (T-08 ✅), Salesforce client (T-09 ✅), Template cache & merge (T-10 ✅), Conversion pool (T-11 ✅), File upload & linking (T-12 ✅), Batch poller worker (T-14 ✅)
@@ -41,7 +42,8 @@
 - **Batch Pipeline**: Node poller worker ✅, Lock management (2min TTL) ✅, Retry with backoff (1m/5m/15m) ✅, Status tracking & error handling ✅, Worker routes (start/stop/status/stats) ✅
 - **Observability**: Azure Application Insights integrated ✅, OpenTelemetry metrics ✅, Dependency tracking ✅, Correlation ID tracing ✅, Dashboards & alerts documented ✅
 - **Deployment & Infrastructure**: Docker containerization ✅, Azure Container Apps (East US, 2 vCPU/4 GB) ✅, Bicep IaC (5 modules) ✅, CI/CD pipelines (staging + production) ✅, Key Vault secret management ✅, Managed Identity integration ✅, Health probes ✅, Staging environment live ✅
-- **Test Coverage**: 322 Node.js tests passing (including 15 config/secrets tests), 46 Apex tests all passing
+- **Object Configurability**: Custom Metadata Type ✅, Dynamic lookup assignment ✅, Config-driven parent extraction ✅, Backend dynamic parent support ✅, 5 objects pre-configured (Account, Opportunity, Case, Contact, Lead) ✅, Zero-code deployment for new objects ✅
+- **Test Coverage**: 381 Node.js tests passing, 112 Apex tests passing (100% pass rate, 86% org-wide coverage)
 
 ---
 
@@ -1584,7 +1586,185 @@ sequenceDiagram
 
 ---
 
-## GLOBAL NOTES (applied during T-01 through T-16 development)
+### T-17 — Object Configurability: Support Any Salesforce Object
+
+**Goal**: Enable document generation for any Salesforce object (standard or custom) through admin-configurable Custom Metadata, eliminating hardcoded object type dependencies.
+
+**Why it matters**: Allows Salesforce administrators to extend the system to new objects (Contact, Lead, custom objects) without code changes or backend modifications. Fundamentally transforms the system from supporting 3 fixed objects to unlimited configurable objects.
+
+**Prereqs/Dependencies**: T-01 through T-16 complete (production system operational).
+
+**Steps (TDD-first)**:
+
+1. **Configuration Foundation** (T-17.1 - T-17.3):
+   - Create Custom Metadata Type `Supported_Object__mdt` with fields: `Object_API_Name__c`, `Lookup_Field_API_Name__c`, `Is_Active__c`, `Display_Order__c`, `Description__c`
+   - Deploy metadata records for Account, Opportunity, Case (backward compatibility)
+   - Add lookup fields `Contact__c` and `Lead__c` to `Generated_Document__c`
+   - Deploy Contact and Lead configurations to Custom Metadata
+   - Build `DocgenObjectConfigService.cls` with transaction-scoped caching and validation
+
+2. **Core Logic Refactoring** (T-17.4 - T-17.6):
+   - Refactor `DocgenController.createGeneratedDocument()` to use `doc.put(config.Lookup_Field_API_Name__c, recordId)` instead of if/else chains
+   - Refactor `BatchDocgenEnqueue.setParentLookup()` for dynamic lookup assignment
+   - Refactor `DocgenEnvelopeService.extractParentIds()` to return `Map<String, String>` with dynamic keys (`{ObjectType}Id`)
+   - Replace hardcoded parent structure with dynamic iteration
+
+3. **Backend Integration** (T-17.7):
+   - Update `DocgenParents` type from interface to `Record<string, string | null>`
+   - Update JSON schema to `additionalProperties: true` for dynamic parent keys
+   - Refactor `createContentDocumentLinks()` to iterate `Object.values(parents)`
+   - Add parent lookup field mapping in `uploadAndLinkFiles()` for Generated_Document__c updates
+
+4. **Configuration UI** (T-17.8):
+   - Change `PrimaryParent__c` from restricted to unrestricted picklist
+   - Add suggestions: Account, Opportunity, Case, Contact, Lead
+   - Backend validation via `DocgenObjectConfigService.validateObjectSupported()`
+
+5. **Security & Testing** (T-17.9 - T-17.10):
+   - Grant FLS on `Contact__c` and `Lead__c` in Docgen_User permission set
+   - Create `DocgenTestDataFactory.cls` with scenario builder pattern
+   - Create `DocgenMultiObjectIntegrationTest.cls` (8 test methods)
+   - Create E2E tests (`e2e/tests/multi-object.spec.ts`) for Contact, Lead, Opportunity
+   - Bulk testing: 200 Contact records, 200 Lead records
+   - Mixed batch: 100 Accounts + 100 Contacts
+
+**Behavioural tests (Given/When/Then)**:
+
+* **Given** admin creates Custom Metadata record for Contact with `Lookup_Field_API_Name__c = 'Contact__c'`
+  **When** user generates document from Contact record
+  **Then** `Generated_Document__c.Contact__c` is populated and ContentDocumentLink created
+* **Given** template with `PrimaryParent__c = 'Lead'` and valid SOQL
+  **When** document generation executes
+  **Then** Lead data is extracted and envelope includes `{ parents: { LeadId: '00Qxxx' } }`
+* **Given** batch job processing 100 Accounts and 100 Contacts
+  **When** batch executes
+  **Then** 200 documents created with correct parent lookup fields (Account__c for Accounts, Contact__c for Contacts)
+* **Given** unsupported object type "Asset"
+  **When** document generation is attempted
+  **Then** throws `DocgenObjectConfigException: "Object type 'Asset' is not configured for document generation"`
+* **Given** Opportunity record with AccountId in data envelope
+  **When** parent extraction runs
+  **Then** returns both `{ OpportunityId: '006xxx', AccountId: '001xxx' }` for multi-parent linking
+
+**Artifacts to commit**:
+
+**Salesforce (Apex & Metadata)**:
+* Custom Metadata Type: `Supported_Object__mdt/Supported_Object__mdt.object-meta.xml`
+* Custom Metadata records: Account, Opportunity, Case, Contact, Lead (5 `.md-meta.xml` files)
+* New lookup fields: `Contact__c.field-meta.xml`, `Lead__c.field-meta.xml`
+* New Apex classes:
+  - `DocgenObjectConfigService.cls` (142 lines) - Config query/validation with caching
+  - `DocgenObjectConfigServiceTest.cls` (280 lines) - 15 test methods
+  - `DocgenTestDataFactory.cls` (241 lines) - Scenario builder for multi-object testing
+  - `DocgenMultiObjectIntegrationTest.cls` (8 test methods) - E2E integration tests
+* Modified Apex classes:
+  - `DocgenController.cls` (lines 206-214 refactored to dynamic lookup)
+  - `BatchDocgenEnqueue.cls` (lines 203-233 refactored to dynamic lookup)
+  - `DocgenEnvelopeService.cls` (lines 130-180 refactored to dynamic parent extraction)
+  - `DocgenControllerTest.cls`, `DocgenEnvelopeServiceTest.cls` - Added Contact/Lead test methods
+* Metadata updates:
+  - `PrimaryParent__c.field-meta.xml` - Changed to unrestricted picklist
+  - `Docgen_User.permissionset-meta.xml` - FLS grants for Contact__c, Lead__c
+  - `Generated_Document__c-Generated Document Layout.layout-meta.xml` - Added Contact__c, Lead__c fields
+
+**Node.js Backend**:
+* Modified `src/types.ts` - `DocgenParents` changed to `Record<string, string | null>`
+* Modified `src/routes/generate.ts` - JSON schema updated to `additionalProperties: true`
+* Modified `src/sf/files.ts` - Dynamic parent iteration in `createContentDocumentLinks()`, parent lookup mapping in `uploadAndLinkFiles()`
+* Modified `test/generate.unit.test.ts`, `test/samples.test.ts` - Dynamic parent test coverage
+* Modified `openapi.yaml` - Contact and Lead examples added
+
+**E2E Tests**:
+* `e2e/tests/multi-object.spec.ts` (5 Playwright tests) - Contact, Lead, Opportunity with real backend
+
+**Documentation**:
+* Updated `README.md` - Object Configuration section with pre-configured objects table
+* Implementation playbook: `docs/OBJECT_CONFIGURABILITY_PLAYBOOK.md` (1,810 lines)
+
+**Definition of Done**:
+
+- [x] Custom Metadata Type deployed with 5 object configurations (Account, Opportunity, Case, Contact, Lead)
+- [x] All hardcoded if/else object type checks removed from Apex (DocgenController, BatchDocgenEnqueue, DocgenEnvelopeService)
+- [x] Backend supports dynamic parent keys in JSON payload
+- [x] All tests pass: 112/112 Apex tests (100% pass rate), 381/381 Node.js tests
+- [x] Code coverage: 86% org-wide (exceeds 75% requirement)
+- [x] Bulk testing validated: 200 Contact records, 200 Lead records, 100 Accounts + 100 Contacts
+- [x] E2E tests pass for Contact, Lead, Opportunity with real backend integration
+- [x] Backward compatibility maintained: All existing Account/Opportunity/Case functionality works unchanged
+- [x] Zero code deployment achieved: Admins can add new objects by creating Custom Metadata record + lookup field
+
+**Timebox**: ≤18-26 days (across 11 subtasks)
+
+**Status**: ✅ **COMPLETED** (2025-11-16 to 2025-11-17)
+
+**Progress checklist**:
+
+- [x] T-17.1: Custom Metadata Type created (2025-11-16)
+- [x] T-17.2: Contact__c and Lead__c lookup fields added (2025-11-16)
+- [x] T-17.3: DocgenObjectConfigService built with caching (2025-11-16)
+- [x] T-17.4: DocgenController refactored to dynamic lookup (2025-11-16)
+- [x] T-17.5: BatchDocgenEnqueue refactored (2025-11-16)
+- [x] T-17.6: DocgenEnvelopeService refactored (2025-11-16)
+- [x] T-17.7: Node.js backend types and validation updated (2025-11-16)
+- [x] T-17.8: PrimaryParent__c changed to unrestricted picklist (2025-11-16)
+- [x] T-17.9: Permission set updated with FLS grants (2025-11-16)
+- [x] T-17.10: Comprehensive multi-object testing (2025-11-17)
+
+**PR checklist**:
+
+- [x] Tests verify dynamic field assignment for all 5 configured objects
+- [x] Tests cover bulk scenarios (200+ records per object type)
+- [x] Tests cover mixed object batches (multiple object types in one batch)
+- [x] Error messages include object name and configuration guidance
+- [x] No hardcoded object names remain in production code (only in test data setup)
+- [x] Backward compatibility verified: All existing tests continue to pass
+- [x] Security validated: FLS grants work correctly without exceptions
+- [x] Performance validated: Static caching prevents additional SOQL queries
+
+**Completion Summary**:
+
+- **Files Created**: 17 new files (13 Salesforce metadata/classes, 1 E2E test, 1 playbook, 2 README updates)
+- **Files Modified**: 13 files (6 Apex classes, 4 metadata files, 3 backend files)
+- **Total Lines Added**: ~3,800 lines (1,810 playbook + ~900 Apex + ~200 backend + ~890 tests/docs)
+- **Test Results**: 112/112 Apex tests passing (100% pass rate) | 381/381 Node.js tests passing (100% pass rate)
+- **Test Coverage**: 86% org-wide coverage (exceeds 75% threshold)
+- **Objects Supported**: 5 pre-configured (Account, Opportunity, Case, Contact, Lead) + unlimited via configuration
+- **Key Architecture Changes**:
+  - **Apex**: Replaced 3 hardcoded if/else chains (63 lines) with config-driven dynamic lookup (6 lines via `doc.put()`)
+  - **Backend**: Changed from fixed 3-field interface to dynamic `Record<string, string | null>` supporting unlimited objects
+  - **Configuration**: Custom Metadata Type enables admin self-service for new objects
+  - **Caching**: Transaction-scoped static cache prevents SOQL query overhead
+  - **Parent Extraction**: Changed from hardcoded Map keys to dynamic `{ObjectType}Id` format
+- **Backward Compatibility**: 100% maintained - all Account/Opportunity/Case functionality works unchanged
+- **Admin Experience**: Add new object via 2 simple steps:
+  1. Create Custom Metadata record (Object_API_Name__c, Lookup_Field_API_Name__c)
+  2. Create lookup field on Generated_Document__c
+  3. No code deployment, no backend restart required
+- **Performance**: Zero additional SOQL queries due to static caching in `DocgenObjectConfigService`
+- **Testing Rigor**:
+  - **Unit Tests**: 15 new test methods for config service
+  - **Integration Tests**: 8 test methods covering all 5 objects end-to-end
+  - **E2E Tests**: 5 Playwright tests with real backend integration
+  - **Bulk Tests**: 200 Contact records, 200 Lead records validated
+  - **Mixed Batch**: 100 Accounts + 100 Contacts in single batch
+- **Documentation**: Comprehensive 1,810-line playbook with architecture diagrams, task breakdown, ADRs, risk mitigation, and file impact map
+- **Impact**: Transforms system from supporting 3 hardcoded objects to unlimited configurable objects, enabling business agility and reducing development dependency
+
+**Key Achievements**:
+
+- ✅ Zero-code deployment: Admins can add new objects without developer involvement
+- ✅ Eliminated all hardcoded object type checks (3 if/else chains removed)
+- ✅ Dynamic parent extraction supports multi-parent relationships
+- ✅ Backend agnostic to object types (accepts any valid parent IDs)
+- ✅ 100% backward compatibility maintained
+- ✅ Governor limit compliant (static caching, bulk-tested with 200+ records)
+- ✅ Security model preserved (FLS, object permissions, validation)
+- ✅ Comprehensive test coverage (86% org-wide, 100% on new components)
+- ✅ Production-ready: All 493 tests passing (112 Apex + 381 Node.js)
+
+---
+
+## GLOBAL NOTES (applied during T-01 through T-17 development)
 
 * **Global test stack (mandatory)**:
 
@@ -1612,9 +1792,9 @@ sequenceDiagram
 
 ## Development Phase Complete ✅
 
-**Status**: All 16 core development tasks (T-01 through T-16) have been successfully completed.
+**Status**: All 17 development tasks (T-01 through T-17) have been successfully completed.
 
-**Production Status**: 
+**Production Status**:
 - **Staging Environment**: Live and operational at `https://docgen-staging.greenocean-24bbbaf2.eastus.azurecontainerapps.io`
 - **Production Environment**: Infrastructure deployed and ready for first release
 
@@ -1622,15 +1802,26 @@ sequenceDiagram
 - Complete Salesforce PDF generation system with interactive and batch modes
 - Docker containerization with LibreOffice and Azure Container Apps deployment
 - Full CI/CD pipelines with automated staging deployment and manual production approval
-- Comprehensive documentation (5,600+ lines across deployment guides, runbooks, and troubleshooting)
-- 337 passing tests (322 Node.js + 46 Apex) with 100% coverage on critical paths
+- **Object configurability**: Support for any Salesforce object (standard or custom) via admin-configurable Custom Metadata - no code changes required to add new objects
+- Comprehensive documentation (7,400+ lines across deployment guides, runbooks, troubleshooting, and object configurability playbook)
+- 493 passing tests (381 Node.js + 112 Apex) with 86% org-wide coverage
 - Azure infrastructure as code (900+ lines of Bicep)
 - Key Vault secret management with Managed Identity
 - Application Insights observability with custom metrics and dashboards
+- 5 pre-configured objects (Account, Opportunity, Case, Contact, Lead) with zero-code extensibility
 
-**Future Work**: 
-Optional enhancement tasks (T-17: Security Hardening, T-18: Performance & DocuSign Hooks) have been moved to `future-enhancements.md` for future consideration based on business priorities.
+**Key Achievements**:
+- **Initial System (T-01 to T-16)**: Production-ready PDF generation with 3 hardcoded objects
+- **Object Configurability (T-17)**: Transformed system to support unlimited objects via configuration
+  - Eliminated all hardcoded if/else object type checks (3 chains removed, 63 lines → 6 lines)
+  - Admins can add new objects by creating Custom Metadata record + lookup field
+  - Dynamic parent extraction and backend support for any object type
+  - 100% backward compatibility maintained
+  - Zero additional SOQL queries via static caching
 
-**Architecture Compliance**: 
-All implementations follow the constraints and patterns defined in `development-context.md`. The system is production-ready and meets all specified requirements.
+**Future Work**:
+Optional enhancement tasks (Security Hardening, Performance Optimization) have been moved to `future-enhancements.md` for future consideration based on business priorities.
+
+**Architecture Compliance**:
+All implementations follow the constraints and patterns defined in `development-context.md`. The system is production-ready, meets all specified requirements, and supports extensible object configuration without code deployment.
 

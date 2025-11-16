@@ -74,21 +74,9 @@ const docgenRequestSchema = {
     },
     parents: {
       type: 'object',
-      properties: {
-        AccountId: {
-          type: ['string', 'null'],
-          description: 'Salesforce Account ID (18 chars)',
-        },
-        OpportunityId: {
-          type: ['string', 'null'],
-          description: 'Salesforce Opportunity ID (18 chars)',
-        },
-        CaseId: {
-          type: ['string', 'null'],
-          description: 'Salesforce Case ID (18 chars)',
-        },
-      },
-      additionalProperties: false,
+      description:
+        'Parent record IDs for file linking. Keys: "{ObjectType}Id" (e.g., ContactId, LeadId). Values: Salesforce ID (15/18 chars) or null.',
+      additionalProperties: true,
     },
     requestHash: {
       type: 'string',

@@ -151,11 +151,10 @@ export async function createContentDocumentLinks(
   api: SalesforceApi,
   options?: CorrelationOptions
 ): Promise<{ created: number; errors: string[] }> {
-  // Filter non-null parent IDs
-  const parentIds: string[] = [];
-  if (parents.AccountId) parentIds.push(parents.AccountId);
-  if (parents.OpportunityId) parentIds.push(parents.OpportunityId);
-  if (parents.CaseId) parentIds.push(parents.CaseId);
+  // Filter non-null parent IDs (dynamic iteration for any object type)
+  const parentIds: string[] = Object.values(parents).filter(
+    (id): id is string => id !== null && id !== undefined
+  );
 
   // No parents to link
   if (parentIds.length === 0) {
@@ -312,7 +311,7 @@ export async function uploadAndLinkFiles(
           options
         );
       } else {
-        // Success: Update with file IDs
+        // Success: Update with file IDs and parent lookups
         const updateFields: Partial<GeneratedDocumentUpdateFields> = {
           Status__c: 'SUCCEEDED',
           OutputFileId__c: result.pdfContentVersionId,
@@ -321,6 +320,20 @@ export async function uploadAndLinkFiles(
         // Include DOCX file ID if uploaded
         if (result.docxContentVersionId) {
           updateFields.MergedDocxFileId__c = result.docxContentVersionId;
+        }
+
+        // Map parent IDs to Generated_Document__c lookup fields
+        // e.g., ContactId => Contact__c, LeadId => Lead__c
+        if (request.parents) {
+          for (const [parentKey, parentValue] of Object.entries(
+            request.parents
+          )) {
+            // Convert "ContactId" → "Contact__c", "AccountId" → "Account__c", etc.
+            if (parentKey.endsWith('Id')) {
+              const lookupFieldName = parentKey.slice(0, -2) + '__c';
+              updateFields[lookupFieldName] = parentValue;
+            }
+          }
         }
 
         await updateGeneratedDocument(

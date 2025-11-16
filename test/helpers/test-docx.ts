@@ -4,9 +4,8 @@ import JSZip from 'jszip';
  * Creates a minimal valid DOCX buffer for testing using JSZip.
  * This DOCX file contains proper ZIP structure that docx-templates can parse.
  *
- * The template contains only fields common to all sample payloads:
- * - {{Account.Name}} - present in all samples
- * - {{GeneratedDate__formatted}} - present in all samples
+ * The template contains only the GeneratedDate__formatted field which is
+ * present in all test payloads.
  */
 export async function createTestDocxBuffer(): Promise<Buffer> {
   const zip = new JSZip();
@@ -26,19 +25,13 @@ export async function createTestDocxBuffer(): Promise<Buffer> {
 </Relationships>`;
 
   // word/document.xml - the main document with template placeholders
-  // Minimal template with only common fields across all sample payloads
-  // All samples have: Account.Name and GeneratedDate__formatted
+  // Minimal template with only the common GeneratedDate__formatted field
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
     <w:p>
       <w:r>
         <w:t>Test Template Document</w:t>
-      </w:r>
-    </w:p>
-    <w:p>
-      <w:r>
-        <w:t>Account: {{Account.Name}}</w:t>
       </w:r>
     </w:p>
     <w:p>

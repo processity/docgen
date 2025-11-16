@@ -1,39 +1,58 @@
 <template>
     <lightning-card title="Docgen E2E Test Page" icon-name="custom:custom78">
-        <!-- Account Lookup Section (always shown) -->
+        <!-- Object Type Selection Section -->
         <div class="slds-m-around_medium">
-            <lightning-card title="Select an Account" icon-name="standard:account">
+            <lightning-card title="Select Object Type" icon-name="standard:generic_loading">
                 <div class="slds-p-around_medium">
-                    <lightning-record-picker
-                        label="Account"
-                        placeholder="Search Accounts..."
-                        object-api-name="Account"
-                        value={recordId}
-                        onchange={handleAccountSelection}>
-                    </lightning-record-picker>
+                    <lightning-combobox
+                        label="Object Type"
+                        value={selectedObjectApiName}
+                        placeholder="Select an object type"
+                        options={objectTypeOptions}
+                        onchange={handleObjectTypeChange}
+                        required>
+                    </lightning-combobox>
                 </div>
             </lightning-card>
         </div>
 
+        <!-- Record Lookup Section (shown when object type is selected) -->
+        <template if:true={selectedObjectApiName}>
+            <div class="slds-m-around_medium">
+                <lightning-card title={recordSelectionTitle} icon-name={selectedObjectIcon}>
+                    <div class="slds-p-around_medium">
+                        <template if:true={recordId}>
+                            <lightning-record-picker
+                                label={selectedObjectLabel}
+                                placeholder={recordSearchPlaceholder}
+                                object-api-name={selectedObjectApiName}
+                                value={recordId}
+                                onchange={handleRecordSelection}>
+                            </lightning-record-picker>
+                        </template>
+                        <template if:false={recordId}>
+                            <lightning-record-picker
+                                label={selectedObjectLabel}
+                                placeholder={recordSearchPlaceholder}
+                                object-api-name={selectedObjectApiName}
+                                onchange={handleRecordSelection}>
+                            </lightning-record-picker>
+                        </template>
+                    </div>
+                </lightning-card>
+            </div>
+        </template>
+
         <!-- Main content when recordId is available -->
         <template if:true={recordId}>
-            <!-- Account Details Section -->
+            <!-- Record Details Section -->
             <div class="slds-m-around_medium">
-                <lightning-card title="Account Details" icon-name="standard:account">
+                <lightning-card title={recordDetailsTitle} icon-name={selectedObjectIcon}>
                     <div class="slds-p-horizontal_medium">
-                        <lightning-record-view-form record-id={recordId} object-api-name="Account">
+                        <lightning-record-view-form record-id={recordId} object-api-name={selectedObjectApiName}>
                             <div class="slds-grid slds-wrap">
-                                <div class="slds-col slds-size_1-of-2 slds-p-around_small">
+                                <div class="slds-col slds-size_1-of-1 slds-p-around_small">
                                     <lightning-output-field field-name="Name"></lightning-output-field>
-                                </div>
-                                <div class="slds-col slds-size_1-of-2 slds-p-around_small">
-                                    <lightning-output-field field-name="Type"></lightning-output-field>
-                                </div>
-                                <div class="slds-col slds-size_1-of-2 slds-p-around_small">
-                                    <lightning-output-field field-name="Industry"></lightning-output-field>
-                                </div>
-                                <div class="slds-col slds-size_1-of-2 slds-p-around_small">
-                                    <lightning-output-field field-name="AnnualRevenue"></lightning-output-field>
                                 </div>
                             </div>
                         </lightning-record-view-form>
@@ -89,7 +108,7 @@
                         </template>
                         <template if:false={generatedDocuments}>
                             <div class="slds-text-align_center slds-p-around_medium slds-text-color_weak">
-                                No generated documents found for this account.
+                                No generated documents found for this record.
                             </div>
                         </template>
                     </div>

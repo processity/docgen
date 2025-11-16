@@ -57,13 +57,24 @@ export interface DocgenOptions {
 
 /**
  * Parent record IDs for ContentDocumentLink creation
- * Each property is optional and nullable to support various linking scenarios
+ * Dynamic map supporting any Salesforce object type configured in Custom Metadata
+ *
+ * Key format: "{ObjectType}Id" (e.g., "AccountId", "ContactId", "LeadId", "CustomObject__cId")
+ * Value: Salesforce record ID (15 or 18 characters) or null
+ *
+ * @example
+ * ```typescript
+ * // Single parent
+ * { ContactId: "003xxxxxxxxxxxx" }
+ *
+ * // Multiple parents (e.g., Opportunity with Account)
+ * { OpportunityId: "006xxx", AccountId: "001xxx" }
+ *
+ * // Custom object
+ * { CustomObject__cId: "a0Axxx" }
+ * ```
  */
-export interface DocgenParents {
-  AccountId?: string | null;
-  OpportunityId?: string | null;
-  CaseId?: string | null;
-}
+export type DocgenParents = Record<string, string | null>;
 
 /**
  * Document generation request
@@ -290,6 +301,21 @@ export interface GeneratedDocumentUpdateFields {
   Error__c?: string;
   /** Number of processing attempts */
   Attempts__c?: number;
+
+  // Parent lookup fields (Task T-02: Dynamic lookup fields)
+  /** Lookup to Account */
+  Account__c?: string | null;
+  /** Lookup to Opportunity */
+  Opportunity__c?: string | null;
+  /** Lookup to Case */
+  Case__c?: string | null;
+  /** Lookup to Contact */
+  Contact__c?: string | null;
+  /** Lookup to Lead */
+  Lead__c?: string | null;
+
+  // Allow additional custom object lookups dynamically
+  [key: string]: string | number | null | undefined;
 }
 
 /**

@@ -119,7 +119,7 @@ private class DocgenControllerTest {
      */
     @testSetup
     static void setup() {
-        // Create test template
+        // Create test template for Account
         Docgen_Template__c template = new Docgen_Template__c(
             Name = 'Test Account Template',
             TemplateContentVersionId__c = '068000000000001AAA',
@@ -131,12 +131,53 @@ private class DocgenControllerTest {
         );
         insert template;
 
+        // Create template for Contact
+        Docgen_Template__c contactTemplate = new Docgen_Template__c(
+            Name = 'Test Contact Template',
+            TemplateContentVersionId__c = '068000000000002AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, Email FROM Contact WHERE Id = :recordId',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = false,
+            PrimaryParent__c = 'Contact'
+        );
+        insert contactTemplate;
+
+        // Create template for Lead
+        Docgen_Template__c leadTemplate = new Docgen_Template__c(
+            Name = 'Test Lead Template',
+            TemplateContentVersionId__c = '068000000000003AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, Company FROM Lead WHERE Id = :recordId',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = false,
+            PrimaryParent__c = 'Lead'
+        );
+        insert leadTemplate;
+
         // Create test Account
         Account acc = new Account(
             Name = 'Test Account Ltd',
             AnnualRevenue = 1200000
         );
         insert acc;
+
+        // Create test Contact
+        Contact con = new Contact(
+            FirstName = 'John',
+            LastName = 'Smith',
+            Email = 'john.smith@example.com'
+        );
+        insert con;
+
+        // Create test Lead
+        Lead led = new Lead(
+            FirstName = 'Jane',
+            LastName = 'Doe',
+            Company = 'Test Company Inc',
+            Email = 'jane.doe@example.com'
+        );
+        insert led;
     }
 
     /**
@@ -634,5 +675,210 @@ private class DocgenControllerTest {
         Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be captured');
         // The MockDocgenSuccessCallout already verifies request structure
         // If CorrelationId was missing from request, mock would fail assertion
+    }
+
+    /**
+     * Test 12: Generate Document for Contact (Dynamic Lookup Assignment)
+     * Given: Valid Contact record and Contact template
+     * When: generate() is called for Contact
+     * Then: Generated_Document__c.Contact__c lookup field is set dynamically
+     */
+    @isTest
+    static void testGenerateDocumentForContact() {
+        // Given
+        Docgen_Template__c contactTemplate = [
+            SELECT Id FROM Docgen_Template__c
+            WHERE Name = 'Test Contact Template'
+            LIMIT 1
+        ];
+        Contact con = [SELECT Id FROM Contact LIMIT 1];
+
+        // Set mock callout
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        String downloadUrl = DocgenController.generate(contactTemplate.Id, con.Id, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify download URL returned
+        Assert.isNotNull(downloadUrl, 'Download URL should be returned for Contact');
+        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Should be valid Salesforce file URL');
+
+        // Then - Verify Generated_Document__c created with Contact__c lookup set
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c, Contact__c, Account__c, Opportunity__c, Case__c, Lead__c
+            FROM Generated_Document__c
+            WHERE Contact__c = :con.Id
+        ];
+
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created for Contact');
+
+        Generated_Document__c doc = docs[0];
+        Assert.areEqual('SUCCEEDED', doc.Status__c, 'Status should be SUCCEEDED');
+        Assert.areEqual(con.Id, doc.Contact__c, 'Contact__c lookup should be set to Contact record ID');
+
+        // Verify other lookup fields are null (only Contact__c should be set)
+        Assert.isNull(doc.Account__c, 'Account__c should be null for Contact document');
+        Assert.isNull(doc.Opportunity__c, 'Opportunity__c should be null for Contact document');
+        Assert.isNull(doc.Case__c, 'Case__c should be null for Contact document');
+        Assert.isNull(doc.Lead__c, 'Lead__c should be null for Contact document');
+    }
+
+    /**
+     * Test 13: Generate Document for Lead (Dynamic Lookup Assignment)
+     * Given: Valid Lead record and Lead template
+     * When: generate() is called for Lead
+     * Then: Generated_Document__c.Lead__c lookup field is set dynamically
+     */
+    @isTest
+    static void testGenerateDocumentForLead() {
+        // Given
+        Docgen_Template__c leadTemplate = [
+            SELECT Id FROM Docgen_Template__c
+            WHERE Name = 'Test Lead Template'
+            LIMIT 1
+        ];
+        Lead led = [SELECT Id FROM Lead LIMIT 1];
+
+        // Set mock callout
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        String downloadUrl = DocgenController.generate(leadTemplate.Id, led.Id, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify download URL returned
+        Assert.isNotNull(downloadUrl, 'Download URL should be returned for Lead');
+        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Should be valid Salesforce file URL');
+
+        // Then - Verify Generated_Document__c created with Lead__c lookup set
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c, Lead__c, Account__c, Opportunity__c, Case__c, Contact__c
+            FROM Generated_Document__c
+            WHERE Lead__c = :led.Id
+        ];
+
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created for Lead');
+
+        Generated_Document__c doc = docs[0];
+        Assert.areEqual('SUCCEEDED', doc.Status__c, 'Status should be SUCCEEDED');
+        Assert.areEqual(led.Id, doc.Lead__c, 'Lead__c lookup should be set to Lead record ID');
+
+        // Verify other lookup fields are null (only Lead__c should be set)
+        Assert.isNull(doc.Account__c, 'Account__c should be null for Lead document');
+        Assert.isNull(doc.Opportunity__c, 'Opportunity__c should be null for Lead document');
+        Assert.isNull(doc.Case__c, 'Case__c should be null for Lead document');
+        Assert.isNull(doc.Contact__c, 'Contact__c should be null for Lead document');
+    }
+
+    /**
+     * Test 14: Generate Document for Unsupported Object Type
+     * Given: Attempt to generate document for object not in Supported_Object__mdt
+     * When: generate() is called with unsupported object type
+     * Then: DocgenObjectConfigException is thrown with clear error message
+     *
+     * Note: We cannot easily test with a truly unsupported object (like Asset)
+     * because we need a valid record ID. Instead, we test the service directly.
+     * This test documents expected behavior when an unsupported object is used.
+     */
+    @isTest
+    static void testGenerateDocumentForUnsupportedObject() {
+        // This test verifies the DocgenObjectConfigService validation
+        // In real usage, if someone tries to generate from an unsupported object,
+        // they would get an exception before the HTTP callout
+
+        // Test the validation directly
+        Test.startTest();
+        try {
+            // Attempt to get config for unsupported object
+            DocgenObjectConfigService.validateObjectSupported('Asset');
+            Assert.fail('Should have thrown DocgenObjectConfigException for unsupported object');
+        } catch (DocgenObjectConfigService.DocgenObjectConfigException e) {
+            // Then - Verify clear error message
+            Assert.isNotNull(e.getMessage(), 'Exception message should exist');
+            Assert.isTrue(e.getMessage().contains('Asset'), 'Error message should mention object name');
+            Assert.isTrue(
+                e.getMessage().contains('not configured') || e.getMessage().contains('not supported'),
+                'Error message should explain object is not configured'
+            );
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * Test 15: Verify All Configured Objects Support Dynamic Lookup Assignment
+     * Given: All 5 configured objects (Account, Opportunity, Case, Contact, Lead)
+     * When: Configuration is queried for each
+     * Then: Each has correct lookup field mapping in Supported_Object__mdt
+     */
+    @isTest
+    static void testAllConfiguredObjectsHaveValidConfiguration() {
+        // Given - Query all active configurations
+        Map<String, Supported_Object__mdt> configs = DocgenObjectConfigService.getAllActiveConfigs();
+
+        // Then - Verify all 5 configured objects exist
+        Assert.isTrue(configs.size() >= 5, 'At least 5 objects should be configured');
+
+        // Verify Account configuration
+        Assert.isTrue(configs.containsKey('Account'), 'Account should be configured');
+        Assert.areEqual('Account__c', configs.get('Account').Lookup_Field_API_Name__c,
+            'Account should map to Account__c lookup field');
+
+        // Verify Opportunity configuration
+        Assert.isTrue(configs.containsKey('Opportunity'), 'Opportunity should be configured');
+        Assert.areEqual('Opportunity__c', configs.get('Opportunity').Lookup_Field_API_Name__c,
+            'Opportunity should map to Opportunity__c lookup field');
+
+        // Verify Case configuration
+        Assert.isTrue(configs.containsKey('Case'), 'Case should be configured');
+        Assert.areEqual('Case__c', configs.get('Case').Lookup_Field_API_Name__c,
+            'Case should map to Case__c lookup field');
+
+        // Verify Contact configuration
+        Assert.isTrue(configs.containsKey('Contact'), 'Contact should be configured');
+        Assert.areEqual('Contact__c', configs.get('Contact').Lookup_Field_API_Name__c,
+            'Contact should map to Contact__c lookup field');
+
+        // Verify Lead configuration
+        Assert.isTrue(configs.containsKey('Lead'), 'Lead should be configured');
+        Assert.areEqual('Lead__c', configs.get('Lead').Lookup_Field_API_Name__c,
+            'Lead should map to Lead__c lookup field');
+    }
+
+    /**
+     * Test 16: isObjectSupported Helper Method
+     * Given: Various object names (supported and unsupported)
+     * When: isObjectSupported() is called
+     * Then: Returns true for configured objects, false for others
+     */
+    @isTest
+    static void testIsObjectSupportedHelper() {
+        // Test supported objects
+        Assert.isTrue(DocgenObjectConfigService.isObjectSupported('Account'),
+            'Account should be supported');
+        Assert.isTrue(DocgenObjectConfigService.isObjectSupported('Contact'),
+            'Contact should be supported');
+        Assert.isTrue(DocgenObjectConfigService.isObjectSupported('Lead'),
+            'Lead should be supported');
+        Assert.isTrue(DocgenObjectConfigService.isObjectSupported('Opportunity'),
+            'Opportunity should be supported');
+        Assert.isTrue(DocgenObjectConfigService.isObjectSupported('Case'),
+            'Case should be supported');
+
+        // Test unsupported objects
+        Assert.isFalse(DocgenObjectConfigService.isObjectSupported('Asset'),
+            'Asset should not be supported');
+        Assert.isFalse(DocgenObjectConfigService.isObjectSupported('Product2'),
+            'Product2 should not be supported');
+        Assert.isFalse(DocgenObjectConfigService.isObjectSupported('CustomUnsupported__c'),
+            'Custom unsupported object should return false');
+
+        // Test null/empty input
+        Assert.isFalse(DocgenObjectConfigService.isObjectSupported(null),
+            'Null input should return false');
+        Assert.isFalse(DocgenObjectConfigService.isObjectSupported(''),
+            'Empty string should return false');
     }
 }

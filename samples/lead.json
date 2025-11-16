@@ -1,0 +1,125 @@
+{
+  "templateId": "068xx000000abcdXXX",
+  "outputFileName": "Lead_Follow_Up_{{Lead.LastName}}.pdf",
+  "outputFormat": "PDF",
+  "locale": "en-US",
+  "timezone": "America/New_York",
+  "options": {
+    "storeMergedDocx": false,
+    "returnDocxToBrowser": false
+  },
+  "parents": {
+    "LeadId": "00Qxx000000abcdXXX"
+  },
+  "data": {
+    "Lead": {
+      "Id": "00Qxx000000abcdXXX",
+      "FirstName": "Jennifer",
+      "LastName": "Martinez",
+      "Name": "Jennifer Martinez",
+      "Title": "VP of Operations",
+      "Company": "Global Solutions Inc.",
+      "Email": "jennifer.martinez@globalsolutions.com",
+      "Phone": "(555) 123-4567",
+      "MobilePhone": "(555) 987-6543",
+      "Website": "https://www.globalsolutions.com",
+      "Street": "789 Business Blvd",
+      "City": "New York",
+      "State": "NY",
+      "PostalCode": "10001",
+      "Country": "United States",
+      "Industry": "Financial Services",
+      "NumberOfEmployees": 500,
+      "NumberOfEmployees__formatted": "500",
+      "AnnualRevenue": 75000000,
+      "AnnualRevenue__formatted": "$75,000,000",
+      "LeadSource": "Web",
+      "Status": "Working - Contacted",
+      "Rating": "Hot",
+      "Description": "Interested in enterprise solution for multi-site deployment. Budget approved for Q1 2026. Key decision maker with technical background.",
+      "Owner": {
+        "Name": "Emily Rodriguez",
+        "Email": "emily.rodriguez@example.com",
+        "Phone": "(555) 111-2222"
+      },
+      "CreatedDate": "2025-10-15T14:30:00.000Z",
+      "CreatedDate__formatted": "Oct 15, 2025",
+      "LastModifiedDate": "2025-11-16T16:45:00.000Z",
+      "LastModifiedDate__formatted": "Nov 16, 2025",
+      "LastActivityDate": "2025-11-14",
+      "LastActivityDate__formatted": "Nov 14, 2025",
+      "ConvertedDate": null,
+      "ConvertedDate__formatted": null,
+      "IsConverted": false,
+      "ConvertedAccountId": null,
+      "ConvertedContactId": null,
+      "ConvertedOpportunityId": null,
+      "DaysOpen": 33,
+      "DaysOpen__formatted": "33 days",
+      "EmailBouncedDate": null,
+      "EmailBouncedReason": null,
+      "ProductInterest": "Enterprise Platform",
+      "CurrentGenerator": "Competitor X",
+      "PrimaryCompetitor": "Competitor Y",
+      "EstimatedBudget__formatted": "$250,000",
+      "ExpectedCloseDate": "2026-03-31",
+      "ExpectedCloseDate__formatted": "Mar 31, 2026",
+      "Qualification_Notes__c": "Technical requirements:\n- Multi-cloud deployment (AWS + Azure)\n- SOC 2 compliance required\n- Integration with existing Salesforce CRM\n- 500-user license minimum\n\nNext Steps:\n- Schedule technical demo for Dec 5, 2025\n- Provide pricing proposal by Dec 15, 2025\n- Executive presentation in January 2026",
+      "RecentActivities": [
+        {
+          "Subject": "Discovery Call",
+          "ActivityDate__formatted": "Nov 14, 2025",
+          "Status": "Completed",
+          "Priority": "Normal",
+          "Description": "Discussed technical requirements and timeline. Very positive conversation."
+        },
+        {
+          "Subject": "Send Product Brochure",
+          "ActivityDate__formatted": "Nov 8, 2025",
+          "Status": "Completed",
+          "Priority": "Normal",
+          "Description": "Sent enterprise product information and case studies."
+        },
+        {
+          "Subject": "Initial Contact Email",
+          "ActivityDate__formatted": "Oct 16, 2025",
+          "Status": "Completed",
+          "Priority": "High",
+          "Description": "Introduction email sent. Lead responded within 2 hours."
+        }
+      ],
+      "UpcomingTasks": [
+        {
+          "Subject": "Schedule Technical Demo",
+          "ActivityDate__formatted": "Nov 20, 2025",
+          "Status": "Not Started",
+          "Priority": "High",
+          "Description": "Coordinate with Solutions Engineering team for Dec 5 demo."
+        },
+        {
+          "Subject": "Prepare Pricing Proposal",
+          "ActivityDate__formatted": "Dec 1, 2025",
+          "Status": "Not Started",
+          "Priority": "High",
+          "Description": "Create custom pricing for 500-user enterprise deployment."
+        }
+      ],
+      "CampaignHistory": [
+        {
+          "CampaignName": "Enterprise Solutions Webinar - Q4 2025",
+          "MemberStatus": "Attended",
+          "FirstRespondedDate__formatted": "Oct 10, 2025"
+        }
+      ],
+      "ScoringBreakdown": {
+        "Demographic_Score__c": 85,
+        "Engagement_Score__c": 92,
+        "Total_Score__c": 177,
+        "Score_Grade__c": "A"
+      }
+    },
+    "GeneratedDate__formatted": "Nov 17, 2025",
+    "ReportFooter": "This lead summary was generated from Salesforce CRM. Information is current as of the generation date above."
+  },
+  "requestHash": "sha256:f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"
+}

@@ -1,0 +1,92 @@
+{
+  "templateId": "068xx000000abcdXXX",
+  "outputFileName": "Contact_Summary_{{Contact.LastName}}.pdf",
+  "outputFormat": "PDF",
+  "locale": "en-GB",
+  "timezone": "Europe/London",
+  "options": {
+    "storeMergedDocx": false,
+    "returnDocxToBrowser": false
+  },
+  "parents": {
+    "ContactId": "003xx000000abcdXXX",
+    "AccountId": "001xx000000xyz123"
+  },
+  "data": {
+    "Contact": {
+      "Id": "003xx000000abcdXXX",
+      "FirstName": "Sarah",
+      "LastName": "Williams",
+      "Name": "Sarah Williams",
+      "Title": "Chief Technology Officer",
+      "Email": "sarah.williams@techcorp.co.uk",
+      "Phone": "+44 20 7946 0975",
+      "MobilePhone": "+44 7700 900123",
+      "Department": "Technology",
+      "MailingStreet": "456 Tech Park",
+      "MailingCity": "Manchester",
+      "MailingPostalCode": "M1 2AB",
+      "MailingCountry": "United Kingdom",
+      "Birthdate": "1985-03-22",
+      "Birthdate__formatted": "22 Mar 1985",
+      "LeadSource": "Web",
+      "DoNotCall": false,
+      "HasOptedOutOfEmail": false,
+      "Description": "Key decision maker for technology purchases. Prefers technical deep dives and ROI analysis.",
+      "Account": {
+        "Id": "001xx000000xyz123",
+        "Name": "TechCorp Industries",
+        "BillingCity": "Manchester",
+        "BillingCountry": "United Kingdom",
+        "Industry": "Manufacturing",
+        "AnnualRevenue__formatted": "£25,000,000",
+        "Phone": "+44 161 123 4567",
+        "Website": "https://www.techcorp.co.uk"
+      },
+      "Owner": {
+        "Name": "Michael Chen",
+        "Email": "michael.chen@example.com",
+        "Phone": "+44 20 7946 0124"
+      },
+      "ReportsTo": {
+        "Name": "David Thompson",
+        "Title": "Chief Executive Officer",
+        "Email": "david.thompson@techcorp.co.uk"
+      },
+      "CreatedDate": "2024-02-10T10:15:00.000Z",
+      "CreatedDate__formatted": "10 Feb 2024",
+      "LastModifiedDate": "2025-11-05T11:30:00.000Z",
+      "LastModifiedDate__formatted": "5 Nov 2025",
+      "LastActivityDate": "2025-10-28",
+      "LastActivityDate__formatted": "28 Oct 2025",
+      "RecentCases": [
+        {
+          "CaseNumber": "00001234",
+          "Subject": "Software License Renewal",
+          "Status": "Closed",
+          "Priority": "Medium",
+          "ClosedDate__formatted": "15 Oct 2025"
+        },
+        {
+          "CaseNumber": "00001189",
+          "Subject": "Technical Support Request",
+          "Status": "Resolved",
+          "Priority": "High",
+          "ClosedDate__formatted": "8 Oct 2025"
+        }
+      ],
+      "RecentOpportunities": [
+        {
+          "Name": "Enterprise Upgrade 2025",
+          "StageName": "Proposal/Price Quote",
+          "Amount__formatted": "£180,000",
+          "CloseDate__formatted": "31 Jan 2026",
+          "Probability__formatted": "60%"
+        }
+      ]
+    },
+    "GeneratedDate__formatted": "17 Nov 2025",
+    "ReportFooter": "This contact summary was generated from Salesforce. For updates, please contact your sales representative."
+  },
+  "requestHash": "sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+}

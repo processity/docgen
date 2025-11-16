@@ -203,15 +203,15 @@ public with sharing class DocgenController {
         doc.RequestedBy__c = UserInfo.getUserId();
         doc.CorrelationId__c = correlationId;
 
-        // Set parent lookups based on record type
-        String sObjectType = recordId.getSObjectType().getDescribe().getName();
-        if (sObjectType == 'Account') {
-            doc.Account__c = recordId;
-        } else if (sObjectType == 'Opportunity') {
-            doc.Opportunity__c = recordId;
-        } else if (sObjectType == 'Case') {
-            doc.Case__c = recordId;
-        }
+        // Set parent lookup dynamically based on object configuration
+        String objectApiName = recordId.getSObjectType().getDescribe().getName();
+
+        // Validate object is supported and get configuration
+        DocgenObjectConfigService.validateObjectSupported(objectApiName);
+        Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+
+        // Dynamically set the parent lookup field using reflection
+        doc.put(config.Lookup_Field_API_Name__c, recordId);
 
         insert doc;
         return doc;

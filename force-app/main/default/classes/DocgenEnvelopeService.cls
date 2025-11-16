@@ -129,37 +129,50 @@ public with sharing class DocgenEnvelopeService {
 
     /**
      * Extract parent IDs from record and data
-     * Returns map with AccountId, OpportunityId, CaseId (nulls for non-present)
+     * Dynamically builds parents map for any object type using format "{ObjectType}Id"
+     * Also extracts parent relationships from data (e.g., AccountId from Contact/Opportunity/Case)
      */
     @TestVisible
     private static Map<String, String> extractParentIds(Id recordId, Map<String, Object> data) {
-        Map<String, String> parents = new Map<String, String>{
-            'AccountId' => null,
-            'OpportunityId' => null,
-            'CaseId' => null
-        };
+        // Dynamic map structure - build based on actual parents, not hardcoded
+        Map<String, String> parents = new Map<String, String>();
 
         // Get object type from recordId
-        String objectType = recordId.getSObjectType().getDescribe().getName();
+        String objectApiName = recordId.getSObjectType().getDescribe().getName();
 
-        // Set the primary parent
-        if (objectType == 'Account') {
-            parents.put('AccountId', recordId);
-        } else if (objectType == 'Opportunity') {
-            parents.put('OpportunityId', recordId);
+        // Set primary parent with dynamic key format: "{ObjectType}Id"
+        String primaryParentKey = objectApiName + 'Id';
+        parents.put(primaryParentKey, recordId);
 
-            // Try to extract AccountId from data
-            Map<String, Object> oppData = (Map<String, Object>) data.get('Opportunity');
-            if (oppData != null && oppData.containsKey('AccountId')) {
-                parents.put('AccountId', (String) oppData.get('AccountId'));
-            }
-        } else if (objectType == 'Case') {
-            parents.put('CaseId', recordId);
+        // Extract additional parent relationships from data map
+        // Define potential parent fields to look for across all objects
+        Set<String> potentialParentFields = new Set<String>{
+            'AccountId',
+            'ContactId',
+            'OpportunityId',
+            'CaseId',
+            'LeadId'
+        };
 
-            // Try to extract AccountId from data
-            Map<String, Object> caseData = (Map<String, Object>) data.get('Case');
-            if (caseData != null && caseData.containsKey('AccountId')) {
-                parents.put('AccountId', (String) caseData.get('AccountId'));
+        // Get the data map for this object type
+        Map<String, Object> objectData = (Map<String, Object>) data.get(objectApiName);
+
+        // Extract parent IDs from the object's data
+        if (objectData != null) {
+            for (String parentField : potentialParentFields) {
+                // Skip if this is the primary parent (already added)
+                if (parentField == primaryParentKey) {
+                    continue;
+                }
+
+                // Check if this parent field exists in the data
+                if (objectData.containsKey(parentField)) {
+                    String parentId = (String) objectData.get(parentField);
+                    // Only add non-null parent IDs
+                    if (parentId != null && parentId != '') {
+                        parents.put(parentField, parentId);
+                    }
+                }
             }
         }
 

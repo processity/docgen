@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>PrimaryParent__c</fullName>
-    <description>Default parent object for ContentDocumentLink creation. Used when template is designed for a specific object type (Account, Opportunity, or Case).</description>
+    <description>Default parent object for ContentDocumentLink creation. Used when template is designed for a specific object type. Admins can enter any Salesforce object API name that is configured in Supported_Object__mdt.</description>
     <externalId>false</externalId>
     <label>Primary Parent Object</label>
     <required>false</required>
     <trackTrending>false</trackTrending>
     <type>Picklist</type>
     <valueSet>
-        <restricted>true</restricted>
+        <restricted>false</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
@@ -25,6 +25,16 @@
                 <fullName>Case</fullName>
                 <default>false</default>
                 <label>Case</label>
+            </value>
+            <value>
+                <fullName>Contact</fullName>
+                <default>false</default>
+                <label>Contact</label>
+            </value>
+            <value>
+                <fullName>Lead</fullName>
+                <default>false</default>
+                <label>Lead</label>
             </value>
         </valueSetDefinition>
     </valueSet>

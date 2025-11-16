@@ -778,4 +778,249 @@ private class DocgenEnvelopeServiceTest {
             'RequestJSON should fit in Long Text Area field'
         );
     }
+
+    // ========== T-06: Dynamic Parent Extraction Tests ==========
+
+    @isTest
+    static void testExtractParentIds_Contact_ReturnsSingleParent() {
+        // Given: Contact record with no Account parent
+        Contact contact = new Contact(
+            FirstName = 'Test',
+            LastName = 'Contact',
+            Email = 'test@example.com'
+        );
+        insert contact;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Contact Template',
+            TemplateContentVersionId__c = '068000000000017AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, FirstName, LastName, Email FROM Contact WHERE Id = :recordId',
+            PrimaryParent__c = 'Contact'
+        );
+        insert template;
+
+        // When: Building envelope for Contact
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            contact.Id,
+            template,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Parents map should contain ContactId with dynamic key format
+        Assert.isNotNull(env.parents, 'Parents map should exist');
+        Assert.areEqual(contact.Id, env.parents.get('ContactId'), 'ContactId should be set with key "ContactId"');
+
+        // Other parent IDs should not be present (or be null)
+        Assert.isTrue(
+            !env.parents.containsKey('AccountId') || env.parents.get('AccountId') == null,
+            'AccountId should not be present for orphan Contact'
+        );
+    }
+
+    @isTest
+    static void testExtractParentIds_Lead_ReturnsSingleParent() {
+        // Given: Lead record with no parent relationships
+        Lead lead = new Lead(
+            FirstName = 'Test',
+            LastName = 'Lead',
+            Company = 'Test Company',
+            Email = 'testlead@example.com',
+            Status = 'Open - Not Contacted'
+        );
+        insert lead;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Lead Template',
+            TemplateContentVersionId__c = '068000000000018AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, FirstName, LastName, Company, Email FROM Lead WHERE Id = :recordId',
+            PrimaryParent__c = 'Lead'
+        );
+        insert template;
+
+        // When: Building envelope for Lead
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            lead.Id,
+            template,
+            'PDF',
+            'en-US',
+            'America/New_York'
+        );
+        Test.stopTest();
+
+        // Then: Parents map should contain LeadId with correct format
+        Assert.isNotNull(env.parents, 'Parents map should exist');
+        Assert.areEqual(lead.Id, env.parents.get('LeadId'), 'LeadId should be set with key "LeadId"');
+
+        // Verify no other parent types present
+        Assert.isTrue(
+            !env.parents.containsKey('AccountId') || env.parents.get('AccountId') == null,
+            'AccountId should not be present for Lead'
+        );
+    }
+
+    @isTest
+    static void testExtractParentIds_ContactWithAccount_ReturnsMultiParent() {
+        // Given: Contact with Account parent relationship
+        Account acc = new Account(Name = 'Parent Account');
+        insert acc;
+
+        Contact contact = new Contact(
+            FirstName = 'Related',
+            LastName = 'Contact',
+            AccountId = acc.Id,
+            Email = 'related@example.com'
+        );
+        insert contact;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Contact with Account Template',
+            TemplateContentVersionId__c = '068000000000019AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId, Email FROM Contact WHERE Id = :recordId',
+            PrimaryParent__c = 'Contact'
+        );
+        insert template;
+
+        // When: Building envelope for Contact with Account
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            contact.Id,
+            template,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Both ContactId and AccountId should be present
+        Assert.isNotNull(env.parents, 'Parents map should exist');
+        Assert.areEqual(contact.Id, env.parents.get('ContactId'), 'ContactId should be set');
+        Assert.areEqual(acc.Id, env.parents.get('AccountId'), 'AccountId should be extracted from Contact data');
+    }
+
+    @isTest
+    static void testExtractParentIds_DynamicKeyFormat() {
+        // Given: Different object types
+        Account acc = new Account(Name = 'Test Account');
+        insert acc;
+
+        Contact contact = new Contact(
+            LastName = 'Test Contact',
+            AccountId = acc.Id
+        );
+        insert contact;
+
+        Lead lead = new Lead(
+            LastName = 'Test Lead',
+            Company = 'Test Co',
+            Status = 'Open - Not Contacted'
+        );
+        insert lead;
+
+        // Create templates for each
+        Docgen_Template__c accTemplate = new Docgen_Template__c(
+            Name = 'Account Dynamic Test',
+            TemplateContentVersionId__c = '068000000000020AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            PrimaryParent__c = 'Account'
+        );
+
+        Docgen_Template__c contactTemplate = new Docgen_Template__c(
+            Name = 'Contact Dynamic Test',
+            TemplateContentVersionId__c = '068000000000021AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, LastName, AccountId FROM Contact WHERE Id = :recordId',
+            PrimaryParent__c = 'Contact'
+        );
+
+        Docgen_Template__c leadTemplate = new Docgen_Template__c(
+            Name = 'Lead Dynamic Test',
+            TemplateContentVersionId__c = '068000000000022AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, LastName, Company FROM Lead WHERE Id = :recordId',
+            PrimaryParent__c = 'Lead'
+        );
+
+        insert new List<Docgen_Template__c>{ accTemplate, contactTemplate, leadTemplate };
+
+        // When: Building envelopes for each object type
+        Test.startTest();
+        DocgenEnvelopeService.Envelope accEnv = DocgenEnvelopeService.build(
+            acc.Id, accTemplate, 'PDF', 'en-GB', 'Europe/London'
+        );
+        DocgenEnvelopeService.Envelope contactEnv = DocgenEnvelopeService.build(
+            contact.Id, contactTemplate, 'PDF', 'en-GB', 'Europe/London'
+        );
+        DocgenEnvelopeService.Envelope leadEnv = DocgenEnvelopeService.build(
+            lead.Id, leadTemplate, 'PDF', 'en-GB', 'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Each should have correct key format "{ObjectType}Id"
+        Assert.areEqual(acc.Id, accEnv.parents.get('AccountId'), 'Account should use "AccountId" key');
+        Assert.areEqual(contact.Id, contactEnv.parents.get('ContactId'), 'Contact should use "ContactId" key');
+        Assert.areEqual(lead.Id, leadEnv.parents.get('LeadId'), 'Lead should use "LeadId" key');
+
+        // Contact envelope should also have AccountId from relationship
+        Assert.areEqual(acc.Id, contactEnv.parents.get('AccountId'), 'Contact envelope should include AccountId');
+    }
+
+    @isTest
+    static void testExtractParentIds_OpportunityWithAccount_VerifyBothParents() {
+        // Given: Opportunity with Account (verify existing behavior still works)
+        Account acc = new Account(Name = 'Opportunity Account');
+        insert acc;
+
+        Opportunity opp = new Opportunity(
+            Name = 'Multi-Parent Opp',
+            AccountId = acc.Id,
+            CloseDate = Date.today().addDays(30),
+            StageName = 'Prospecting',
+            Amount = 500000
+        );
+        insert opp;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Opp Multi-Parent Template',
+            TemplateContentVersionId__c = '068000000000023AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
+            PrimaryParent__c = 'Opportunity'
+        );
+        insert template;
+
+        // When: Building envelope
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            opp.Id,
+            template,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Both OpportunityId and AccountId should be present (backward compatibility)
+        Assert.isNotNull(env.parents, 'Parents map should exist');
+        Assert.areEqual(opp.Id, env.parents.get('OpportunityId'), 'OpportunityId should be set');
+        Assert.areEqual(acc.Id, env.parents.get('AccountId'), 'AccountId should be extracted from Opportunity');
+
+        // Verify map doesn't contain extra null keys for unsupported objects
+        // After refactoring, map should only contain keys for actual parents
+        Integer parentCount = 0;
+        for (String parentId : env.parents.values()) {
+            if (parentId != null && parentId != '') {
+                parentCount++;
+            }
+        }
+        Assert.areEqual(2, parentCount, 'Should have exactly 2 non-null parents (Opportunity and Account)');
+    }
 }

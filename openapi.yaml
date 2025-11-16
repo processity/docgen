@@ -176,7 +176,46 @@ paths:
                   parents:
                     AccountId: '001xx000000abcdXXX'
                     OpportunityId: '006xx000000xyzABC'
-                    CaseId: null
+              contact:
+                summary: Contact document generation
+                value:
+                  templateId: '068xx000000abcdXXX'
+                  outputFileName: 'Contact_{{Contact.Name}}.pdf'
+                  outputFormat: PDF
+                  locale: en-US
+                  timezone: America/New_York
+                  options:
+                    storeMergedDocx: false
+                    returnDocxToBrowser: false
+                  parents:
+                    ContactId: '003xx000000abcdXXX'
+                    AccountId: '001xx000000xyzABC'
+                  data:
+                    Contact:
+                      FirstName: John
+                      LastName: Smith
+                      Email: john.smith@example.com
+                    Account:
+                      Name: Acme Corporation
+              lead:
+                summary: Lead document generation
+                value:
+                  templateId: '068xx000000abcdXXX'
+                  outputFileName: 'Lead_{{Lead.Name}}.pdf'
+                  outputFormat: PDF
+                  locale: en-GB
+                  timezone: Europe/London
+                  options:
+                    storeMergedDocx: false
+                    returnDocxToBrowser: false
+                  parents:
+                    LeadId: '00Qxx000000abcdXXX'
+                  data:
+                    Lead:
+                      FirstName: Jane
+                      LastName: Doe
+                      Company: Tech Innovations Inc
+                      Status: Open
                   data:
                     Account:
                       Name: Acme Ltd
@@ -568,22 +607,26 @@ components:
               AnnualRevenue__formatted: '£1,200,000'
         parents:
           type: object
-          properties:
-            AccountId:
-              type: string
-              nullable: true
-              description: Salesforce Account ID (18 chars). If present, file will be linked via ContentDocumentLink.
-            OpportunityId:
-              type: string
-              nullable: true
-              description: Salesforce Opportunity ID (18 chars). If present, file will be linked.
-            CaseId:
-              type: string
-              nullable: true
-              description: Salesforce Case ID (18 chars). If present, file will be linked.
+          additionalProperties:
+            oneOf:
+              - type: 'null'
+              - type: string
+                pattern: '^([a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$'
           description: |
-            Parent record IDs for linking the generated file. All non-null IDs will receive a ContentDocumentLink
-            with `ShareType=V`, `Visibility=AllUsers`.
+            Parent record IDs for linking the generated file. Dynamic map supporting any Salesforce object type
+            configured in Custom Metadata (`Supported_Object__mdt`).
+
+            **Key format:** `"{ObjectType}Id"` (e.g., `AccountId`, `ContactId`, `LeadId`, `CustomObject__cId`)
+            **Value:** Salesforce record ID (15 or 18 characters) or `null`
+
+            All non-null IDs will receive a `ContentDocumentLink` with `ShareType=V`, `Visibility=AllUsers`.
+
+            **Pre-configured object types:** Account, Opportunity, Case, Contact, Lead
+
+            **Examples:**
+            - Single parent: `{ "ContactId": "003xxxxxxxxxxxx" }`
+            - Multi-parent: `{ "OpportunityId": "006xxx", "AccountId": "001xxx" }`
+            - Custom object: `{ "CustomObject__cId": "a0Axxx" }`
         requestHash:
           type: string
           description: |

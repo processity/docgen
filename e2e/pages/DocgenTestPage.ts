@@ -25,13 +25,13 @@ export class DocgenTestPage {
   }
 
   /**
-   * Navigate to the Docgen Test Page with the specified Account recordId and optional Template ID
-   * @param accountId - The Account ID to pass as c__recordId parameter
+   * Navigate to the Docgen Test Page with the specified recordId and optional Template ID
+   * @param recordId - The record ID to pass as c__recordId parameter (works for any object)
    * @param templateId - Optional Template ID to pass as c__templateId parameter
    */
-  async goto(accountId: string, templateId?: string) {
+  async goto(recordId: string, templateId?: string) {
     const baseUrl = await this.getBaseUrl();
-    let url = `${baseUrl}/lightning/n/Docgen_Test_Page?c__recordId=${accountId}`;
+    let url = `${baseUrl}/lightning/n/Docgen_Test_Page?c__recordId=${recordId}`;
 
     if (templateId) {
       url += `&c__templateId=${templateId}`;
@@ -143,10 +143,11 @@ export class DocgenTestPage {
   }
 
   /**
-   * Get the Account details card
+   * Get the record details card (works for any object type)
    */
-  getAccountDetailsCard() {
-    return this.page.locator('lightning-card:has-text("Account Details")').first();
+  getRecordDetailsCard() {
+    // Match any card with "Details" in the title (e.g., "Account Details", "Contact Details", etc.)
+    return this.page.locator('lightning-card[title$=" Details"]').first();
   }
 
   /**
@@ -164,25 +165,25 @@ export class DocgenTestPage {
   }
 
   /**
-   * Wait for the account details to load
+   * Wait for the record details to load (works for any object type)
    */
-  async waitForAccountDetailsLoaded() {
+  async waitForRecordDetailsLoaded() {
     // Simply wait for the docgen button to be visible since it's the main component we care about
     await this.page.waitForSelector('c-docgen-button', { state: 'visible', timeout: 15000 });
 
-    // Optional: Wait for Account Details card if it exists
+    // Optional: Wait for record details card if it exists
     try {
-      const accountCard = this.getAccountDetailsCard();
-      await accountCard.waitFor({ state: 'visible', timeout: 5000 });
+      const recordCard = this.getRecordDetailsCard();
+      await recordCard.waitFor({ state: 'visible', timeout: 5000 });
     } catch (e) {
-      // Account card might not be critical, continue
+      // Record details card might not be critical, continue
     }
   }
 
   /**
-   * Get the account name displayed on the page
+   * Get the record name displayed on the page (works for any object type)
    */
-  async getAccountName(): Promise<string | null> {
+  async getRecordName(): Promise<string | null> {
     // Try multiple possible selectors for the Name field
     const selectors = [
       'lightning-output-field[data-field-name="Name"]',
