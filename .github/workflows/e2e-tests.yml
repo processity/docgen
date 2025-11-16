@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:  # Allow manual trigger
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true  
+
 jobs:
   deploy-ci-backend:
     name: Deploy CI Backend
