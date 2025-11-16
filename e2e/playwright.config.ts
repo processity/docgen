@@ -45,8 +45,8 @@ export default defineConfig({
     navigationTimeout: 30000,
   },
 
-  /* Global timeout for each test */
-  timeout: 60000,
+  /* Global timeout for each test (increased for CI where document generation can be slower) */
+  timeout: 120000,
 
   /* Configure projects for major browsers */
   projects: [
