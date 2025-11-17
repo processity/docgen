@@ -1,0 +1,249 @@
+<template>
+    <div class="slds-card slds-p-around_medium">
+        <!-- Header -->
+        <div class="slds-grid slds-gutters slds-m-bottom_medium">
+            <div class="slds-col slds-size_1-of-2">
+                <h1 class="slds-text-heading_large">System Status</h1>
+                <p class="slds-text-body_small slds-text-color_weak">
+                    Last updated: {lastUpdated}
+                </p>
+            </div>
+            <div class="slds-col slds-size_1-of-2 slds-text-align_right">
+                <lightning-button
+                    label="Refresh"
+                    icon-name="utility:refresh"
+                    variant="neutral"
+                    onclick={handleRefresh}
+                    disabled={isLoading}>
+                </lightning-button>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Loading" size="medium"></lightning-spinner>
+        </template>
+
+        <!-- Error Message -->
+        <template if:true={error}>
+            <div class="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_medium" role="alert">
+                <span class="slds-assistive-text">Error</span>
+                <h2>{error}</h2>
+            </div>
+        </template>
+
+        <!-- Section 1: System Health -->
+        <div class="slds-m-bottom_large">
+            <h2 class="slds-text-heading_medium slds-m-bottom_small">System Health</h2>
+            <div class="slds-grid slds-wrap slds-gutters">
+                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                    <article class="slds-card status-card">
+                        <div class="slds-card__header slds-grid">
+                            <header class="slds-media slds-media_center">
+                                <div class="slds-media__body">
+                                    <h3 class="slds-card__header-title">
+                                        <span>Backend Readiness</span>
+                                    </h3>
+                                </div>
+                            </header>
+                        </div>
+                        <div class="slds-card__body slds-card__body_inner">
+                            <div class="slds-text-align_center">
+                                <lightning-icon
+                                    icon-name={readinessIcon}
+                                    alternative-text={readinessStatus}
+                                    variant={readinessVariant}
+                                    size="large"
+                                    class="status-icon">
+                                </lightning-icon>
+                                <div class="slds-m-top_x-small">
+                                    <lightning-badge label={readinessStatus} class={readinessBadgeClass}></lightning-badge>
+                                </div>
+                                <template if:true={systemStatus.ready}>
+                                    <div class="slds-m-top_small slds-text-body_small">
+                                        <div>JWKS: <lightning-icon icon-name={jwksIcon} size="xx-small"></lightning-icon></div>
+                                        <div>Salesforce: <lightning-icon icon-name={salesforceIcon} size="xx-small"></lightning-icon></div>
+                                        <div>Key Vault: <lightning-icon icon-name={keyVaultIcon} size="xx-small"></lightning-icon></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                    <article class="slds-card status-card">
+                        <div class="slds-card__header slds-grid">
+                            <header class="slds-media slds-media_center">
+                                <div class="slds-media__body">
+                                    <h3 class="slds-card__header-title">
+                                        <span>Health Check</span>
+                                    </h3>
+                                </div>
+                            </header>
+                        </div>
+                        <div class="slds-card__body slds-card__body_inner">
+                            <div class="slds-text-align_center">
+                                <lightning-icon
+                                    icon-name="utility:success"
+                                    alternative-text="Healthy"
+                                    variant="success"
+                                    size="large"
+                                    class="status-icon">
+                                </lightning-icon>
+                                <div class="slds-m-top_x-small">
+                                    <lightning-badge label="Service Running" class="success-badge"></lightning-badge>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
+                    <article class="slds-card status-card">
+                        <div class="slds-card__header slds-grid">
+                            <header class="slds-media slds-media_center">
+                                <div class="slds-media__body">
+                                    <h3 class="slds-card__header-title">
+                                        <span>Queue Depth</span>
+                                    </h3>
+                                </div>
+                            </header>
+                        </div>
+                        <div class="slds-card__body slds-card__body_inner">
+                            <div class="slds-text-align_center">
+                                <div class="metric-value">{queueMetrics.queueDepth}</div>
+                                <div class="metric-label">Documents in Queue</div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Worker Control -->
+        <div class="slds-m-bottom_large">
+            <h2 class="slds-text-heading_medium slds-m-bottom_small">Worker Control</h2>
+            <article class="slds-card">
+                <div class="slds-card__body slds-card__body_inner">
+                    <div class="slds-grid slds-wrap slds-gutters">
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <dl class="slds-list_horizontal slds-wrap">
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Status">Status:</dt>
+                                <dd class="slds-item_detail slds-truncate">
+                                    <lightning-badge label={workerStatusLabel} class={workerStatusBadgeClass}></lightning-badge>
+                                </dd>
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Last Poll Time">Last Poll Time:</dt>
+                                <dd class="slds-item_detail slds-truncate">{lastPollTime}</dd>
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Current Queue Depth">Current Queue Depth:</dt>
+                                <dd class="slds-item_detail slds-truncate">{workerStatus.currentQueueDepth}</dd>
+                            </dl>
+                        </div>
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-text-align_right">
+                            <lightning-button
+                                label="Start Worker"
+                                variant="brand"
+                                onclick={handleStartWorker}
+                                disabled={disableStartButton}
+                                class="slds-m-right_x-small">
+                            </lightning-button>
+                            <lightning-button
+                                label="Stop Worker"
+                                variant="destructive"
+                                onclick={handleStopWorker}
+                                disabled={disableStopButton}>
+                            </lightning-button>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </div>
+
+        <!-- Section 3: Queue Metrics (Last 24h) -->
+        <div class="slds-m-bottom_large">
+            <h2 class="slds-text-heading_medium slds-m-bottom_small">Queue Metrics - Last 24 Hours</h2>
+            <div class="slds-grid slds-wrap slds-gutters">
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card">
+                        <div class="metric-value">{queueMetrics.total}</div>
+                        <div class="metric-label">Total Processed</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card success-metric">
+                        <div class="metric-value">{queueMetrics.succeeded}</div>
+                        <div class="metric-label">Succeeded</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card error-metric">
+                        <div class="metric-value">{queueMetrics.failed}</div>
+                        <div class="metric-label">Failed</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card">
+                        <div class="metric-value">{queueMetrics.successRate}%</div>
+                        <div class="metric-label">Success Rate</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slds-grid slds-wrap slds-gutters slds-m-top_small">
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card">
+                        <div class="metric-value">{queueMetrics.retries}</div>
+                        <div class="metric-label">Retries</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card">
+                        <div class="metric-value">{workerStats.uptimeSeconds}</div>
+                        <div class="metric-label">Uptime (seconds)</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card warning-metric">
+                        <div class="metric-value">{queueMetrics.processing}</div>
+                        <div class="metric-label">Processing</div>
+                    </div>
+                </div>
+                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
+                    <div class="metric-card warning-metric">
+                        <div class="metric-value">{queueMetrics.queued}</div>
+                        <div class="metric-label">Queued</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 4: Recent Documents -->
+        <div class="slds-m-bottom_large">
+            <h2 class="slds-text-heading_medium slds-m-bottom_small">Recent Documents</h2>
+            <lightning-datatable
+                key-field="id"
+                data={recentDocuments}
+                columns={documentColumns}
+                hide-checkbox-column
+                show-row-number-column>
+            </lightning-datatable>
+        </div>
+
+        <!-- Section 5: Future Expansion Placeholders (collapsed) -->
+        <lightning-accordion allow-multiple-sections-open active-section-name="">
+            <lightning-accordion-section name="performance" label="Performance Metrics (Coming Soon)">
+                <div class="slds-text-align_center slds-p-vertical_large">
+                    <p class="slds-text-color_weak">
+                        Performance metrics including processing times, throughput rates, and bottleneck identification will be available here.
+                    </p>
+                </div>
+            </lightning-accordion-section>
+            <lightning-accordion-section name="resources" label="System Resources (Coming Soon)">
+                <div class="slds-text-align_center slds-p-vertical_large">
+                    <p class="slds-text-color_weak">
+                        System resource metrics including CPU/memory usage, LibreOffice pool utilization, and cache hit rates will be available here.
+                    </p>
+                </div>
+            </lightning-accordion-section>
+        </lightning-accordion>
+    </div>
+</template>

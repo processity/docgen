@@ -1,0 +1,101 @@
+/* Status Card Styling */
+.status-card {
+    height: 100%;
+    min-height: 200px;
+}
+
+.status-icon {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Metric Cards */
+.metric-card {
+    background: #f3f3f3;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    text-align: center;
+    border: 1px solid #dddbda;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #080707;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    color: #706e6b;
+    margin-top: 0.25rem;
+}
+
+/* Status-specific metric cards */
+.success-metric {
+    background: #d0f0d5;
+    border-color: #4bca81;
+}
+
+.success-metric .metric-value {
+    color: #027e46;
+}
+
+.error-metric {
+    background: #fed0c9;
+    border-color: #ea001e;
+}
+
+.error-metric .metric-value {
+    color: #c23934;
+}
+
+.warning-metric {
+    background: #fef0cc;
+    border-color: #fe9339;
+}
+
+.warning-metric .metric-value {
+    color: #826102;
+}
+
+/* Badge Styling */
+.success-badge {
+    background-color: #027e46;
+    color: white;
+}
+
+.error-badge {
+    background-color: #c23934;
+    color: white;
+}
+
+.warning-badge {
+    background-color: #fe9339;
+    color: white;
+}
+
+/* Definition List Spacing */
+.slds-list_horizontal dt {
+    margin-top: 0.5rem;
+}
+
+.slds-list_horizontal dd {
+    margin-top: 0.5rem;
+    margin-left: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .metric-value {
+        font-size: 1.5rem;
+    }
+
+    .metric-label {
+        font-size: 0.75rem;
+    }
+
+    .status-card {
+        min-height: 150px;
+    }
+}
