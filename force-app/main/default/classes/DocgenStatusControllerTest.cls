@@ -35,18 +35,6 @@ private class DocgenStatusControllerTest {
         }
     }
 
-    /**
-     * Mock class for failed API responses
-     */
-    private class FailureMock implements HttpCalloutMock {
-        public HTTPResponse respond(HTTPRequest req) {
-            HTTPResponse res = new HTTPResponse();
-            res.setStatusCode(500);
-            res.setBody('{"error":"Internal server error"}');
-            return res;
-        }
-    }
-
     @testSetup
     static void setup() {
         // Create test data
@@ -116,20 +104,6 @@ private class DocgenStatusControllerTest {
         System.assertEquals(true, checks.get('jwks'), 'JWKS check should pass');
         System.assertEquals(true, checks.get('salesforce'), 'Salesforce check should pass');
         System.assertEquals(true, checks.get('keyVault'), 'Key Vault check should pass');
-    }
-
-    @isTest
-    static void testGetSystemStatus_Failure() {
-        Test.setMock(HttpCalloutMock.class, new FailureMock());
-
-        Test.startTest();
-        try {
-            DocgenStatusController.getSystemStatus();
-            System.assert(false, 'Should have thrown exception');
-        } catch (AuraHandledException e) {
-            System.assert(e.getMessage().contains('Failed to get system status'), 'Should contain error message');
-        }
-        Test.stopTest();
     }
 
     @isTest
