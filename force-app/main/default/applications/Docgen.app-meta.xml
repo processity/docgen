@@ -8,9 +8,12 @@
     <formFactors>Large</formFactors>
     <isNavAutoTempTabsDisabled>false</isNavAutoTempTabsDisabled>
     <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
+    <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
+    <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
     <label>Docgen</label>
     <navType>Standard</navType>
     <tabs>standard-home</tabs>
+    <tabs>Docgen_Status</tabs>
     <tabs>Docgen_Template__c</tabs>
     <tabs>Generated_Document__c</tabs>
     <tabs>Docgen_Test_Page</tabs>

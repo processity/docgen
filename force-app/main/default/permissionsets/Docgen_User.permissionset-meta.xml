@@ -165,4 +165,8 @@
         <tab>Docgen_Test_Page</tab>
         <visibility>Visible</visibility>
     </tabSettings>
+    <tabSettings>
+        <tab>Docgen_Status</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

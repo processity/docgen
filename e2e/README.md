@@ -59,7 +59,43 @@ This script:
 - Runs Apex tests
 - Opens the org in a browser
 
-### Step 2: Run E2E Tests
+### Step 2: Start Worker Poller (Optional)
+
+If your tests require the worker poller to be running, start it using Anonymous Apex:
+
+```bash
+sf apex run --file scripts/StartWorker.apex
+```
+
+Check worker status:
+
+```bash
+sf apex run --file scripts/CheckWorkerStatus.apex
+```
+
+Stop worker when done:
+
+```bash
+sf apex run --file scripts/StopWorker.apex
+```
+
+Or use the TypeScript utilities in your tests:
+
+```typescript
+import { startWorker, stopWorker, getWorkerStatus } from './utils/worker-control';
+
+// Start worker before test
+await startWorker();
+
+// Check status
+const status = await getWorkerStatus();
+console.log('Worker running:', status.isRunning);
+
+// Stop worker after test
+await stopWorker();
+```
+
+### Step 3: Run E2E Tests
 
 Run all Playwright tests:
 
@@ -67,7 +103,7 @@ Run all Playwright tests:
 npm run test:e2e
 ```
 
-### Step 3: View Test Results
+### Step 4: View Test Results
 
 After tests complete, view the HTML report:
 
@@ -75,7 +111,7 @@ After tests complete, view the HTML report:
 npm run test:e2e:report
 ```
 
-### Step 4: Clean Up
+### Step 5: Clean Up
 
 Delete the scratch org when done:
 
@@ -118,7 +154,8 @@ e2e/
 │   ├── AccountRecordPage.ts      # Page object for Account page
 │   └── DocgenButtonComponent.ts  # Component object model
 └── utils/
-    └── scratch-org.ts             # Scratch org CLI utilities
+    ├── scratch-org.ts             # Scratch org CLI utilities
+    └── worker-control.ts          # Worker poller control utilities
 ```
 
 ## Test Cases
@@ -143,6 +180,71 @@ The tests use Salesforce access tokens for authentication:
 2. Extract `instanceUrl` and `accessToken`
 3. Set session cookies (`sid` and `inst`) in Playwright browser context
 4. Navigate to Salesforce pages with authenticated session
+
+## Worker Poller Control
+
+The project provides utilities to control the worker poller from E2E tests or command line.
+
+### Command Line Usage
+
+Three Anonymous Apex scripts are available in `scripts/`:
+
+1. **Start Worker**: `sf apex run --file scripts/StartWorker.apex`
+2. **Stop Worker**: `sf apex run --file scripts/StopWorker.apex`
+3. **Check Status**: `sf apex run --file scripts/CheckWorkerStatus.apex`
+
+### TypeScript API
+
+The `e2e/utils/worker-control.ts` module provides programmatic control:
+
+```typescript
+import {
+  startWorker,
+  stopWorker,
+  getWorkerStatus,
+  waitForWorkerRunning,
+  ensureWorkerStopped
+} from './utils/worker-control';
+
+// Start worker and wait for it to be running
+await startWorker();
+await waitForWorkerRunning();
+
+// Check current status
+const status = await getWorkerStatus();
+console.log('Worker running:', status.isRunning);
+console.log('Queue depth:', status.currentQueueDepth);
+console.log('Last poll:', status.lastPollTime);
+
+// Stop worker (throws on error)
+await stopWorker();
+
+// Best-effort stop (doesn't throw if already stopped)
+await ensureWorkerStopped();
+```
+
+### Example Test Usage
+
+```typescript
+import { test, expect } from '../fixtures/salesforce.fixture';
+import { startWorker, ensureWorkerStopped } from '../utils/worker-control';
+
+test.describe('Worker Poller Tests', () => {
+  test.beforeAll(async () => {
+    // Ensure worker is running before tests
+    await startWorker();
+  });
+
+  test.afterAll(async () => {
+    // Clean up: stop worker after tests
+    await ensureWorkerStopped();
+  });
+
+  test('processes queued documents', async () => {
+    // Your test code here
+  });
+});
+```
 
 ## Test Data Management
 
