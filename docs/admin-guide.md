@@ -383,7 +383,7 @@ Maintenance Records:
 
 ### Complete Template Example
 
-See **samples/templates/Custom_Asset__c.docx** for a complete example.
+See **samples/templates/Asset-Template-Spec.md** for a complete example specification.
 
 ### Advanced Topics
 
@@ -614,20 +614,19 @@ They're similar but not identical. The lookup field has `__c` or `__r` suffix.
 2. ✅ Test with edge cases (null values, missing relationships)
 3. ✅ Train users on the new capability
 4. ✅ Monitor Generated Documents tab for errors
-5. ✅ Review [ADMIN_RUNBOOK.md](./ADMIN_RUNBOOK.md) for operational procedures
+5. ✅ Review [admin-runbook.md](./admin-runbook.md) for operational procedures
 
 ### Additional Resources
 
 - **[Template Authoring Guide](./template-authoring.md)** - How to create DOCX templates
 - **[Field Path Conventions](./field-path-conventions.md)** - Data structure reference
-- **[ADMIN_RUNBOOK.md](./ADMIN_RUNBOOK.md)** - Operational procedures and troubleshooting
-- **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)** - For upgrading existing installations
+- **[admin-runbook.md](./admin-runbook.md)** - Operational procedures and troubleshooting
 
 ### Sample Files
 
-- `samples/templates/Contact.docx` - Simple template example
-- `samples/templates/Lead.docx` - Template with conditionals
-- `samples/templates/Custom_Asset__c.docx` - Complex template with relationships
+- `samples/templates/Contact-Template-Spec.md` - Contact template specification
+- `samples/templates/Lead-Template-Spec.md` - Lead template specification
+- `samples/templates/Asset-Template-Spec.md` - Asset template specification
 - `samples/contact.json` - Sample data envelope for Contact
 - `samples/lead.json` - Sample data envelope for Lead
 
@@ -638,7 +637,7 @@ They're similar but not identical. The lookup field has `__c` or `__r` suffix.
 For additional help:
 - Check [Troubleshooting](#troubleshooting) section above
 - Review error messages carefully (they include remediation guidance)
-- Consult [ADMIN_RUNBOOK.md](./ADMIN_RUNBOOK.md) for operational procedures
+- Consult [admin-runbook.md](./admin-runbook.md) for operational procedures
 - Contact your Salesforce administrator or system integrator
 
 ---

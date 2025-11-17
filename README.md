@@ -9,1288 +9,253 @@
 [![Code Style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io/)
 [![Salesforce](https://img.shields.io/badge/Salesforce-Integration-00A1E0?logo=salesforce)](https://www.salesforce.com/)
 
-A Node.js-based document generation service that creates PDF documents from Salesforce data using docx-templates and LibreOffice, deployed on Azure Container Apps.
+A production-ready document generation service that creates PDF documents from Salesforce data using DOCX templates and LibreOffice, deployed on Azure Container Apps.
 
-## Architecture Overview
+## Overview
+
+Docgen enables both **interactive** and **batch** document generation directly from Salesforce records:
+
+- **Interactive Generation**: Users click a Lightning Web Component button to instantly generate and download PDFs
+- **Batch Processing**: Apex Batch/Queueable classes enqueue thousands of documents for background processing
+- **Template-Based**: Use familiar Microsoft Word (DOCX) templates with merge fields for data population
+- **Multi-Object Support**: Generate documents from Accounts, Opportunities, Cases, Contacts, Leads, and custom objects
+
+## Architecture
 
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant LWC as LWC_Button
-  participant APX as Apex_Controller
-  participant NC as Named_Credential
-  participant API as Node_Service
+  participant LWC as LWC Button
+  participant APX as Apex Controller
+  participant NC as Named Credential
+  participant API as Node.js Service
   participant SF as Salesforce
 
-  Note over U,SF: Interactive flow
+  Note over U,SF: Interactive Generation Flow
   U->>LWC: Click Generate PDF
   LWC->>APX: Invoke with recordId and templateId
   APX->>APX: Build JSON envelope and request hash
   APX->>NC: POST /generate using client credentials
   NC->>API: POST /generate with Authorization header
   API->>SF: Get template by ContentVersionId
-  API->>API: Merge DOCX to PDF
-  API->>SF: Upload file
+  API->>API: Merge DOCX → Convert to PDF
+  API->>SF: Upload PDF file
   API-->>NC: Return downloadUrl and contentVersionId
   APX-->>LWC: Return downloadUrl
-  LWC-->>U: Open PDF
+  LWC-->>U: Open PDF in new tab
 
-  Note over APX,SF: Batch flow
-  APX->>SF: Insert Generated Document rows with status QUEUED
-  Note over API,SF: Poll every 15 seconds and process up to 8
-  API->>SF: Query up to 50 queued rows
-  API->>SF: Lock rows and set status PROCESSING
-  API->>SF: Fetch template by ContentVersionId
-  API->>API: Merge DOCX to PDF
-  API->>SF: Upload file
-  API->>SF: Update OutputFileId
-  API->>SF: Update status SUCCEEDED
-  API->>SF: On failure increment attempts
-  API->>SF: Set backoff schedule
-  API->>SF: If attempts exceed three then mark FAILED
+  Note over APX,SF: Batch Generation Flow
+  APX->>SF: Insert Generated_Document__c rows (status=QUEUED)
+  Note over API,SF: Poller runs every 15s
+  API->>SF: Query queued documents
+  API->>SF: Lock and process (max 8 concurrent)
+  API->>API: Merge + Convert
+  API->>SF: Upload and link files
+  API->>SF: Update status (SUCCEEDED/FAILED)
 ```
 
-## Features
+## Key Features
 
-- **Interactive Document Generation**: User-initiated via LWC button with immediate download
-- **Batch Processing**: Mass document generation via Apex Batch/Queueable with polling worker
-- **Template-Based**: Uses DOCX templates with field-path substitution via docx-templates
+- **Dual Processing Modes**: Interactive (synchronous) and batch (asynchronous) generation
+- **Template Caching**: Immutable in-memory cache with LRU eviction (500 MB max)
 - **PDF Conversion**: LibreOffice headless conversion with bounded concurrency (8 max per instance)
-- **Idempotency**: RequestHash-based deduplication prevents duplicate work
-- **Secure**: AAD OAuth2 inbound (T-08 ✅), JWT Bearer Flow outbound to Salesforce (T-09)
-- **Scalable**: Horizontal scaling on Azure Container Apps with distributed locking
-- **Observable**: Azure Application Insights integration with correlation IDs and custom metrics
+- **Idempotency**: SHA-256 request hash prevents duplicate generation within 24-hour window
+- **Secure Authentication**: Azure AD OAuth2 inbound, Salesforce JWT Bearer outbound
+- **Scalable**: Horizontal autoscaling (1-5 replicas) based on CPU utilization
+- **Observable**: Azure Application Insights integration with custom metrics and distributed tracing
+- **Multi-Parent Linking**: Automatically attach generated files to multiple related records
+- **Retry Logic**: Exponential backoff for transient failures (1m → 5m → 15m)
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 20+ (see `.nvmrc`)
-- npm or yarn
-- Salesforce CLI (sfdx) for Apex development
+- Node.js 20+
+- Salesforce CLI (for Apex development)
 - Docker (for containerization)
 
 ### Installation
 
 ```bash
+# Clone repository
+git clone https://github.com/bigmantra/docgen.git
+cd docgen
+
 # Install dependencies
 npm install
 
 # Run tests
 npm test
 
-# Run in development mode
+# Start development server
 npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
 ```
 
 ### Salesforce Setup
 
-This project includes Salesforce custom objects and Apex code. To set up a scratch org for development:
-
 ```bash
-# Authenticate to your Dev Hub (one-time setup)
+# Authenticate to Dev Hub
 sf org login web --set-default-dev-hub --alias DevHub
 
-# Create and configure a scratch org
+# Create and configure scratch org (automated)
 ./scripts/setup-scratch-org.sh
 
-# Or manually:
-sf org create scratch --definition-file config/project-scratch-def.json --alias docgen-dev --set-default --duration-days 7
+# Or manually
+sf org create scratch --definition-file config/project-scratch-def.json --alias docgen-dev --duration-days 7
 sf project deploy start --source-dir force-app
-sf apex run test --test-level RunLocalTests --result-format human
+sf org assign permset --name Docgen_User
 ```
 
-**Helper Scripts**:
-- `scripts/setup-scratch-org.sh [alias]` - Create and deploy to scratch org
-- `scripts/deploy-to-org.sh [alias]` - Deploy metadata to existing org
-- `scripts/run-apex-tests.sh [alias]` - Run Apex tests
-- `scripts/delete-scratch-org.sh [alias]` - Delete scratch org
-
-**Salesforce Components**:
-- **Custom App**: `Docgen` - Lightning app with custom tabs for templates, generated documents, and test page
-  - `Docgen Templates` tab - List view for Docgen_Template__c
-  - `Generated Documents` tab - List view for Generated_Document__c
-  - `Docgen Test Page` tab - App page for e2e testing (test metadata only)
-- `Docgen_Template__c` - Template configuration object (7 fields)
-- `Generated_Document__c` - Document generation tracking object (15 fields)
-- `DocgenDataProvider` - Interface for pluggable data collection strategies
-- `StandardSOQLProvider` - Default SOQL provider with locale-aware formatting
-- `DocgenEnvelopeService` - JSON envelope builder with SHA-256 RequestHash
-- `DocgenController` - Interactive document generation controller (calls Node API via Named Credential)
-- `docgenButton` - LWC component for interactive PDF/DOCX generation (deployable to Record/App/Home pages)
-- `docgenTestPage` - LWC wrapper component for e2e testing on App pages (reads recordId from URL parameters)
-- Apex test classes: 7 test classes with 50 test methods (all passing)
-
-### Object Configuration
-
-The system uses **Custom Metadata Types** to control which Salesforce objects can generate documents. This enables admins to add support for new objects (Contact, Lead, custom objects) without code deployments.
-
-**Configuration Object:** `Supported_Object__mdt`
-
-**Fields:**
-- `Object_API_Name__c` *(Text, Required)* - API name of the supported object (e.g., "Account", "Contact", "Custom__c")
-- `Lookup_Field_API_Name__c` *(Text, Required)* - Lookup field on `Generated_Document__c` that references this object (e.g., "Account__c", "Contact__c")
-- `Is_Active__c` *(Checkbox, Default: true)* - Enable/disable object without deleting configuration
-- `Display_Order__c` *(Number)* - Sort order for UI picklists (optional)
-- `Description__c` *(Text Area)* - Admin notes about this object configuration
-
-**Pre-configured Objects:**
-
-| Object | Lookup Field | Display Order | Status |
-|--------|--------------|---------------|--------|
-| Account | Account__c | 10 | Active |
-| Opportunity | Opportunity__c | 20 | Active |
-| Case | Case__c | 30 | Active |
-| Contact | Contact__c | 40 | Active |
-| Lead | Lead__c | 50 | Active |
-
-**How to Add Support for a New Object** (e.g., Contact):
-
-1. **Create lookup field** on `Generated_Document__c`:
-   ```bash
-   # Via Salesforce CLI or Setup UI
-   # Field: Contact__c → Lookup(Contact)
-   # Delete Constraint: Set Null
-   # Required: false
-   ```
-
-2. **Add Custom Metadata record** in Setup:
-   - Go to **Setup → Custom Metadata Types → Supported Object → Manage Records**
-   - Click **New**
-   - Set `Object_API_Name__c` = "Contact"
-   - Set `Lookup_Field_API_Name__c` = "Contact__c"
-   - Set `Is_Active__c` = true
-   - Set `Display_Order__c` = 40 (or any order)
-   - Save
-
-3. **Grant field permissions**:
-   - Add `Contact__c` field to `Docgen_User` permission set
-   - Grant Read and Edit access
-
-4. **Test** by generating a document from a Contact record
-
-**Documentation:**
-- **[Admin Guide](docs/ADMIN_GUIDE.md)** - Step-by-step guide for Salesforce Admins to add new objects
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Upgrade guide for existing installations (fully backward compatible)
-- **[Admin Runbook](docs/ADMIN_RUNBOOK.md)** - Operational procedures and troubleshooting
-- **[Implementation Playbook](docs/OBJECT_CONFIGURABILITY_PLAYBOOK.md)** - Detailed technical design and implementation steps
-
-**Sample Files:**
-- `samples/contact.json` - Sample request payload for Contact object
-- `samples/lead.json` - Sample request payload for Lead object
-- `samples/templates/README.md` - Template examples (Contact, Lead, Asset) with SOQL queries
-
-### Named Credential Setup
-
-The service uses a Salesforce Named Credential to securely authenticate API calls to the Node.js service using Azure AD OAuth 2.0 client credentials.
-
-**Quick Setup**:
-
-1. **Deploy metadata**:
-   ```bash
-   sf project deploy start --source-dir force-app/main/default/externalCredentials,force-app/main/default/namedCredentials
-   ```
-
-2. **Configure External Credential** (via Salesforce UI):
-   - Go to **Setup → Named Credentials → External Credentials**
-   - Edit `Docgen_AAD_Credential`
-   - Add Principal: `DocgenAADPrincipal`
-   - Add Client ID: `f42d24be-0a17-4a87-bfc5-d6cd84339302` (from `azure-ad-config.md`)
-   - Add Client Secret: See `azure-ad-config.md` (⚠️ expires 2027-11-06)
-
-3. **Update Named Credential URL**:
-   - Go to **Setup → Named Credentials → Named Credentials**
-   - Edit `Docgen_Node_API`
-   - Set URL based on environment:
-     - **Local**: `http://localhost:8080` (tests only; Salesforce can't reach localhost)
-     - **Dev/Sandbox**: Ngrok tunnel or dev Azure deployment
-     - **Production**: Azure Container Apps URL (configured in T-16)
-
-4. **Test authentication**:
-   ```apex
-   HttpRequest req = new HttpRequest();
-   req.setEndpoint('callout:Docgen_Node_API/healthz');
-   req.setMethod('GET');
-   Http http = new Http();
-   HTTPResponse res = http.send(req);
-   System.debug('Status: ' + res.getStatusCode()); // Should be 200
-   ```
-
-**📖 Full Documentation**: See [docs/named-credential-setup.md](docs/named-credential-setup.md) for detailed step-by-step instructions, troubleshooting, and security best practices.
-
-**🔐 Azure AD Configuration**: See `azure-ad-config.md` (not in git) for tenant ID, client ID, endpoints, and secrets.
-
-### Environment Variables
-
-```bash
-PORT=8080
-NODE_ENV=development
-SF_DOMAIN=<your-salesforce-instance>.my.salesforce.com
-AZURE_TENANT_ID=<azure-tenant-id>
-CLIENT_ID=<azure-client-id>
-KEY_VAULT_URI=<azure-key-vault-uri>
-IMAGE_ALLOWLIST=cdn.example.com,images.company.com
-
-# Azure AD JWT Validation (T-08)
-ISSUER=https://login.microsoftonline.com/<azure-tenant-id>/v2.0
-AUDIENCE=api://<azure-client-id>
-JWKS_URI=https://login.microsoftonline.com/<azure-tenant-id>/discovery/v2.0/keys
-
-# Optional: Bypass auth in development
-AUTH_BYPASS_DEVELOPMENT=true  # Only works when NODE_ENV=development
-```
-
-## Deployment & Operations
-
-### Deployment Architecture
-
-The application can be deployed to **Azure Container Apps** with the following architecture:
-
-```mermaid
-graph TB
-    subgraph "GitHub"
-        A[Main Branch] -->|Merge| B[CI/CD: Staging]
-        C[Release] -->|Manual Approval| D[CI/CD: Production]
-    end
-
-    subgraph "Azure Container Apps"
-        E[Container Registry] --> F[Container App<br/>2 vCPU / 4 GB<br/>1-5 replicas]
-        G[Key Vault<br/>Secrets] -.->|Managed Identity| F
-        F --> H[Application Insights<br/>Monitoring]
-        I[Log Analytics<br/>Logs] -.-> H
-    end
-
-    B --> E
-    D --> E
-    F --> J[Salesforce]
-
-    style F fill:#90EE90
-    style G fill:#FFD700
-    style H fill:#87CEEB
-```
-
-**Infrastructure Resources** (per environment):
-- **Container App**: 2 vCPU, 4 GB RAM, autoscaling 1-5 replicas (CPU >70%)
-- **Container Registry**: Docker image storage (Basic SKU staging, Standard production)
-- **Key Vault**: Secrets management (SF credentials, Azure Monitor connection string)
-- **Application Insights**: Telemetry, metrics, alerts
-- **Log Analytics Workspace**: Centralized logging
-
-### Deployment Methods
-
-The application supports two deployment methods:
-
-#### 1. Automated CI/CD (Recommended)
-
-**Staging**: Automatic deployment on merge to `main` branch
-```bash
-# Create feature branch, make changes, push
-git checkout -b feature/my-feature
-git add .
-git commit -m "feat: add new feature"
-git push origin feature/my-feature
-
-# Create PR and merge to main → triggers staging deployment
-gh pr create --title "Add feature" --body "Description"
-gh pr merge <PR-number> --squash
-```
-
-**Production**: Manual deployment on GitHub release (requires approval)
-```bash
-# Create release tag → triggers production deployment
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
-
-gh release create v1.0.0 \
-  --title "Release v1.0.0" \
-  --notes "Production release with features X, Y, Z"
-
-# Approve deployment in GitHub Actions UI
-```
-
-**Automated workflow** includes:
-- ✅ Docker image build and push to Azure Container Registry
-- ✅ Infrastructure deployment/updates via Bicep
-- ✅ Secret population to Azure Key Vault
-- ✅ Container App update with new revision
-- ✅ Health checks and smoke tests
-- ✅ Automatic rollback on failure
-
-**Expected duration**: 8-12 minutes (staging), 10-15 minutes (production with approval)
-
-#### 2. Manual Deployment (Backup/Troubleshooting)
-
-For emergency deployments or when CI/CD is unavailable:
-
-```bash
-# Set environment
-export ENVIRONMENT="staging"  # or "production"
-export RESOURCE_GROUP="docgen-${ENVIRONMENT}-rg"
-export ACR_NAME="docgen${ENVIRONMENT}"
-
-# Build and push Docker image
-az acr login --name "$ACR_NAME"
-docker build --platform linux/amd64 \
-  -t "$ACR_NAME.azurecr.io/docgen-api:$(git rev-parse --short HEAD)" .
-docker push "$ACR_NAME.azurecr.io/docgen-api:$(git rev-parse --short HEAD)"
-
-# Deploy infrastructure (if Bicep changes)
-az deployment group create \
-  --resource-group "$RESOURCE_GROUP" \
-  --template-file infra/main.bicep \
-  --parameters infra/parameters/${ENVIRONMENT}.bicepparam
-
-# Update Container App
-az containerapp update \
-  --name "docgen-${ENVIRONMENT}" \
-  --resource-group "$RESOURCE_GROUP" \
-  --image "$ACR_NAME.azurecr.io/docgen-api:$(git rev-parse --short HEAD)"
-```
-
-### Health Checks
-
-**Liveness probe** (`/healthz`):
-```bash
-curl https://<your-app-url>/healthz
-# Expected: {"status":"ok"}
-```
-
-**Readiness probe** (`/readyz`):
-```bash
-curl https://<your-app-url>/readyz
-# Expected: {"ready":true,"checks":{"jwks":true,"salesforce":true,"keyVault":true}}
-```
-
-### Monitoring & Operations
-
-**Application Insights**: Real-time metrics, traces, and alerts
-- Request rate, duration (P50/P95/P99), failure rate
-- Custom metrics: `docgen_duration_ms`, `queue_depth`, `retries_total`, etc.
-- Dependency tracking: Salesforce API calls, LibreOffice conversions
-- 6 alert rules for operational incidents (see [docs/dashboards.md](docs/dashboards.md))
-
-**Container Logs**:
-```bash
-# View real-time logs
-az containerapp logs show \
-  --name <app-name> \
-  --resource-group <resource-group> \
-  --tail 100 \
-  --follow
-```
-
-**Scaling**:
-- Autoscaling: CPU >70% triggers scale-up (1 → 5 replicas)
-- Manual scaling: See [docs/RUNBOOKS.md](docs/RUNBOOKS.md#runbook-2-scale-up-and-scale-down)
-
-### Rollback Procedures
-
-**Automated rollback**: Triggered automatically on deployment failure (smoke tests, health checks)
-
-**Manual rollback**:
-```bash
-# List revisions
-az containerapp revision list \
-  --name <app-name> \
-  --resource-group <resource-group>
-
-# Activate previous revision
-az containerapp revision activate \
-  --name <app-name> \
-  --resource-group <resource-group> \
-  --revision <previous-revision-name>
-```
-
-### Documentation
-
-**Deployment & Operations**:
-- **[docs/DEPLOY.md](docs/DEPLOY.md)** - Complete deployment guide (1,045 lines)
-- **[docs/PROVISIONING.md](docs/PROVISIONING.md)** - One-time environment setup (543 lines)
-- **[docs/RUNBOOKS.md](docs/RUNBOOKS.md)** - Operational procedures (894 lines)
-  - Rollback, scaling, key rotation, disaster recovery, environment cloning
-- **[docs/dashboards.md](docs/dashboards.md)** - Monitoring & incident response (857 lines)
-  - KQL queries, alert rules, 6 operational runbooks, troubleshooting
-- **[docs/TROUBLESHOOTING-INDEX.md](docs/TROUBLESHOOTING-INDEX.md)** - Quick troubleshooting reference (467 lines)
-
-**Infrastructure as Code**:
-- **[infra/main.bicep](infra/main.bicep)** - Main orchestrator
-- **[infra/modules/](infra/modules/)** - Modular Bicep templates (monitoring, registry, keyvault, environment, app)
-- **[.github/workflows/](github/workflows/)** - CI/CD workflows (deploy-staging.yml, deploy-production.yml)
-
-**Cost Estimates**:
-- **Staging**: ~$80-150/month (1-3 replicas, Basic ACR)
-- **Production**: ~$100-200/month (1-5 replicas, Standard ACR, higher scale)
-- See [docs/PROVISIONING.md](docs/PROVISIONING.md#cost-estimates) for detailed breakdown
-
----
-
-## Authentication (T-08)
-
-### Azure AD JWT Validation
-
-The service uses Azure AD (Entra ID) OAuth 2.0 for inbound authentication from Salesforce:
-
-- **Protocol**: OAuth 2.0 Client Credentials Flow
-- **Token Type**: JWT (RS256)
-- **Validation**: JWKS-based signature verification with caching
-- **Claims**: Validates issuer, audience, expiry, and not-before times
-
-#### Implementation Details
-
-**Core Components**:
-- `src/auth/aad.ts` - AAD JWT verifier with JWKS client
-- `src/plugins/auth.ts` - Fastify authentication plugin
-- `/generate` endpoint - Protected with `preHandler: fastify.authenticate`
-- `/readyz` endpoint - Includes JWKS connectivity check
-
-**Security Features**:
-- JWKS key caching (5 minutes) to reduce external calls
-- Rate limiting (10 JWKS requests/minute)
-- Correlation ID propagation in auth failures
-- Development mode bypass (NODE_ENV=development + AUTH_BYPASS_DEVELOPMENT=true)
-
-**Error Responses**:
-- `401 Unauthorized` - Missing/expired/invalid token
-- `403 Forbidden` - Wrong audience or issuer
-
-## Template Cache & Merging (T-10)
-
-### Template Caching
-
-The service implements an immutable in-memory template cache per ADR-0004:
-
-**Key Features**:
-- **Immutable Caching**: Templates are cached by `ContentVersionId` with infinite TTL (ContentVersions are immutable in Salesforce)
-- **LRU Eviction**: When cache exceeds 500 MB, least-recently-used templates are evicted
-- **Cache Statistics**: Tracks hits, misses, evictions, size, and entry count
-- **Thread-Safe**: Synchronous operations safe for single Node.js process
-
-**Implementation**:
-```typescript
-// src/templates/cache.ts
-export class TemplateCache {
-  get(contentVersionId: string): Buffer | undefined
-  set(contentVersionId: string, buffer: Buffer): void
-  getStats(): TemplateCacheStats
-  clear(): void
-}
-```
-
-**Metrics**:
-- `hits` - Number of cache hits
-- `misses` - Number of cache misses (triggers Salesforce download)
-- `evictions` - Number of LRU evictions
-- `currentSize` - Total cache size in bytes
-- `entryCount` - Number of cached templates
-
-### Template Merging
-
-The service uses the `docx-templates` library to merge Salesforce data with DOCX templates:
-
-**Supported Features**:
-- **Field Paths**: Salesforce API-style paths (e.g., `{{Account.Name}}`, `{{Opportunity.Owner.Name}}`)
-- **Formatted Values**: Apex pre-formats currency, dates, numbers using `__formatted` suffix
-- **Loops**: `{{#each Opportunity.LineItems}}...{{/each}}` for arrays
-- **Conditionals**: `{{#if Account.IsPartner}}...{{/if}}` for boolean logic
-- **Images**: Base64-encoded (preferred) or external URLs (allowlist validated)
-
-**Example Template**:
-```
-Customer: {{Account.Name}}
-Revenue: {{Account.AnnualRevenue__formatted}}
-
-{{#each Opportunity.LineItems}}
-  - {{Name}}: {{Quantity}} x {{UnitPrice__formatted}} = {{TotalPrice__formatted}}
-{{/each}}
-
-{{#if Account.IsPartner}}
-  Partner Discount: 15%
-{{/if}}
-```
-
-**Image Allowlist**:
-
-External image URLs must be on the allowlist (configured via `IMAGE_ALLOWLIST` env var):
-
-```bash
-IMAGE_ALLOWLIST=cdn.example.com,images.company.com
-```
-
-- **Base64 images** (recommended): No validation needed, included directly in data
-- **External URLs**: Validated against allowlist to prevent SSRF attacks
-
-**Template Service Flow**:
-
-1. Check cache for template by `ContentVersionId`
-2. On miss: Download from Salesforce via `/services/data/v59.0/sobjects/ContentVersion/{Id}/VersionData`
-3. Store in cache
-4. Merge template with data using `docx-templates`
-5. Return merged DOCX buffer
-
-**Documentation**:
-- [Template Authoring Guide](./docs/template-authoring.md) - Complete guide with examples
-- [ADR-0004: Caching & Idempotency](./docs/adr/0004-caching-idempotency.md)
-
-## LibreOffice Conversion Pool (T-11)
-
-The service converts merged DOCX files to PDF using LibreOffice (`soffice --headless`) with a bounded worker pool.
-
-**Key Features**:
-- **Bounded Concurrency**: Maximum 8 concurrent conversions per instance (per ADR-0003)
-- **Timeout Handling**: Configurable timeout (default: 60 seconds) with process kill
-- **Robust Cleanup**: Temp files cleaned up in all scenarios (success/failure/timeout)
-- **Queue Management**: Jobs queue when pool is full and process sequentially
-- **Stats Tracking**: Active jobs, queue depth, completed/failed counts for observability
-
-**Configuration**:
-```bash
-CONVERSION_TIMEOUT=60000          # Timeout in milliseconds (default: 60000)
-CONVERSION_WORKDIR=/tmp           # Working directory for temp files (default: /tmp)
-CONVERSION_MAX_CONCURRENT=8       # Max concurrent conversions (default: 8)
-```
-
-**Implementation**:
-```typescript
-// src/convert/soffice.ts
-export class LibreOfficeConverter {
-  async convertToPdf(docxBuffer: Buffer, options?: ConversionOptions): Promise<Buffer>
-  getStats(): ConversionPoolStats
-}
-
-// Convenience function using singleton
-export async function convertDocxToPdf(docxBuffer: Buffer, options?: ConversionOptions): Promise<Buffer>
-```
-
-**Conversion Flow**:
-1. Acquire slot in pool (max 8 concurrent, others queue)
-2. Create temp directory: `/tmp/docgen-{correlationId}-{timestamp}/`
-3. Write DOCX to temp file: `input.docx`
-4. Execute: `soffice --headless --convert-to pdf --outdir {dir} input.docx`
-5. Read generated PDF: `input.pdf`
-6. Cleanup temp directory (always, even on error)
-7. Release pool slot
-
-**Error Handling**:
-- **Timeout**: Process killed after configured timeout, error thrown
-- **Crash**: Non-zero exit code captured, error message includes stderr
-- **Cleanup Failure**: Logged as warning, doesn't fail conversion
-
-**Pool Statistics**:
-```typescript
-interface ConversionPoolStats {
-  activeJobs: number;      // Currently running conversions
-  queuedJobs: number;      // Jobs waiting for slot
-  completedJobs: number;   // Total successful conversions
-  failedJobs: number;      // Total failed conversions
-  totalConversions: number;  // Total attempts (completed + failed)
-}
-```
-
-**Usage Example**:
-```typescript
-import { convertDocxToPdf } from './convert';
-
-const docxBuffer = await mergeTemplate(templateBuffer, data);
-const pdfBuffer = await convertDocxToPdf(docxBuffer, {
-  timeout: 60000,
-  correlationId: 'request-123'
-});
-```
-
-**Constraints**:
-- **Container Sizing**: 2 vCPU / 4 GB RAM (ACA East US)
-- **Max Concurrent**: 8 jobs (chosen based on LibreOffice CPU/memory usage)
-- **Workdir**: `/tmp` (ephemeral, cleaned up)
-- **LibreOffice**: Installed via `apt-get install -y libreoffice`
-
-## File Upload & Linking (T-12)
-
-The service uploads generated documents to Salesforce Files and links them to parent records (Account, Opportunity, Case).
-
-**Key Features**:
-- **ContentVersion Upload**: Upload PDF (always) and DOCX (optional) to Salesforce Files
-- **Multi-Parent Linking**: Create ContentDocumentLinks for all non-null parent IDs
-- **Status Tracking**: Update `Generated_Document__c` with file IDs and status
-- **Idempotency**: Apex-side cache check (24-hour window) prevents duplicate generation
-- **Link Failure Handling**: Files left orphaned if linking fails; status set to FAILED
-
-**Flow**:
-1. Apex creates `Generated_Document__c` with `Status=PROCESSING`
-2. Apex passes `generatedDocumentId` to Node in request envelope
-3. Node uploads PDF as `ContentVersion` to Salesforce
-4. Node optionally uploads DOCX (if `storeMergedDocx=true`)
-5. Node creates `ContentDocumentLink` for each non-null parent (ShareType=V, Visibility=AllUsers)
-6. Node updates `Generated_Document__c`:
-   - Success: `Status=SUCCEEDED`, `OutputFileId__c` set
-   - Link failure: `Status=FAILED`, file orphaned, error logged
-   - Upload failure: `Status=FAILED`, error message set
-
-**Implementation**:
-```typescript
-// src/sf/files.ts
-
-// Upload file to Salesforce Files
-export async function uploadContentVersion(
-  buffer: Buffer,
-  fileName: string,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<{ contentVersionId: string; contentDocumentId: string }>
-
-// Create single ContentDocumentLink
-export async function createContentDocumentLink(
-  contentDocumentId: string,
-  linkedEntityId: string,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<string>
-
-// Create links for multiple parents (filters null values)
-export async function createContentDocumentLinks(
-  contentDocumentId: string,
-  parents: DocgenParents,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<{ created: number; errors: string[] }>
-
-// Update Generated_Document__c record
-export async function updateGeneratedDocument(
-  generatedDocumentId: string,
-  fields: Partial<GeneratedDocumentUpdateFields>,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<void>
-
-// Main orchestrator function
-export async function uploadAndLinkFiles(
-  pdfBuffer: Buffer,
-  docxBuffer: Buffer | null,
-  request: DocgenRequest,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<FileUploadResult>
-```
-
-**Idempotency Strategy**:
-- **Apex**: Computes `RequestHash = sha256(templateId | outputFormat | sha256(data))`
-- **Apex**: Checks for existing `SUCCEEDED` document within 24 hours before callout
-- **Salesforce**: Enforces unique constraint on `RequestHash__c` (External ID)
-- **Node**: Relies on Apex for idempotency (no duplicate check in Node layer)
-
-See [Idempotency Documentation](./docs/idempotency.md) for full details.
-
-**ContentDocumentLink Strategy**:
-- **ShareType**: `V` (Viewer permission)
-- **Visibility**: `AllUsers` (visible to all users in org)
-- **Parents**: Links created for `AccountId`, `OpportunityId`, `CaseId` (if non-null)
-- **Failure Mode**: Link failures are non-fatal; file uploaded but orphaned, status=FAILED
-
-**Data Types**:
-```typescript
-interface FileUploadResult {
-  pdfContentVersionId: string;          // Always present
-  docxContentVersionId?: string;         // Present if storeMergedDocx=true
-  pdfContentDocumentId: string;          // For linking
-  docxContentDocumentId?: string;        // For linking (if DOCX uploaded)
-  linkCount: number;                     // Number of links created
-  linkErrors: string[];                  // Non-fatal link errors
-}
-
-interface GeneratedDocumentUpdateFields {
-  Status__c?: string;                    // SUCCEEDED | FAILED
-  OutputFileId__c?: string;              // PDF ContentVersionId
-  MergedDocxFileId__c?: string;          // Optional DOCX ContentVersionId
-  Error__c?: string;                     // Error message if FAILED
-}
-```
-
-**Test Coverage**: 21 tests in `test/sf.files.test.ts`
-- Upload scenarios: success, retry, failure, correlation ID
-- Linking scenarios: single parent, multiple parents, no parents, partial failures
-- Update scenarios: success/failure status, both file IDs
-- Integration scenarios: full upload+link+update flow
-
-**Documentation**:
-- [Idempotency Strategy](./docs/idempotency.md)
-- [ContentDocumentLink Strategy](./docs/contentdocumentlink.md)
-
-## Batch Processing & Worker Poller (T-14)
-
-**Purpose**: Enable mass document generation at scale via Apex Batch/Queueable and Node.js poller worker.
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      BATCH GENERATION FLOW                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  1. Apex Batch/Queueable                                         │
-│     └─> Inserts Generated_Document__c records (Status=QUEUED)   │
-│         - RequestJSON__c: Full DocgenRequest envelope           │
-│         - RequestHash__c: Idempotency key (External ID)         │
-│         - Priority__c: Optional priority (higher = first)       │
-│                                                                   │
-│  2. Node Poller (every 15s active / 60s idle)                   │
-│     └─> Query: Up to 20 QUEUED records not locked              │
-│     └─> Lock: Sequential PATCH (Status=PROCESSING,             │
-│         LockedUntil=now+2m)                                     │
-│     └─> Process: Concurrent (max 8 via LibreOffice pool)       │
-│         ├─> Fetch template                                     │
-│         ├─> Merge + Convert                                    │
-│         ├─> Upload to Salesforce Files                         │
-│         └─> Link to parents                                    │
-│     └─> Update: Status=SUCCEEDED/FAILED with retry backoff    │
-│                                                                   │
-│  3. Retry Strategy                                               │
-│     - Attempt 1: Requeue after 1 minute                         │
-│     - Attempt 2: Requeue after 5 minutes                        │
-│     - Attempt 3: Requeue after 15 minutes                       │
-│     - Attempt 4+: Mark as FAILED permanently                    │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Salesforce: Batch Enqueue
-
-**Class**: `BatchDocgenEnqueue` (implements `Database.Batchable<Id>`)
-
-```apex
-// Enqueue 100 documents for a template
-List<Id> recordIds = new List<Id>{/* Account IDs */};
-Id templateId = 'a01xx000000abcdXXX';
-String outputFormat = 'PDF';
-
-BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
-  templateId,
-  recordIds,
-  outputFormat
-);
-Database.executeBatch(batch, 200); // Batch size
-```
-
-**What it does**:
-1. Validates template exists
-2. For each record: builds envelope via `DocgenEnvelopeService`
-3. Inserts `Generated_Document__c` with Status=QUEUED
-4. Tracks success/failure counts across batches
-
-**Test Coverage**: 7 tests in `force-app/main/default/classes/BatchDocgenEnqueueTest.cls`
-- 10 and 50 record batches
-- RequestHash uniqueness and idempotency
-- DOCX output format support
-- Error handling for missing templates
-
-### Node.js: Worker Poller
-
-**Class**: `PollerService` (`src/worker/poller.ts`)
-
-**API Endpoints** (all require AAD authentication):
-- **POST /worker/start**: Start the poller
-- **POST /worker/stop**: Stop gracefully (waits for in-flight jobs)
-- **GET /worker/status**: Current state (running, queue depth, last poll time)
-- **GET /worker/stats**: Detailed metrics (processed, succeeded, failed, retries, uptime)
-
-**Configuration** (environment variables):
-```env
-POLLER_ENABLED=false           # Default: disabled (API-controlled)
-POLLER_INTERVAL_MS=15000       # Active polling interval (15s)
-POLLER_IDLE_INTERVAL_MS=60000  # Idle polling interval (60s)
-POLLER_BATCH_SIZE=20           # Documents per poll (reduced from 50)
-POLLER_LOCK_TTL_MS=120000      # Lock duration (2 minutes)
-POLLER_MAX_ATTEMPTS=3          # Max retry attempts
-```
-
-**Adaptive Polling**:
-- **Active mode** (15s): When documents found in previous poll
-- **Idle mode** (60s): When no documents found (reduces API calls)
-
-**Locking Strategy**:
-- **Sequential PATCH**: Each document locked individually before processing
-- **Lock TTL**: 2 minutes (prevents stuck locks)
-- **Expired locks**: Automatically reclaimed on next poll
-- **Conflict resolution**: If lock fails (409), skip document
-
-**Concurrency**:
-- **Fetch**: Up to 20 documents per poll
-- **Processing**: Max 8 concurrent (enforced by LibreOffice pool)
-- **Queue management**: Remaining documents queue internally
-
-**Retry Backoff**:
-```typescript
-Attempt 1 → Requeue after 1m   (60,000ms)
-Attempt 2 → Requeue after 5m   (300,000ms)
-Attempt 3 → Requeue after 15m  (900,000ms)
-Attempt 4+ → FAILED permanently
-```
-
-**Retryable vs Non-Retryable Errors**:
-- **Non-retryable** (immediate FAILED): Template not found (404), invalid request (400)
-- **Retryable** (backoff): Conversion timeout, upload failure (5xx), network errors
-
-**Graceful Shutdown**:
-1. Clear polling timer
-2. Wait for all in-flight jobs to complete
-3. Update stats and log shutdown
-4. Called automatically on SIGTERM/SIGINT
-
-**Example Usage**:
-```bash
-# Start poller
-curl -X POST https://docgen.azurecontainerapps.io/worker/start \
-  -H "Authorization: Bearer $AAD_TOKEN"
-
-# Check status
-curl -X GET https://docgen.azurecontainerapps.io/worker/status \
-  -H "Authorization: Bearer $AAD_TOKEN"
-
-# Get detailed stats
-curl -X GET https://docgen.azurecontainerapps.io/worker/stats \
-  -H "Authorization: Bearer $AAD_TOKEN"
-
-# Stop poller
-curl -X POST https://docgen.azurecontainerapps.io/worker/stop \
-  -H "Authorization: Bearer $AAD_TOKEN"
-```
-
-**Test Coverage**: 39 tests across 2 test files
-- `test/worker/poller.test.ts` (19 tests): Fetch, lock, process, retry, backoff, adaptive polling, shutdown
-- `test/routes/worker.test.ts` (20 tests): API endpoints, auth, error handling, status/stats
-
-**Key Implementation Files**:
-- `src/worker/poller.ts` (430 lines): Core PollerService class
-- `src/routes/worker.ts` (200 lines): API endpoints
-- `src/server.ts`: Worker routes registration + shutdown hook
-- `force-app/.../BatchDocgenEnqueue.cls` (248 lines): Apex batch class
-
-**Monitoring & Observability**:
-- Correlation IDs propagated through all operations
-- Structured logging with Pino
-- Stats tracking: processed, succeeded, failed, retries, uptime
-- Ready for Azure Application Insights integration (T-15)
-
-**API Call Efficiency**:
-- **Per Poll Cycle** (20 documents):
-  - 1 SOQL query (fetch documents)
-  - 20 PATCH calls (lock documents)
-  - ~80-100 API calls (template download, upload, links, status updates)
-  - **Total**: ~100-120 calls per 15s cycle
-  - **Burst**: ~400-480 calls/minute during active processing
-- **Mitigation**: Adaptive polling reduces calls during idle periods
-
-**See Also**:
-- [OpenAPI Worker Endpoints](./openapi.yaml#L283-L482) - Complete API documentation
-- [T-14 Implementation Plan](./t14-PLAN.MD) - Detailed design decisions
-
----
-
-## Observability & Monitoring (T-15)
-
-The service integrates **Azure Application Insights** via OpenTelemetry for comprehensive observability.
-
-### Metrics Tracked
-
-#### Document Generation Metrics
-
-| Metric | Type | Dimensions | Description |
-|--------|------|------------|-------------|
-| `docgen_duration_ms` | Histogram | templateId, outputFormat, mode, correlationId | Document generation duration (for P50/P95/P99 analysis) |
-| `docgen_failures_total` | Counter | reason, templateId, outputFormat, mode, correlationId | Failure counter with categorized reasons |
-| `queue_depth` | Gauge | correlationId | Current number of queued documents (poller only) |
-| `retries_total` | Counter | attempt, documentId, reason, correlationId | Retry attempts counter |
-
-#### Cache Metrics
-
-| Metric | Type | Dimensions | Description |
-|--------|------|------------|-------------|
-| `template_cache_hit` | Counter | templateId | Template cache hit counter |
-| `template_cache_miss` | Counter | templateId | Template cache miss counter |
-
-#### Conversion Pool Metrics
-
-| Metric | Type | Dimensions | Description |
-|--------|------|------------|-------------|
-| `conversion_pool_active` | Gauge | - | Active conversion jobs |
-| `conversion_pool_queued` | Gauge | - | Queued conversion jobs |
-
-### Dependency Tracking
-
-All external dependencies are tracked with duration, success/failure status, and correlation IDs:
-
-- **Salesforce REST API**: Template downloads, file uploads, record updates
-- **LibreOffice**: DOCX→PDF conversion operations
-
-### Failure Reasons
-
-Failures are categorized for targeted troubleshooting:
-
-- `template_not_found` - Template missing or invalid ContentVersionId
-- `validation_error` - Invalid request payload
-- `conversion_timeout` - LibreOffice conversion exceeded timeout (default 60s)
-- `conversion_failed` - LibreOffice process crashed or failed
-- `upload_failed` - Salesforce file upload or API error
-- `unknown` - Uncategorized errors
-
-### Correlation ID Propagation
-
-Every request/document includes a correlation ID that flows through:
-1. HTTP request headers (`x-correlation-id`)
-2. All log entries (structured JSON logging via Pino)
-3. All metrics and dependencies (as dimension)
-4. Salesforce API calls (propagated via header)
-5. Error responses (included in response body)
-
-This enables **distributed tracing** across Salesforce, Node.js service, and LibreOffice conversions.
-
-### Configuration
-
-```bash
-# Azure Application Insights connection string (required for production)
-AZURE_MONITOR_CONNECTION_STRING=InstrumentationKey=<key>;IngestionEndpoint=https://<region>.in.applicationinsights.azure.com/
-
-# Optional: Disable telemetry (enabled by default in non-test environments)
-ENABLE_TELEMETRY=false
-```
-
-### Dashboards & Alerts
-
-Pre-built dashboards and alert rules are documented in [docs/dashboards.md](./docs/dashboards.md):
-
-- **Overview Dashboard**: Request rate, success rate, P95 duration, failure breakdown
-- **Performance Dashboard**: Duration distribution, dependency performance, cache hit rate
-- **Reliability Dashboard**: Failure trends, retry analysis, error breakdown
-- **Capacity Dashboard**: Queue depth, conversion pool utilization, processing rate
-
-### Key Performance Indicators (KPIs)
-
-| KPI | Target | Warning | Critical |
-|-----|--------|---------|----------|
-| Success Rate | ≥99.5% | <97% | <95% |
-| P95 Duration | ≤10s | >15s | >30s |
-| Queue Depth | <50 | >100 | >500 |
-| Retry Rate | <5% | >10% | >25% |
-| Cache Hit Rate | ≥95% | <80% | <70% |
-
-### Sample KQL Queries
-
-**Request Rate**:
-```kusto
-customMetrics
-| where name == "docgen_duration_ms"
-| where timestamp > ago(1h)
-| summarize RequestCount = count() by bin(timestamp, 1m)
-| render timechart
-```
-
-**P95 Duration**:
-```kusto
-customMetrics
-| where name == "docgen_duration_ms"
-| where timestamp > ago(1h)
-| summarize P95 = percentile(value, 95) by bin(timestamp, 5m)
-| render timechart
-```
-
-**Failure Breakdown**:
-```kusto
-customMetrics
-| where name == "docgen_failures_total"
-| where timestamp > ago(24h)
-| extend reason = tostring(customDimensions.reason)
-| summarize FailureCount = sum(value) by reason
-| render piechart
-```
-
-**See Also**:
-- [Dashboards & Monitoring Guide](./docs/dashboards.md) - Complete KQL queries, alerts, and runbooks
-- [OpenTelemetry Documentation](https://opentelemetry.io/docs/) - OpenTelemetry concepts
-- [Azure Application Insights](https://learn.microsoft.com/en-us/azure/azure-monitor/app/app-insights-overview) - App Insights overview
-
----
+### First Document Generation
+
+1. **Upload a template**: Navigate to the Docgen app → Docgen Templates tab → Create new template with DOCX file
+2. **Add LWC button**: Edit an Account/Opportunity/Case page → Drag `docgenButton` component onto the layout
+3. **Generate**: Click "Generate Document" → Select template → Choose format → Generate
+
+For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
+
+## Documentation
+
+### For Developers
+
+| Document | Description |
+|----------|-------------|
+| **[Quick Start Guide](docs/quick-start.md)** | Complete setup and installation guide for new developers |
+| **[Architecture Guide](docs/architecture.md)** | Technical implementation details (authentication, caching, conversion, batch processing) |
+| **[Testing Guide](docs/testing.md)** | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration |
+| **[API Reference](docs/api.md)** | REST API endpoints, request/response formats, error handling |
+| **[Template Authoring](docs/template-authoring.md)** | Creating DOCX templates with merge fields, loops, and conditionals |
+| **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax |
+| **[ADRs](docs/adr/)** | Architecture Decision Records (runtime, auth, worker, caching) |
+
+### For Operations
+
+| Document | Description |
+|----------|-------------|
+| **[Deployment Guide](docs/deploy.md)** | CI/CD workflows, deployment procedures, rollback strategies |
+| **[Provisioning Guide](docs/provisioning.md)** | One-time environment setup in Azure |
+| **[Runbooks](docs/runbooks.md)** | Operational procedures (scaling, key rotation, disaster recovery) |
+| **[Monitoring & Dashboards](docs/dashboards.md)** | Application Insights dashboards, KQL queries, alert rules |
+| **[Troubleshooting Index](docs/troubleshooting-index.md)** | Common issues and resolution steps |
+
+### For Administrators
+
+| Document | Description |
+|----------|-------------|
+| **[Admin Guide](docs/admin-guide.md)** | Salesforce admin setup, adding support for new objects |
+| **[Admin Runbook](docs/admin-runbook.md)** | Administrative operations and troubleshooting |
+| **[Named Credential Setup](docs/named-credential-setup.md)** | Configuring Azure AD authentication from Salesforce |
 
 ## Project Structure
 
 ```
 docgen/
-├── src/              # TypeScript source code
-│   ├── auth/         # Azure AD JWT authentication (T-08)
-│   ├── sf/           # Salesforce client (JWT Bearer + API + Files) (T-09, T-12)
-│   ├── templates/    # Template cache, service, and merge (T-10)
-│   ├── convert/      # LibreOffice conversion pool (T-11)
-│   ├── worker/       # Batch poller worker (T-14)
-│   ├── obs/          # Observability (Azure App Insights + OpenTelemetry) (T-15)
-│   ├── routes/       # Fastify routes (generate, health, worker)
-│   ├── plugins/      # Fastify plugins (auth)
-│   ├── config/       # Configuration management
-│   └── utils/        # Utility functions (image allowlist, correlation ID)
-├── test/             # Jest tests
-│   ├── templates/    # Template cache, service, merge tests
-│   ├── worker/       # Poller tests (unit + integration)
-│   ├── routes/       # Route tests (generate, health, worker)
-│   ├── convert.test.ts  # Conversion pool tests
-│   ├── obs.test.ts   # Observability tests (metrics, dependencies)
-│   └── helpers/      # Test utilities (JWT helpers, test DOCX generation)
-├── force-app/        # Salesforce Apex and metadata
+├── src/                    # Node.js TypeScript source
+│   ├── auth/              # Azure AD authentication
+│   ├── sf/                # Salesforce API client
+│   ├── templates/         # Template cache and merging
+│   ├── convert/           # LibreOffice conversion pool
+│   ├── worker/            # Batch poller service
+│   ├── obs/               # Observability (metrics, tracing)
+│   └── routes/            # API endpoints
+├── force-app/             # Salesforce metadata
 │   └── main/default/
-│       ├── classes/  # Apex classes (controllers, batch, services, tests)
-│       └── lwc/      # Lightning Web Components (docgenButton)
-├── docs/             # Documentation and ADRs
-│   ├── template-authoring.md  # Template authoring guide
-│   ├── idempotency.md         # Idempotency strategy
-│   ├── dashboards.md          # Monitoring dashboards & KQL queries (T-15)
-│   └── adr/          # Architecture Decision Records
-└── dist/             # Compiled JavaScript (gitignored)
+│       ├── classes/       # Apex (controllers, services, batch)
+│       ├── lwc/           # Lightning Web Components
+│       ├── objects/       # Custom objects and fields
+│       └── tabs/          # Custom tabs
+├── test/                  # Jest tests
+├── e2e/                   # Playwright E2E tests
+├── docs/                  # Documentation
+├── infra/                 # Bicep infrastructure templates
+└── .github/workflows/     # CI/CD workflows
 ```
 
-## Testing
+## Salesforce Components
 
-### Node.js Tests
+### Custom Objects
+- **Docgen_Template__c**: Template configuration (links to ContentVersion)
+- **Generated_Document__c**: Document generation tracking and status
+- **Supported_Object__mdt**: Multi-object configuration (Custom Metadata)
 
-```bash
-# Run all tests
-npm test
+### Apex Classes
+- **DocgenController**: Interactive generation controller for LWC
+- **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing
+- **StandardSOQLProvider**: Data collection with locale-aware formatting
+- **BatchDocgenEnqueue**: Batch processing for mass generation
 
-# Run tests in watch mode
-npm run test:watch
+**Test Coverage**: 112 Apex tests with 86% code coverage
 
-# Run tests with coverage
-npm run test:coverage
-```
+### Lightning Web Components
+- **docgenButton**: Document generation button (deployable to any record page)
+- **docgenTestPage**: E2E testing wrapper component
 
-### Salesforce Apex Tests
+### Custom App
+The **Docgen** app includes:
+- Docgen Templates tab (manage templates)
+- Generated Documents tab (track generation history)
+- Docgen Test Page tab (E2E testing interface)
 
-```bash
-# Run Apex tests in scratch org
-./scripts/run-apex-tests.sh
+## Technology Stack
 
-# Or manually
-sf apex run test --test-level RunLocalTests --code-coverage --result-format human
-
-# Run specific test classes
-sf apex run test --class-names DocgenMultiObjectIntegrationTest --code-coverage --result-format human
-```
-
-**Test Coverage**:
-- **112 Apex tests** with **86% code coverage** (exceeds 75% requirement)
-- **Multi-object support**: Account, Opportunity, Case, Contact, Lead
-- **Test Data Factory**: `DocgenTestDataFactory.cls` provides reusable scenario builders
-- **Bulk testing**: Validates 200+ record operations
-- **Integration tests**: `DocgenMultiObjectIntegrationTest.cls` tests end-to-end flows across all supported objects
-
-### LWC Tests
-
-```bash
-# Run Lightning Web Component tests
-npm run test:lwc
-
-# Run in watch mode
-npm run test:lwc:watch
-
-# Run with coverage
-npm run test:lwc:coverage
-```
-
-### E2E Tests (Playwright)
-
-End-to-end tests verify the complete document generation flow with a real backend and Salesforce scratch org. Tests interact with the LWC component, trigger backend processing, and validate file uploads.
-
-#### Running E2E Tests Locally
-
-**Prerequisites**:
-- Azure CLI authenticated (`az login`)
-- Salesforce CLI authenticated to Dev Hub
-- Scratch org created and set as default
-
-**Quick Start**:
-```bash
-# Step 1: Create scratch org and deploy metadata
-npm run e2e:setup
-
-# Step 2: Configure CI backend + run tests (recommended)
-npm run test:e2e:local
-
-# Step 3: View test results
-npm run test:e2e:report
-
-# Step 4: Clean up scratch org
-npm run e2e:teardown
-```
-
-**What `test:e2e:local` does**:
-1. Extracts SFDX-AUTH-URL from your local scratch org
-2. Updates the CI backend's Key Vault with your org's credentials
-3. Restarts the CI backend to load new credentials
-4. Waits for backend health check to pass
-5. Runs Playwright e2e tests against the configured backend
-
-**Manual configuration** (if needed):
-```bash
-# Configure CI backend separately
-./scripts/configure-ci-backend-for-local.sh
-
-# Then run tests
-npm run test:e2e
-```
-
-**Available test modes**:
-```bash
-npm run test:e2e:local    # Configure backend + run (recommended for local)
-npm run test:e2e          # Headless (backend must be configured first)
-npm run test:e2e:headed   # Watch browser execute
-npm run test:e2e:ui       # Interactive mode
-npm run test:e2e:debug    # Debug with Playwright Inspector
-```
-
-**Important Notes**:
-- 🔄 **Shared Backend**: The CI backend (`docgen-ci`) is shared between local and CI testing
-- ⚠️ **Reconfigure Per Org**: Run `test:e2e:local` each time you create a new scratch org
-- ⏱️ **Backend Restart**: Configuration script waits ~2 minutes for backend to restart
-- 🔐 **Azure Access**: You must have Contributor access to `docgen-ci-rg` resource group
-
-**What's tested**:
-- ✅ Complete PDF generation flow (LWC → Apex → Backend → Salesforce Files)
-- ✅ Template download from ContentVersion
-- ✅ DOCX template merging with data
-- ✅ PDF conversion via LibreOffice
-- ✅ File upload and ContentDocumentLink creation
-- ✅ Generated_Document__c status tracking
-- ✅ Error handling and toast notifications
-- ✅ **Multi-object support**: Contact, Lead, Opportunity document generation (`e2e/tests/multi-object.spec.ts`)
-- ✅ **Dynamic lookup fields**: Validates Contact__c, Lead__c, Opportunity__c lookup field assignment
-- ✅ **Parent relationship extraction**: Tests multi-parent scenarios (Opportunity → Account)
-
-**See also**:
-- [E2E Testing Guide](./e2e/README.md) - Setup, running tests, troubleshooting
-- [E2E Architecture](./docs/e2e-testing.md) - Design decisions, patterns, CI/CD
-
-## Continuous Integration
-
-The project includes GitHub Actions workflows that automatically:
-
-1. **Node.js CI** (`test` job):
-   - Runs ESLint
-   - Runs Jest tests with coverage
-   - Type checks TypeScript
-   - Builds the project
-
-2. **Salesforce CI** (`salesforce` job):
-   - Creates a scratch org
-   - Deploys all metadata
-   - Runs Apex tests
-   - Cleans up scratch org
-
-To enable Salesforce CI in GitHub Actions:
-
-```bash
-# 1. Authenticate to your Dev Hub
-sf org login web --set-default-dev-hub --alias DevHub
-
-# 2. Get the auth URL
-sf org display --verbose --target-org DevHub
-
-# 3. Copy the "Sfdx Auth Url" value
-
-# 4. Add it as a GitHub secret named SFDX_AUTH_URL
-# Go to: Settings → Secrets and variables → Actions → New repository secret
-```
+| Layer | Technology |
+|-------|------------|
+| **Runtime** | Node.js 20+ with TypeScript |
+| **Web Framework** | Fastify |
+| **Template Engine** | docx-templates |
+| **PDF Conversion** | LibreOffice (headless) |
+| **Authentication** | Azure AD OAuth2 (inbound), Salesforce JWT Bearer (outbound) |
+| **Testing** | Jest, Supertest, Nock, Playwright |
+| **Infrastructure** | Azure Container Apps, Azure Container Registry, Azure Key Vault |
+| **Observability** | Azure Application Insights, OpenTelemetry |
+| **CI/CD** | GitHub Actions |
 
 ## API Endpoints
 
 ### Health & Readiness
-
 - **GET /healthz**: Liveness probe (always returns 200)
-- **GET /readyz**: Readiness probe (returns 200 when dependencies healthy, 503 otherwise)
+- **GET /readyz**: Readiness probe with dependency checks
 
 ### Document Generation
+- **POST /generate**: Generate PDF/DOCX from template (requires Azure AD token)
 
-#### POST /generate
+### Worker Management
+- **POST /worker/start**: Start batch poller
+- **POST /worker/stop**: Stop batch poller gracefully
+- **GET /worker/status**: Current worker state
+- **GET /worker/stats**: Detailed worker metrics
 
-Generate a PDF or DOCX document from a Salesforce template.
+See [API Reference](docs/api.md) for complete endpoint documentation.
 
-**Authentication**: Azure AD OAuth2 Bearer token (client credentials from Salesforce Named Credential)
+## Contributing
 
-**Request Body**:
-```json
-{
-  "templateId": "068xx000000abcdXXX",
-  "outputFileName": "Account_Summary_{{Account.Name}}.pdf",
-  "outputFormat": "PDF",
-  "locale": "en-GB",
-  "timezone": "Europe/London",
-  "options": {
-    "storeMergedDocx": false,
-    "returnDocxToBrowser": false
-  },
-  "parents": {
-    "AccountId": "001xx000000abcdXXX",
-    "OpportunityId": null,
-    "CaseId": null
-  },
-  "data": {
-    "Account": {
-      "Name": "Acme Ltd",
-      "AnnualRevenue__formatted": "£1,200,000"
-    }
-  },
-  "requestHash": "sha256:..."
-}
-```
+We welcome contributions! To get started:
 
-**Success Response** (200):
-```json
-{
-  "downloadUrl": "https://example.my.salesforce.com/sfc/servlet.shepherd/version/download/068xx...",
-  "contentVersionId": "068xx000000abcdXXX",
-  "correlationId": "12345678-1234-4567-89ab-123456789012"
-}
-```
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes and add tests
+4. Run tests and linting (`npm test && npm run lint`)
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
-**Accepted Response** (202) - Async processing:
-```json
-{
-  "correlationId": "12345678-1234-4567-89ab-123456789012",
-  "message": "Document generation request accepted"
-}
-```
+### Code Style
 
-**Validation Error** (400):
-```json
-{
-  "statusCode": 400,
-  "error": "Bad Request",
-  "message": "body must have required property 'templateId'"
-}
-```
-
-**See Also**:
-- [OpenAPI Specification](./openapi.yaml) - Complete API documentation
-- [Field Path Conventions](./docs/field-path-conventions.md) - Template data structure guide
-- [Sample Payloads](./samples/) - Example requests for Account, Opportunity, and Case
-
-## Documentation
-
-- [OpenAPI Specification](./openapi.yaml)
-- [Field Path Conventions](./docs/field-path-conventions.md)
-- [Architecture Decision Records (ADRs)](./docs/adr/)
-- [Development Context](./development-context.md)
-- [Development Tasks](./development-tasks.md)
-
-## Technology Stack
-
-- **Runtime**: Node.js 20+ with TypeScript
-- **Web Framework**: Fastify
-- **Testing**: Jest + ts-jest + Supertest + Nock
-- **Document Processing**: docx-templates + LibreOffice
-- **Authentication**: Azure AD (inbound), JWT Bearer (outbound to Salesforce)
-- **Hosting**: Azure Container Apps (East US, 2 vCPU / 4 GB RAM)
-- **Observability**: Azure Application Insights
+- **TypeScript**: Strict mode enabled
+- **Linting**: ESLint with Prettier
+- **Testing**: Jest with 80%+ coverage target
+- **Commits**: Conventional Commits format
 
 ## License
 
-MIT
+MIT - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Documentation**: [docs/](docs/)
+- **GitHub Issues**: [https://github.com/bigmantra/docgen/issues](https://github.com/bigmantra/docgen/issues)
+- **Architecture Decisions**: [docs/adr/](docs/adr/)
+
+---
+
+**Built with** ❤️ **by the Docgen team**

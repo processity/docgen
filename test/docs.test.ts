@@ -15,8 +15,8 @@ describe('Documentation', () => {
 
       expect(readmeContent).toContain('```mermaid');
       expect(readmeContent).toContain('sequenceDiagram');
-      expect(readmeContent).toContain('Interactive flow');
-      expect(readmeContent).toContain('Batch flow');
+      expect(readmeContent).toContain('Interactive Generation Flow');
+      expect(readmeContent).toContain('Batch Generation Flow');
     });
   });
 

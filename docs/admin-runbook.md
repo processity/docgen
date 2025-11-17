@@ -38,9 +38,9 @@ To execute these runbooks, you need:
 
 ### Related Documentation
 
-- **[ADMIN_GUIDE.md](./ADMIN_GUIDE.md)** - Detailed configuration guide
+- **[admin-guide.md](./admin-guide.md)** - Detailed configuration guide
 - **[Template Authoring Guide](./template-authoring.md)** - Template syntax reference
-- **[RUNBOOKS.md](./RUNBOOKS.md)** - DevOps operational runbooks
+- **[runbooks.md](./runbooks.md)** - DevOps operational runbooks
 
 ---
 
@@ -997,10 +997,9 @@ System.debug('Active users: ' + userCount);
 
 ### Documentation
 
-- **[ADMIN_GUIDE.md](./ADMIN_GUIDE.md)** - Configuration guide
+- **[admin-guide.md](./admin-guide.md)** - Configuration guide
 - **[Template Authoring Guide](./template-authoring.md)** - Template syntax
 - **[Field Path Conventions](./field-path-conventions.md)** - Data structure reference
-- **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)** - Upgrade guide
 
 ### Troubleshooting
 
