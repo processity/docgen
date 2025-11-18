@@ -5,18 +5,19 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "15330519397004249342"
+      "templateHash": "9151319502380716118"
     }
   },
   "parameters": {
     "environment": {
       "type": "string",
       "allowedValues": [
+        "ci",
         "staging",
         "production"
       ],
       "metadata": {
-        "description": "Environment name (e.g., staging, production)"
+        "description": "Environment name (e.g., ci, staging, production)"
       }
     },
     "location": {
@@ -265,6 +266,7 @@
       }
     },
     {
+      "condition": "[not(equals(parameters('environment'), 'ci'))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "registry-deployment",
@@ -662,12 +664,8 @@
           "environmentId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'environment-deployment'), '2025-04-01').outputs.environmentId.value]"
           },
-          "acrLoginServer": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrLoginServer.value]"
-          },
-          "acrId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrId.value]"
-          },
+          "acrLoginServer": "[if(equals(parameters('environment'), 'ci'), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'docgen-staging-rg'), 'Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').loginServer), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrLoginServer.value))]",
+          "acrId": "[if(equals(parameters('environment'), 'ci'), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'docgen-staging-rg'), 'Microsoft.ContainerRegistry/registries', parameters('acrName'))), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrId.value))]",
           "imageTag": {
             "value": "[parameters('imageTag')]"
           },
@@ -688,7 +686,18 @@
           },
           "tags": {
             "value": "[parameters('tags')]"
-          }
+          },
+          "cpuCores": {
+            "value": "2.0"
+          },
+          "memorySize": {
+            "value": "4Gi"
+          },
+          "minReplicas": {
+            "value": 1
+          },
+          "maxReplicas": "[if(equals(parameters('environment'), 'ci'), createObject('value', 5), createObject('value', 5))]",
+          "libreOfficeMaxConcurrent": "[if(equals(parameters('environment'), 'ci'), createObject('value', '4'), createObject('value', '8'))]"
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -697,7 +706,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "11168722723711661167"
+              "templateHash": "5874678483514330143"
             }
           },
           "parameters": {
@@ -776,6 +785,41 @@
               "metadata": {
                 "description": "Common tags for all resources"
               }
+            },
+            "cpuCores": {
+              "type": "string",
+              "defaultValue": "2.0",
+              "metadata": {
+                "description": "CPU allocation for container (e.g., 1.0, 2.0, 4.0)"
+              }
+            },
+            "memorySize": {
+              "type": "string",
+              "defaultValue": "4Gi",
+              "metadata": {
+                "description": "Memory allocation for container (e.g., 2Gi, 4Gi, 8Gi, 16Gi)"
+              }
+            },
+            "minReplicas": {
+              "type": "int",
+              "defaultValue": 1,
+              "metadata": {
+                "description": "Minimum number of replicas"
+              }
+            },
+            "maxReplicas": {
+              "type": "int",
+              "defaultValue": 5,
+              "metadata": {
+                "description": "Maximum number of replicas"
+              }
+            },
+            "libreOfficeMaxConcurrent": {
+              "type": "string",
+              "defaultValue": "8",
+              "metadata": {
+                "description": "Maximum concurrent LibreOffice conversions"
+              }
             }
           },
           "variables": {
@@ -827,8 +871,8 @@
                       "name": "docgen-api",
                       "image": "[variables('containerImage')]",
                       "resources": {
-                        "cpu": "[json('2.0')]",
-                        "memory": "4Gi"
+                        "cpu": "[json(parameters('cpuCores'))]",
+                        "memory": "[parameters('memorySize')]"
                       },
                       "env": [
                         {
@@ -865,7 +909,7 @@
                         },
                         {
                           "name": "LIBREOFFICE_CONCURRENCY",
-                          "value": "8"
+                          "value": "[parameters('libreOfficeMaxConcurrent')]"
                         },
                         {
                           "name": "CONVERSION_TIMEOUT",
@@ -877,7 +921,7 @@
                         },
                         {
                           "name": "CONVERSION_MAX_CONCURRENT",
-                          "value": "8"
+                          "value": "[parameters('libreOfficeMaxConcurrent')]"
                         },
                         {
                           "name": "POLLER_ENABLED",
@@ -956,51 +1000,12 @@
                     }
                   ],
                   "scale": {
-                    "minReplicas": 1,
-                    "maxReplicas": 5,
-                    "rules": [
-                      {
-                        "name": "cpu-scaling",
-                        "custom": {
-                          "type": "cpu",
-                          "metadata": {
-                            "type": "Utilization",
-                            "value": "70"
-                          }
-                        }
-                      }
-                    ]
+                    "minReplicas": "[parameters('minReplicas')]",
+                    "maxReplicas": "[parameters('maxReplicas')]",
+                    "rules": []
                   }
                 }
               }
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', split(parameters('keyVaultId'), '/')[8])]",
-              "name": "[guid(parameters('keyVaultId'), resourceId('Microsoft.App/containerApps', variables('containerAppName')), variables('keyVaultSecretsUserRoleId'))]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
-                "principalId": "[reference(resourceId('Microsoft.App/containerApps', variables('containerAppName')), '2023-05-01', 'full').identity.principalId]",
-                "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.App/containerApps', variables('containerAppName'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', split(parameters('acrId'), '/')[8])]",
-              "name": "[guid(parameters('acrId'), resourceId('Microsoft.App/containerApps', variables('containerAppName')), variables('acrPullRoleId'))]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleId'))]",
-                "principalId": "[reference(resourceId('Microsoft.App/containerApps', variables('containerAppName')), '2023-05-01', 'full').identity.principalId]",
-                "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.App/containerApps', variables('containerAppName'))]"
-              ]
             }
           ],
           "outputs": {
@@ -1090,14 +1095,14 @@
       "metadata": {
         "description": "Container Registry login server"
       },
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrLoginServer.value]"
+      "value": "[if(equals(parameters('environment'), 'ci'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'docgen-staging-rg'), 'Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrLoginServer.value)]"
     },
     "acrName": {
       "type": "string",
       "metadata": {
         "description": "Container Registry name"
       },
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrName.value]"
+      "value": "[if(equals(parameters('environment'), 'ci'), parameters('acrName'), reference(resourceId('Microsoft.Resources/deployments', 'registry-deployment'), '2025-04-01').outputs.acrName.value)]"
     },
     "appInsightsConnectionString": {
       "type": "string",

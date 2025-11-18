@@ -84,8 +84,8 @@ export interface ApexExecutionResult {
  */
 export async function executeAnonymousApex(apexCode: string): Promise<ApexExecutionResult> {
   try {
-    // Write Apex code to temporary file
-    const tempFile = '/tmp/apex-temp.apex';
+    // Write Apex code to temporary file (use unique filename to avoid race conditions)
+    const tempFile = `/tmp/apex-temp-${Date.now()}-${Math.random().toString(36).substring(7)}.apex`;
     const fs = require('fs');
     fs.writeFileSync(tempFile, apexCode);
 
@@ -219,47 +219,81 @@ export async function createRecord(
       return await createRecordViaRestAPI(objectType, fields);
     }
 
-    // Use Anonymous Apex for record creation to handle complex JSON fields
-    // Build field assignments for Apex
-    const fieldAssignments = Object.entries(fields)
+    // For records with complex JSON fields (like RequestJSON__c), use REST API
+    // SF CLI has issues with nested JSON in --values parameter
+    const hasComplexJson = Object.entries(fields).some(([key, value]) => {
+      // Check if it's an object (not null, not array)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        return true;
+      }
+      // Check if it's a JSON string field (field name ends with JSON__c and value is a non-empty string)
+      if (key.endsWith('JSON__c') && typeof value === 'string' && value.length > 0) {
+        return true;
+      }
+      return false;
+    });
+
+    if (hasComplexJson) {
+      console.log(`Creating ${objectType} via REST API (complex JSON fields)...`);
+      return await createRecordViaRestAPI(objectType, fields);
+    }
+
+    // Use Salesforce CLI for reliable record creation with JSON output
+    // Build field values string for SF CLI --values parameter
+    const fieldValues = Object.entries(fields)
       .map(([key, value]) => {
-        if (typeof value === 'string') {
-          // Escape single quotes and backslashes in string values
-          const escapedValue = value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-          return `rec.${key} = '${escapedValue}';`;
-        } else if (typeof value === 'number') {
-          return `rec.${key} = ${value};`;
+        if (value === null) {
+          return `${key}=null`;
+        } else if (typeof value === 'string') {
+          // Escape single quotes in string values
+          const escapedValue = value.replace(/'/g, "\\'");
+          return `${key}='${escapedValue}'`;
         } else if (typeof value === 'boolean') {
-          return `rec.${key} = ${value};`;
-        } else if (value === null) {
-          return `rec.${key} = null;`;
+          return `${key}=${value}`;
+        } else if (typeof value === 'number') {
+          return `${key}=${value}`;
+        } else if (typeof value === 'object') {
+          // For complex objects (like RequestJSON__c), stringify and escape double quotes for shell
+          const jsonStr = JSON.stringify(value).replace(/"/g, '\\"');
+          return `${key}='${jsonStr}'`;
         }
-        return '';
+        return `${key}=${value}`;
       })
       .filter(Boolean)
-      .join('\n');
+      .join(' ');
 
-    const apexCode = `
-${objectType} rec = new ${objectType}();
-${fieldAssignments}
-insert rec;
-System.debug('RECORD_ID:' + rec.Id);
-`;
+    // Use target org from environment (for CI compatibility)
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
 
-    console.log('Creating record via Anonymous Apex...');
-    const result = await executeAnonymousApex(apexCode);
+    // Execute sf data create record with JSON output
+    const command = `sf data create record --sobject ${objectType} --values "${fieldValues}"${targetOrgFlag} --json`;
 
-    if (!result.success) {
-      throw new Error(`Apex execution failed: ${result.compileProblem || result.exceptionMessage}`);
+    console.log(`Creating ${objectType} record via SF CLI...`);
+
+    const { stdout, stderr } = await execAsync(command, {
+      env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' }
+    });
+
+    // Log stderr for debugging
+    if (stderr) {
+      console.error('SF CLI stderr:', stderr);
     }
 
-    // Extract record ID from debug logs
-    const recordIdMatch = result.logs?.match(/RECORD_ID:([a-zA-Z0-9]{15,18})/);
-    if (!recordIdMatch) {
-      throw new Error('Could not extract record ID from Apex logs');
+    // Parse JSON response
+    const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
+    const result = JSON.parse(cleanStdout);
+
+    if (result.status !== 0) {
+      throw new Error(`Record creation failed: ${result.message || JSON.stringify(result)}`);
     }
 
-    return recordIdMatch[1];
+    if (!result.result?.id) {
+      throw new Error(`No record ID returned from CLI: ${JSON.stringify(result)}`);
+    }
+
+    console.log(`✓ Created ${objectType}: ${result.result.id}`);
+    return result.result.id;
   } catch (error) {
     if (error instanceof Error) {
       // SF CLI often returns error details in stdout even when command fails

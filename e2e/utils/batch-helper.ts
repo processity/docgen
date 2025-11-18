@@ -241,29 +241,53 @@ System.debug('Batch Job ID: ' + jobId);
    * Create test Contacts for batch processing
    */
   async createTestContacts(count: number, accountId?: string): Promise<string[]> {
+    const recordIds: string[] = [];
     const timestamp = Date.now();
-    const fields: Record<string, any> = {
-      Email: `test.contact.${timestamp}@example.com`,
-      Department: 'Sales'
-    };
 
-    if (accountId) {
-      fields.AccountId = accountId;
+    for (let i = 0; i < count; i++) {
+      const uniqueIdentifier = `${timestamp}-${i}`;
+      const fields: Record<string, any> = {
+        FirstName: `TestContact${i + 1}`,
+        LastName: `Batch${uniqueIdentifier}`,
+        Email: `test.contact.${uniqueIdentifier}@example.com`,
+        Department: 'Sales'
+      };
+
+      if (accountId) {
+        fields.AccountId = accountId;
+      }
+
+      const result = await this.orgHelper.createRecord('Contact', fields);
+      recordIds.push(result.id);
     }
 
-    return await this.createTestRecords('Contact', count, fields);
+    console.log(`Created ${count} Contact records for batch testing`);
+    return recordIds;
   }
 
   /**
    * Create test Leads for batch processing
    */
   async createTestLeads(count: number): Promise<string[]> {
+    const recordIds: string[] = [];
     const timestamp = Date.now();
-    return await this.createTestRecords('Lead', count, {
-      Company: `Test Company ${timestamp}`,
-      Email: `test.lead.${timestamp}@example.com`,
-      Status: 'Open - Not Contacted'
-    });
+
+    for (let i = 0; i < count; i++) {
+      const uniqueIdentifier = `${timestamp}-${i}`;
+      const fields: Record<string, any> = {
+        FirstName: `TestLead${i + 1}`,
+        LastName: `Batch${uniqueIdentifier}`,
+        Company: `Test Company ${uniqueIdentifier}`,
+        Email: `test.lead.${uniqueIdentifier}@example.com`,
+        Status: 'Open - Not Contacted'
+      };
+
+      const result = await this.orgHelper.createRecord('Lead', fields);
+      recordIds.push(result.id);
+    }
+
+    console.log(`Created ${count} Lead records for batch testing`);
+    return recordIds;
   }
 
   /**
@@ -313,7 +337,7 @@ System.debug('Batch Job ID: ' + jobId);
     const idList = parentIds.map(id => `'${id}'`).join(',');
     const query = `
       SELECT Id, Status__c, RequestHash__c, ${parentField},
-             Template__c, OutputFileId__c, Error__c, Attempts__c
+             Template__c, OutputFileId__c, Error__c, Attempts__c, OutputFormat__c
       FROM Generated_Document__c
       WHERE ${parentField} IN (${idList})
       ORDER BY CreatedDate DESC
@@ -323,17 +347,20 @@ System.debug('Batch Job ID: ' + jobId);
   }
 
   /**
-   * Verify all records have corresponding QUEUED documents
+   * Verify all records have corresponding documents created by batch
    * Run immediately after batch execution
+   *
+   * Note: When worker poller is running, documents may be picked up immediately,
+   * so we accept QUEUED, PROCESSING, or SUCCEEDED status as valid.
    *
    * @param recordIds - Array of record IDs that should have documents
    * @param parentField - Parent field to check
-   * @returns true if all have QUEUED documents
+   * @returns true if all have documents created
    */
   async verifyAllQueued(recordIds: string[], parentField: string = 'Account__c'): Promise<boolean> {
     const documents = await this.getDocumentsByParent(recordIds, parentField);
 
-    // Check that we have one QUEUED document per record
+    // Check that we have one document per record
     if (documents.length !== recordIds.length) {
       console.error(
         `Expected ${recordIds.length} documents, found ${documents.length}`
@@ -341,16 +368,18 @@ System.debug('Batch Job ID: ' + jobId);
       return false;
     }
 
-    // Verify all are QUEUED
-    const allQueued = documents.every(doc => doc.Status__c === 'QUEUED');
+    // Verify all are in valid states (QUEUED, PROCESSING, or SUCCEEDED)
+    // Worker poller may pick up documents immediately, so we can't assume they're still QUEUED
+    const validStatuses = ['QUEUED', 'PROCESSING', 'SUCCEEDED'];
+    const allValid = documents.every(doc => validStatuses.includes(doc.Status__c));
 
-    if (!allQueued) {
+    if (!allValid) {
       const statusCounts = documents.reduce((acc, doc) => {
         acc[doc.Status__c] = (acc[doc.Status__c] || 0) + 1;
         return acc;
       }, {} as Record<string, number>);
 
-      console.error(`Not all documents QUEUED: ${JSON.stringify(statusCounts)}`);
+      console.error(`Documents have unexpected statuses: ${JSON.stringify(statusCounts)}`);
       return false;
     }
 
@@ -391,11 +420,11 @@ System.debug('Batch Job ID: ' + jobId);
       throw new Error('Batch completed but no documents were created');
     }
 
-    // Verify all QUEUED
-    const allQueued = await this.verifyAllQueued(config.recordIds, parentField);
+    // Verify all documents created (may be QUEUED, PROCESSING, or SUCCEEDED if worker is active)
+    const allCreated = await this.verifyAllQueued(config.recordIds, parentField);
 
-    if (!allQueued) {
-      throw new Error('Not all batch documents are in QUEUED status');
+    if (!allCreated) {
+      throw new Error('Not all batch documents were created successfully');
     }
 
     console.log(`Verified ${documents.length} documents created and QUEUED`);

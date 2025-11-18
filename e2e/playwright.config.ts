@@ -46,7 +46,7 @@ export default defineConfig({
   },
 
   /* Global timeout for each test (increased for CI where document generation can be slower) */
-  timeout: 120000,
+  timeout: 300000, // 5 minutes for batch tests with 20-50 records
 
   /* Configure projects for major browsers */
   projects: [

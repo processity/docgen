@@ -116,8 +116,21 @@ public with sharing class DocgenStatusController {
 
             if (res.getStatusCode() == 200) {
                 return (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            } else if (res.getStatusCode() == 409) {
+                // Worker already running - treat as success (idempotent operation)
+                // Parse the response to get the error message
+                Map<String, Object> errorResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+                String errorMsg = (String) errorResponse.get('error');
+
+                // Return a success response indicating worker is already running
+                return new Map<String, Object>{
+                    'message' => errorMsg,  // "Poller is already running"
+                    'isRunning' => true,
+                    'alreadyRunning' => true
+                };
             } else {
-                throw new CustomException('Failed to start worker with status: ' + res.getStatusCode());
+                throw new CustomException('Failed to start worker with status: ' + res.getStatusCode() +
+                                        ', body: ' + res.getBody());
             }
         } catch (Exception e) {
             throw new AuraHandledException('Failed to start worker: ' + e.getMessage());

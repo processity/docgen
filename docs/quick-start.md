@@ -90,15 +90,26 @@ The quickest way to get started is using the automated setup script:
 # Authenticate to your Dev Hub (one-time setup)
 sf org login web --set-default-dev-hub --alias DevHub
 
+# Set Azure AD credentials (required for backend authentication)
+# You can find these values in: azure-ad-config.md
+export AAD_CLIENT_ID="your-client-id"
+export AAD_CLIENT_SECRET="your-azure-ad-client-secret"
+
 # Create and configure a scratch org
 ./scripts/setup-scratch-org.sh
 
 # This script will:
+# - Validate environment variables (AAD_CLIENT_ID, AAD_CLIENT_SECRET)
 # - Create a new scratch org (default alias: docgen-dev)
 # - Deploy all metadata (custom objects, Apex classes, LWC components)
+# - Configure External Credential with AAD credentials
+# - Configure Custom Settings for CI Named Credential
+# - Test Named Credential connectivity with backend
 # - Assign permission sets
 # - Run Apex tests to verify deployment
 ```
+
+**Note:** The script requires `AAD_CLIENT_ID` and `AAD_CLIENT_SECRET` environment variables to configure backend authentication. It will fail early with helpful error messages if these are not set.
 
 ### Option 2: Manual Scratch Org Setup
 
@@ -132,12 +143,27 @@ sf org open
 
 The project includes several helper scripts in the `scripts/` directory:
 
-- **`setup-scratch-org.sh [alias]`** - Create and deploy to scratch org
+**Scratch Org Management:**
+- **`setup-scratch-org.sh [alias]`** - Create and fully configure scratch org (including AAD credentials)
+- **`delete-scratch-org.sh [alias]`** - Delete scratch org
 - **`deploy-to-org.sh [alias]`** - Deploy metadata to existing org
 - **`run-apex-tests.sh [alias]`** - Run Apex tests
-- **`delete-scratch-org.sh [alias]`** - Delete scratch org
+
+**Credential Configuration:**
+- **`configure-external-credential.sh [alias] [client-id] [secret]`** - Configure AAD External Credential
+- **`configure-named-credential.sh [alias] [backend-url]`** - Configure Named Credential URL
+- **`configure-ci-backend-for-scratch-org.sh [alias]`** - Configure CI backend to use scratch org
+
+**Testing & Verification:**
+- **`TestNamedCredentialCallout.apex`** - Test Named Credential connectivity (authenticated endpoint)
+- **`VerifyCredentialStatus.apex`** - Check External Credential and Named Credential status
 
 All scripts accept an optional org alias parameter (defaults to `docgen-dev`).
+
+**Environment Variables:** Most configuration scripts use environment variables:
+- `AAD_CLIENT_ID` - Azure AD Application (client) ID
+- `AAD_CLIENT_SECRET` - Azure AD Client Secret
+- `BACKEND_URL` - Backend API URL (for Named Credential)
 
 ## Local Development
 

@@ -97,13 +97,18 @@ npm run dev
 # Authenticate to Dev Hub
 sf org login web --set-default-dev-hub --alias DevHub
 
-# Create and configure scratch org (automated)
+# Set Azure AD credentials (required for backend authentication)
+export AAD_CLIENT_ID="your-azure-ad-client-id"
+export AAD_CLIENT_SECRET="your-azure-ad-client-secret"
+
+# Create and configure scratch org (automated - includes AAD setup)
 ./scripts/setup-scratch-org.sh
 
 # Or manually
 sf org create scratch --definition-file config/project-scratch-def.json --alias docgen-dev --duration-days 7
 sf project deploy start --source-dir force-app
 sf org assign permset --name Docgen_User
+./scripts/configure-external-credential.sh docgen-dev
 ```
 
 ### First Document Generation
@@ -121,6 +126,7 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 | Document | Description |
 |----------|-------------|
 | **[Quick Start Guide](docs/quick-start.md)** | Complete setup and installation guide for new developers |
+| **[Scripts Reference](docs/scripts.md)** | Detailed documentation for all helper scripts and Apex templates |
 | **[Architecture Guide](docs/architecture.md)** | Technical implementation details (authentication, caching, conversion, batch processing) |
 | **[Testing Guide](docs/testing.md)** | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration |
 | **[API Reference](docs/api.md)** | REST API endpoints, request/response formats, error handling |

@@ -48,6 +48,9 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
   });
 
   test('batch 20 records: all QUEUED → poller processes → all SUCCEEDED', async ({ salesforce }) => {
+    // Set explicit timeout for batch processing tests (20 records + processing)
+    test.setTimeout(300000); // 5 minutes
+
     console.log(`\n${'='.repeat(70)}`);
     console.log('TEST: Batch 20 records - complete workflow');
     console.log(`${'='.repeat(70)}`);
@@ -71,14 +74,21 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
         batchSize: 200 // Single chunk for 20 records
       });
 
-      console.log(`✓ Batch created ${documentIds.length} QUEUED documents`);
+      console.log(`✓ Batch created ${documentIds.length} documents`);
       expect(documentIds.length).toBe(recordCount);
 
-      // Verify all documents are QUEUED
+      // Verify all documents have valid status (QUEUED, PROCESSING, or SUCCEEDED)
+      // Worker poller may pick up documents immediately if running
       const documents = await batchHelper.getDocumentsByParent(accountIds, 'Account__c');
-      const allQueued = documents.every(doc => doc.Status__c === 'QUEUED');
-      expect(allQueued).toBe(true);
-      console.log('✓ All documents in QUEUED status');
+      const validStatuses = ['QUEUED', 'PROCESSING', 'SUCCEEDED'];
+      const allValidStatus = documents.every(doc => validStatuses.includes(doc.Status__c));
+      expect(allValidStatus).toBe(true);
+
+      const statusCounts = documents.reduce((acc, doc) => {
+        acc[doc.Status__c] = (acc[doc.Status__c] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log(`✓ All documents created with valid status: ${JSON.stringify(statusCounts)}`);
 
       // Verify RequestHash uniqueness
       const hashes = documents.map(doc => doc.RequestHash__c);
@@ -131,6 +141,9 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
   });
 
   test('large batch: 50+ records with chunking', async ({ salesforce }) => {
+    // Set explicit timeout for large batch test (50 accounts + processing)
+    test.setTimeout(300000); // 5 minutes
+
     console.log(`\n${'='.repeat(70)}`);
     console.log('TEST: Large batch with chunking - 50 records');
     console.log(`${'='.repeat(70)}`);
@@ -177,10 +190,17 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
       expect(documents.length).toBe(recordCount);
 
-      // Verify all QUEUED initially
-      const allQueued = documents.every(doc => doc.Status__c === 'QUEUED');
-      expect(allQueued).toBe(true);
-      console.log('✓ All documents in QUEUED status');
+      // Verify all documents have valid status (QUEUED, PROCESSING, or SUCCEEDED)
+      // Worker poller may pick up documents immediately if running
+      const validStatuses = ['QUEUED', 'PROCESSING', 'SUCCEEDED'];
+      const allValidStatus = documents.every(doc => validStatuses.includes(doc.Status__c));
+      expect(allValidStatus).toBe(true);
+
+      const statusCounts = documents.reduce((acc, doc) => {
+        acc[doc.Status__c] = (acc[doc.Status__c] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log(`✓ All documents in valid status: ${JSON.stringify(statusCounts)}`);
 
       // Note: Not waiting for poller processing to save test time
       // The focus of this test is batch execution and chunking
@@ -197,12 +217,37 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
   });
 
   test('multi-object batch: Accounts + Contacts + Leads', async ({ salesforce }) => {
+    test.setTimeout(300000); // 5 minutes for multi-object batch processing
+
     console.log(`\n${'='.repeat(70)}`);
     console.log('TEST: Multi-object batch processing');
     console.log(`${'='.repeat(70)}`);
 
-    const templateId = salesforce.testData.templateId;
+    const accountTemplateId = salesforce.testData.templateId;
     const recordsPerType = 5;
+
+    // Create templates for Contact and Lead with appropriate SOQL
+    console.log('\nCreating templates for Contact and Lead...');
+    const contactTemplateId = await orgHelper.createRecord('Docgen_Template__c', {
+      Name: `Contact_Template_${Date.now()}`,
+      DataSource__c: 'SOQL',
+      TemplateContentVersionId__c: salesforce.testData.contentVersionId,
+      SOQL__c: 'SELECT Id, Name, Email, Department FROM Contact WHERE Id = :recordId',
+      StoreMergedDocx__c: false,
+      ReturnDocxToBrowser__c: false
+    });
+
+    const leadTemplateId = await orgHelper.createRecord('Docgen_Template__c', {
+      Name: `Lead_Template_${Date.now()}`,
+      DataSource__c: 'SOQL',
+      TemplateContentVersionId__c: salesforce.testData.contentVersionId,
+      SOQL__c: 'SELECT Id, Name, Email, Company, Status FROM Lead WHERE Id = :recordId',
+      StoreMergedDocx__c: false,
+      ReturnDocxToBrowser__c: false
+    });
+
+    console.log(`✓ Created Contact template: ${contactTemplateId.id}`);
+    console.log(`✓ Created Lead template: ${leadTemplateId.id}`);
 
     // Create test records for multiple object types
     console.log(`\nCreating test records for multiple object types...`);
@@ -219,10 +264,10 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
     console.log(`✓ Created ${accountIds.length + contactIds.length + leadIds.length} records across 3 object types`);
 
     try {
-      // Execute 3 separate batches (one per object type)
+      // Execute 3 separate batches (one per object type with appropriate template)
       console.log('\nExecuting batch for Accounts...');
       const accountBatchJobId = await batchHelper.executeBatchEnqueue({
-        templateId: templateId,
+        templateId: accountTemplateId,
         recordIds: accountIds,
         outputFormat: 'PDF',
         parentField: 'Account__c'
@@ -230,7 +275,7 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
       console.log('Executing batch for Contacts...');
       const contactBatchJobId = await batchHelper.executeBatchEnqueue({
-        templateId: templateId,
+        templateId: contactTemplateId.id,
         recordIds: contactIds,
         outputFormat: 'PDF',
         parentField: 'Contact__c'
@@ -238,7 +283,7 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
       console.log('Executing batch for Leads...');
       const leadBatchJobId = await batchHelper.executeBatchEnqueue({
-        templateId: templateId,
+        templateId: leadTemplateId.id,
         recordIds: leadIds,
         outputFormat: 'PDF',
         parentField: 'Lead__c'
@@ -277,20 +322,31 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
       expect(contactDocs.length).toBe(recordsPerType);
       expect(leadDocs.length).toBe(recordsPerType);
 
-      // Verify all QUEUED
-      const allAccountsQueued = accountDocs.every(doc => doc.Status__c === 'QUEUED');
-      const allContactsQueued = contactDocs.every(doc => doc.Status__c === 'QUEUED');
-      const allLeadsQueued = leadDocs.every(doc => doc.Status__c === 'QUEUED');
+      // Verify all have valid status (QUEUED, PROCESSING, or SUCCEEDED)
+      // Worker poller may pick up documents immediately
+      const validStatuses = ['QUEUED', 'PROCESSING', 'SUCCEEDED'];
+      const allAccountsValid = accountDocs.every(doc => validStatuses.includes(doc.Status__c));
+      const allContactsValid = contactDocs.every(doc => validStatuses.includes(doc.Status__c));
+      const allLeadsValid = leadDocs.every(doc => validStatuses.includes(doc.Status__c));
 
-      expect(allAccountsQueued).toBe(true);
-      expect(allContactsQueued).toBe(true);
-      expect(allLeadsQueued).toBe(true);
+      expect(allAccountsValid).toBe(true);
+      expect(allContactsValid).toBe(true);
+      expect(allLeadsValid).toBe(true);
 
-      console.log('✓ All documents in QUEUED status across all object types');
+      console.log('✓ All documents in valid status across all object types');
 
       console.log('\n✅ Test completed successfully');
     } finally {
-      // Cleanup
+      // Cleanup templates
+      console.log('\nCleaning up templates...');
+      try {
+        await orgHelper.deleteRecords('Docgen_Template__c', [contactTemplateId.id, leadTemplateId.id]);
+        console.log('✓ Templates deleted');
+      } catch (error) {
+        console.warn('⚠️  Failed to delete templates:', error);
+      }
+
+      // Cleanup test data
       console.log('\nCleaning up test data...');
       await Promise.all([
         batchHelper.cleanupTestData(accountIds, 'Account'),
@@ -302,6 +358,9 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
   });
 
   test('batch idempotency: duplicate RequestHash handling', async ({ salesforce }) => {
+    // Set explicit timeout for batch processing tests
+    test.setTimeout(180000); // 3 minutes
+
     console.log(`\n${'='.repeat(70)}`);
     console.log('TEST: Batch idempotency - duplicate RequestHash');
     console.log(`${'='.repeat(70)}`);
@@ -336,34 +395,32 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
       // Attempt to execute same batch again (same template, same records, same format)
       console.log('\nAttempting to execute duplicate batch...');
       console.log('  (Same template, same records, same output format)');
+      console.log('  Note: Batch uses Database.insert with allOrNone=false, so it completes');
+      console.log('        successfully even when duplicate External IDs cause individual DML failures');
 
-      let duplicateBatchFailed = false;
-      let duplicateError = '';
+      // Execute duplicate batch - it will succeed but not create new documents
+      // The batch uses Database.insert(records, false) which allows partial success
+      // Duplicate RequestHash values will fail individual inserts, but batch completes
+      await batchHelper.executeBatchAndVerifyQueued({
+        templateId: templateId,
+        recordIds: accountIds,
+        outputFormat: 'PDF',
+        parentField: 'Account__c'
+      });
 
-      try {
-        // This should fail due to duplicate RequestHash (External ID)
-        await batchHelper.executeBatchAndVerifyQueued({
-          templateId: templateId,
-          recordIds: accountIds,
-          outputFormat: 'PDF',
-          parentField: 'Account__c'
-        });
-      } catch (error: any) {
-        duplicateBatchFailed = true;
-        duplicateError = error.message;
-        console.log(`✓ Duplicate batch failed as expected: ${error.message}`);
-      }
+      console.log('✓ Duplicate batch completed (as expected with partial success mode)');
 
-      // Verify duplicate batch was rejected
-      expect(duplicateBatchFailed).toBe(true);
-      expect(duplicateError.toLowerCase()).toContain('duplicate');
-
-      // Verify no additional documents were created
+      // Verify no additional documents were created (idempotency check)
       const afterDocs = await batchHelper.getDocumentsByParent(accountIds, 'Account__c');
       console.log(`\n✓ Document count after duplicate attempt: ${afterDocs.length}`);
       expect(afterDocs.length).toBe(recordCount); // Should still be original count
 
-      console.log('✓ Idempotency verified: Duplicate RequestHash prevented duplicate work');
+      // Verify RequestHash values are unchanged
+      const afterHashes = afterDocs.map(doc => doc.RequestHash__c).sort();
+      const firstHashesSorted = firstHashes.sort();
+      expect(afterHashes).toEqual(firstHashesSorted);
+
+      console.log('✓ Idempotency verified: Duplicate RequestHash prevented duplicate documents');
 
       console.log('\n✅ Test completed successfully');
     } finally {
@@ -375,6 +432,9 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
   });
 
   test('batch with DOCX output format', async ({ salesforce }) => {
+    // Set explicit timeout for batch processing tests
+    test.setTimeout(180000); // 3 minutes
+
     console.log(`\n${'='.repeat(70)}`);
     console.log('TEST: Batch with DOCX output format');
     console.log(`${'='.repeat(70)}`);

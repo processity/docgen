@@ -182,15 +182,26 @@ export class SalesforceApi {
     let sfErrorMessage = '';
     if (errorData) {
       try {
-        if (typeof errorData === 'string') {
-          sfErrorMessage = errorData;
-        } else if (Array.isArray(errorData) && errorData.length > 0) {
+        // Convert Buffer to string if needed
+        let parsedData = errorData;
+        if (Buffer.isBuffer(errorData)) {
+          const bufferStr = errorData.toString('utf8');
+          try {
+            parsedData = JSON.parse(bufferStr);
+          } catch {
+            parsedData = bufferStr;
+          }
+        }
+
+        if (typeof parsedData === 'string') {
+          sfErrorMessage = parsedData;
+        } else if (Array.isArray(parsedData) && parsedData.length > 0) {
           // Salesforce often returns errors as array: [{message: "...", errorCode: "..."}]
-          sfErrorMessage = errorData.map((e: any) => `${e.errorCode}: ${e.message}`).join('; ');
-        } else if (typeof errorData === 'object' && errorData.message) {
-          sfErrorMessage = errorData.message;
-        } else {
-          sfErrorMessage = JSON.stringify(errorData);
+          sfErrorMessage = parsedData.map((e: any) => `${e.errorCode}: ${e.message}`).join('; ');
+        } else if (typeof parsedData === 'object' && parsedData.message) {
+          sfErrorMessage = parsedData.message;
+        } else if (typeof parsedData === 'object') {
+          sfErrorMessage = JSON.stringify(parsedData);
         }
       } catch (e) {
         sfErrorMessage = 'Unable to parse error response';

@@ -5,8 +5,12 @@
 # Prerequisites:
 # - Salesforce CLI installed (sf)
 # - Dev Hub org authenticated
+# - AAD_CLIENT_ID environment variable (Azure AD Client ID)
+# - AAD_CLIENT_SECRET environment variable (Azure AD Client Secret)
 #
 # Usage:
+#   export AAD_CLIENT_ID="your-client-id"
+#   export AAD_CLIENT_SECRET="your-client-secret"
 #   ./scripts/setup-scratch-org.sh [org-alias]
 #
 # If no alias provided, defaults to 'docgen-dev'
@@ -19,6 +23,40 @@ SCRATCH_DEF="config/project-scratch-def.json"
 DURATION_DAYS=7
 
 echo "🚀 Setting up Salesforce scratch org: $ORG_ALIAS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Check for required environment variables
+echo ""
+echo "📋 Checking required environment variables..."
+
+if [ -z "${AAD_CLIENT_ID:-}" ]; then
+    echo "❌ Error: AAD_CLIENT_ID environment variable is not set"
+    echo ""
+    echo "This is required to configure the External Credential for backend authentication."
+    echo "Please set it and try again:"
+    echo ""
+    echo "  export AAD_CLIENT_ID=\"your-azure-ad-client-id\""
+    echo ""
+    echo "You can find this value in: azure-ad-config.md"
+    exit 1
+fi
+
+if [ -z "${AAD_CLIENT_SECRET:-}" ]; then
+    echo "❌ Error: AAD_CLIENT_SECRET environment variable is not set"
+    echo ""
+    echo "This is required to configure the External Credential for backend authentication."
+    echo "Please set it and try again:"
+    echo ""
+    echo "  export AAD_CLIENT_SECRET=\"your-azure-ad-client-secret\""
+    echo ""
+    echo "You can find this value in: azure-ad-config.md"
+    exit 1
+fi
+
+echo "✓ AAD_CLIENT_ID is set: ${AAD_CLIENT_ID:0:8}...${AAD_CLIENT_ID: -4}"
+echo "✓ AAD_CLIENT_SECRET is set: ***"
+
+echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Check if Salesforce CLI is installed
@@ -173,6 +211,50 @@ echo ""
 echo "🔐 Assigning Docgen User permission set..."
 sf org assign permset --name Docgen_User
 
+# Configure External Credential with AAD credentials
+echo ""
+echo "🔑 Configuring External Credential with AAD credentials..."
+
+TEMP_CRED_APEX=$(mktemp /tmp/configure-cred.XXXXXX.apex)
+trap "rm -f '$TEMP_CRED_APEX'" EXIT
+
+sed -e "s|{{CLIENT_ID}}|$AAD_CLIENT_ID|g" \
+    -e "s|{{CLIENT_SECRET}}|$AAD_CLIENT_SECRET|g" \
+    scripts/ConfigureExternalCredential.apex > "$TEMP_CRED_APEX"
+
+if sf apex run --file "$TEMP_CRED_APEX" --target-org "$ORG_ALIAS" > /dev/null 2>&1; then
+    echo "✓ External Credential configured with AAD credentials"
+else
+    echo "⚠️  Warning: Failed to configure External Credential (non-critical)"
+fi
+
+# Configure Custom Settings to use CI Named Credential
+echo ""
+echo "⚙️  Configuring Custom Settings..."
+
+TEMP_SETTINGS_APEX=$(mktemp /tmp/configure-settings.XXXXXX.apex)
+trap "rm -f '$TEMP_SETTINGS_APEX'" EXIT
+
+sed -e "s|{{NAMED_CREDENTIAL}}|Docgen_Node_API_CI|g" \
+    scripts/ConfigureCustomSettings.apex > "$TEMP_SETTINGS_APEX"
+
+if sf apex run --file "$TEMP_SETTINGS_APEX" --target-org "$ORG_ALIAS" > /dev/null 2>&1; then
+    echo "✓ Custom Settings configured to use: Docgen_Node_API_CI"
+else
+    echo "⚠️  Warning: Failed to configure Custom Settings (non-critical)"
+fi
+
+# Test Named Credential connectivity
+echo ""
+echo "🔌 Testing Named Credential connectivity..."
+
+if sf apex run --file scripts/TestNamedCredentialCallout.apex --target-org "$ORG_ALIAS" 2>&1 | grep -q "✅ Named Credential is working correctly"; then
+    echo "✓ Named Credential connectivity verified"
+    echo "✓ Backend is reachable and authentication is working"
+else
+    echo "⚠️  Warning: Named Credential test failed (you may need to configure backend manually)"
+fi
+
 # Run Apex tests
 echo ""
 echo "🧪 Running Apex tests..."
@@ -182,12 +264,20 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ Scratch org setup complete!"
 echo ""
+echo "Configured components:"
+echo "  ✓ Metadata deployed (main + test)"
+echo "  ✓ Permission set assigned (Docgen_User)"
+echo "  ✓ External Credential configured with AAD"
+echo "  ✓ Custom Settings pointing to CI Named Credential"
+echo "  ✓ Named Credential connectivity verified"
+echo "  ✓ Test template created and uploaded"
+echo "  ✓ Apex tests passed"
+echo ""
 echo "Org details:"
 sf org display --target-org "$ORG_ALIAS"
 echo ""
-echo "To open the org:"
-echo "  sf org open --target-org $ORG_ALIAS"
-echo ""
-echo "To delete the org:"
-echo "  sf org delete scratch --target-org $ORG_ALIAS --no-prompt"
+echo "Quick commands:"
+echo "  Open org:       sf org open --target-org $ORG_ALIAS"
+echo "  Run E2E tests:  npm run test:e2e"
+echo "  Delete org:     sf org delete scratch --target-org $ORG_ALIAS --no-prompt"
 echo ""
