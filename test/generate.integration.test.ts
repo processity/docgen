@@ -48,6 +48,11 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
     // The config loader will handle loading the private key from SF_PRIVATE_KEY_PATH
     process.env.NODE_ENV = 'development';  // Set to development to enable auth bypass
     process.env.AUTH_BYPASS_DEVELOPMENT = 'true';  // Bypass AAD auth for integration tests
+
+    // Force JWT auth for these integration tests (which specifically test JWT authentication)
+    // Unset SFDX_AUTH_URL so JWT credentials take precedence
+    delete process.env.SFDX_AUTH_URL;
+
     process.env.SF_DOMAIN = SF_DOMAIN;
     process.env.SF_USERNAME = SF_USERNAME;
     process.env.SF_CLIENT_ID = SF_CLIENT_ID;

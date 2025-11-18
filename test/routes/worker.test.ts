@@ -13,7 +13,6 @@ dotenvConfig();
 // Config will be loaded in beforeAll
 let appConfig: Awaited<ReturnType<typeof loadConfig>>;
 let hasCredentials = false;
-let sfDomain: string | undefined;
 let baseUrl: string;
 
 describe('Worker Routes', () => {
@@ -23,34 +22,26 @@ describe('Worker Routes', () => {
   beforeAll(async () => {
     // Load config first
     appConfig = await loadConfig();
-    hasCredentials = !!(
-      appConfig.sfDomain &&
-      appConfig.sfUsername &&
-      appConfig.sfClientId &&
-      appConfig.sfPrivateKey
-    );
+    hasCredentials = !!appConfig.sfdxAuthUrl;
 
     if (!hasCredentials) {
       console.log(`
 ================================================================================
 SKIPPING WORKER ROUTE TESTS: Missing Salesforce credentials.
 
-To run these tests locally, create a .env file with Salesforce credentials.
+To run these tests locally, set SFDX_AUTH_URL in your .env file.
+Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 ================================================================================
       `);
       return;
     }
 
-    sfDomain = appConfig.sfDomain;
-    baseUrl = `https://${sfDomain}`;
-
     // Initialize real Salesforce auth
-    createSalesforceAuth({
-      sfDomain: appConfig.sfDomain!,
-      sfUsername: appConfig.sfUsername!,
-      sfClientId: appConfig.sfClientId!,
-      sfPrivateKey: appConfig.sfPrivateKey!,
+    const sfAuth = createSalesforceAuth({
+      sfdxAuthUrl: appConfig.sfdxAuthUrl!,
     });
+
+    baseUrl = sfAuth.getInstanceUrl();
 
     app = await build();
     await app.ready();

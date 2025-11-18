@@ -92,6 +92,50 @@ sf org create scratch \
 
 echo "✓ Scratch org created: $ORG_ALIAS"
 
+# Update .env file with SFDX_AUTH_URL
+echo ""
+echo "📝 Updating .env file with SFDX_AUTH_URL..."
+
+# Get the SFDX Auth URL from the newly created scratch org
+SCRATCH_ORG_AUTH_URL=$(sf org display --verbose --json --target-org "$ORG_ALIAS" 2>/dev/null | jq -r '.result.sfdxAuthUrl')
+
+if [ -n "$SCRATCH_ORG_AUTH_URL" ]; then
+    ENV_FILE=".env"
+
+    # Check if .env file exists
+    if [ -f "$ENV_FILE" ]; then
+        # Check if SFDX_AUTH_URL already exists in .env
+        if grep -q "^SFDX_AUTH_URL=" "$ENV_FILE"; then
+            # Replace existing SFDX_AUTH_URL
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS
+                sed -i '' "s|^SFDX_AUTH_URL=.*|SFDX_AUTH_URL=$SCRATCH_ORG_AUTH_URL|g" "$ENV_FILE"
+            else
+                # Linux
+                sed -i "s|^SFDX_AUTH_URL=.*|SFDX_AUTH_URL=$SCRATCH_ORG_AUTH_URL|g" "$ENV_FILE"
+            fi
+            echo "✓ Updated SFDX_AUTH_URL in .env file"
+        else
+            # Append SFDX_AUTH_URL to .env file
+            echo "" >> "$ENV_FILE"
+            echo "# SFDX Auth URL (for development/testing with scratch org)" >> "$ENV_FILE"
+            echo "# Auto-generated from scratch org: $ORG_ALIAS" >> "$ENV_FILE"
+            echo "SFDX_AUTH_URL=$SCRATCH_ORG_AUTH_URL" >> "$ENV_FILE"
+            echo "✓ Added SFDX_AUTH_URL to .env file"
+        fi
+    else
+        # Create new .env file with SFDX_AUTH_URL
+        echo "# SFDX Auth URL (for development/testing with scratch org)" > "$ENV_FILE"
+        echo "# Auto-generated from scratch org: $ORG_ALIAS" >> "$ENV_FILE"
+        echo "SFDX_AUTH_URL=$SCRATCH_ORG_AUTH_URL" >> "$ENV_FILE"
+        echo "✓ Created .env file with SFDX_AUTH_URL"
+    fi
+
+    echo "✓ .env file updated for scratch org: $ORG_ALIAS"
+else
+    echo "⚠️  Warning: Could not extract SFDX_AUTH_URL from scratch org"
+fi
+
 # Deploy metadata
 echo ""
 echo "📤 Deploying main metadata to scratch org..."
@@ -272,6 +316,7 @@ echo "  ✓ Custom Settings pointing to CI Named Credential"
 echo "  ✓ Named Credential connectivity verified"
 echo "  ✓ Test template created and uploaded"
 echo "  ✓ Apex tests passed"
+echo "  ✓ .env file updated with SFDX_AUTH_URL"
 echo ""
 echo "Org details:"
 sf org display --target-org "$ORG_ALIAS"

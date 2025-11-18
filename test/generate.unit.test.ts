@@ -15,6 +15,10 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
     // Set up environment for testing
     process.env.NODE_ENV = 'development';  // Set to development to enable auth bypass
     process.env.AUTH_BYPASS_DEVELOPMENT = 'true';  // Bypass AAD auth for unit tests
+
+    // Use JWT auth for these unit tests (with mocked endpoints)
+    // Explicitly unset SFDX_AUTH_URL to ensure JWT auth is used
+    delete process.env.SFDX_AUTH_URL;
     process.env.SF_DOMAIN = 'test.salesforce.com';
     process.env.SF_USERNAME = 'test@example.com';
     process.env.SF_CLIENT_ID = 'test-client-id';
@@ -455,7 +459,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       const body = JSON.parse(response.body);
       expect(body.error).toBe('Bad Gateway');
       expect(body.message).toContain('Salesforce API error');
-    });
+    }, 15000); // Increased timeout for retry logic (4 retries with backoff: 1s + 2s + 4s + overhead)
 
     // NOTE: LibreOffice conversion failure test omitted due to test infrastructure limitations
     // The error handling code exists in generate.ts (lines 341-343) and correctly returns 502,
@@ -539,7 +543,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
 
       expect(response.statusCode).toBe(200);
       expect(nock.isDone()).toBe(true);
-    });
+    }, 15000); // Increased timeout for token refresh and retry logic
 
     it('should update Generated_Document__c status to FAILED on error', async () => {
       const testTemplateId = '068000000000013AAA';
