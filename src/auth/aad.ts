@@ -115,6 +115,10 @@ export class AADJWTVerifier {
       // Get the signing key from JWKS (async operation)
       this.getSigningKey(kid)
         .then((signingKey) => {
+          // For better error messages, extract issuer before verification
+          const unverifiedPayload = decoded.payload as DecodedToken;
+          const actualIssuer = unverifiedPayload?.iss;
+
           // Verify the token with multiple valid issuers
           jwt.verify(
             token,
@@ -134,8 +138,8 @@ export class AADJWTVerifier {
                   if (err.message.includes('audience')) {
                     reject(new Error(`Invalid audience: expected ${this.audience}`));
                   } else if (err.message.includes('issuer')) {
-                    // Include valid issuers in error message for debugging
-                    reject(new Error(`Invalid issuer: expected one of ${this.validIssuers.join(', ')}`));
+                    // Use the issuer we extracted before verification
+                    reject(new Error(`Invalid issuer: got "${actualIssuer || 'unknown'}", expected one of [${this.validIssuers.join(', ')}]`));
                   } else if (err.message.includes('signature')) {
                     reject(new Error('Invalid token signature'));
                   } else {

@@ -110,6 +110,13 @@ if (require.main === module) {
 
           app.log.info(`Server listening on port ${config.port}`);
           app.log.info(`Environment: ${config.nodeEnv}`);
+
+          // Auto-start the poller service (always-on in multi-replica deployments)
+          // The Salesforce lock mechanism (LockedUntil__c) prevents duplicate work
+          // across replicas, making it safe for all instances to poll concurrently
+          app.log.info('Starting poller service...');
+          await pollerService.start();
+          app.log.info('Poller service started');
         } catch (err) {
           app.log.error(err);
           process.exit(1);
@@ -126,14 +133,12 @@ if (require.main === module) {
     // eslint-disable-next-line no-console
     console.log(`\nReceived ${signal}, shutting down gracefully...`);
 
-    // Stop the poller if it's running
-    if (pollerService.isRunning()) {
-      // eslint-disable-next-line no-console
-      console.log('Stopping poller service...');
-      await pollerService.stop();
-      // eslint-disable-next-line no-console
-      console.log('Poller service stopped');
-    }
+    // Stop the poller service (always running in multi-replica deployments)
+    // eslint-disable-next-line no-console
+    console.log('Stopping poller service...');
+    await pollerService.stop();
+    // eslint-disable-next-line no-console
+    console.log('Poller service stopped');
 
     process.exit(0);
   };

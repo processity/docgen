@@ -121,40 +121,34 @@
             </div>
         </div>
 
-        <!-- Section 2: Worker Control -->
+        <!-- Section 2: Poller Status -->
         <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_medium slds-m-bottom_small">Worker Control</h2>
+            <h2 class="slds-text-heading_medium slds-m-bottom_small">Poller Status</h2>
             <article class="slds-card">
                 <div class="slds-card__body slds-card__body_inner">
-                    <div class="slds-grid slds-wrap slds-gutters">
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-                            <dl class="slds-list_horizontal slds-wrap">
-                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Status">Status:</dt>
-                                <dd class="slds-item_detail slds-truncate">
-                                    <lightning-badge label={workerStatusLabel} class={workerStatusBadgeClass}></lightning-badge>
-                                </dd>
-                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Last Poll Time">Last Poll Time:</dt>
-                                <dd class="slds-item_detail slds-truncate">{lastPollTime}</dd>
-                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Current Queue Depth">Current Queue Depth:</dt>
-                                <dd class="slds-item_detail slds-truncate">{workerStatus.currentQueueDepth}</dd>
-                            </dl>
-                        </div>
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-text-align_right">
-                            <lightning-button
-                                label="Start Worker"
-                                variant="brand"
-                                onclick={handleStartWorker}
-                                disabled={disableStartButton}
-                                class="slds-m-right_x-small">
-                            </lightning-button>
-                            <lightning-button
-                                label="Stop Worker"
-                                variant="destructive"
-                                onclick={handleStopWorker}
-                                disabled={disableStopButton}>
-                            </lightning-button>
+                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
+                        <div class="slds-media slds-media_center">
+                            <div class="slds-media__figure">
+                                <lightning-icon icon-name="utility:info" size="x-small" alternative-text="Information"></lightning-icon>
+                            </div>
+                            <div class="slds-media__body">
+                                <p class="slds-text-body_small">
+                                    The poller runs automatically on all backend replicas. The Salesforce lock mechanism prevents duplicate work.
+                                    Status and statistics shown are from a single replica and may vary between requests.
+                                </p>
+                            </div>
                         </div>
                     </div>
+                    <dl class="slds-list_horizontal slds-wrap">
+                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Status">Status:</dt>
+                        <dd class="slds-item_detail slds-truncate">
+                            <lightning-badge label={workerStatusLabel} class={workerStatusBadgeClass}></lightning-badge>
+                        </dd>
+                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Last Poll Time">Last Poll Time:</dt>
+                        <dd class="slds-item_detail slds-truncate">{lastPollTime}</dd>
+                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Current Queue Depth">Current Queue Depth:</dt>
+                        <dd class="slds-item_detail slds-truncate">{workerStatus.currentQueueDepth}</dd>
+                    </dl>
                 </div>
             </article>
         </div>

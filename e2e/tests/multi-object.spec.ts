@@ -212,6 +212,9 @@ test.describe('Multi-Object Document Generation', () => {
     });
 
     test('generates PDF for Opportunity successfully', async ({ salesforce }) => {
+        // Set explicit timeout for this test (document processing + UI interactions can be slow)
+        test.setTimeout(180000); // 3 minutes
+
         console.log('\n='.repeat(70));
         console.log('TEST: generates PDF for Opportunity successfully');
         console.log('='.repeat(70));

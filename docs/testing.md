@@ -18,6 +18,41 @@ This document covers all testing procedures for the Docgen project, including No
 
 The Node.js tests use **Jest** with **ts-jest** for TypeScript support.
 
+### Setting Up Salesforce Authentication for Tests
+
+Most Node.js tests can run without Salesforce credentials (using mocks). However, some integration tests require real Salesforce authentication:
+
+- `test/sf.auth.integration.test.ts` - Tests JWT auth flow (requires JWT credentials)
+- `test/generate.integration.test.ts` - Tests `/generate` endpoint (requires JWT credentials)
+- `test/worker/poller.integration.test.ts` - Tests poller (requires SFDX Auth URL)
+- `test/routes/worker.test.ts` - Tests worker routes (requires SFDX Auth URL)
+- `test/worker/poller.test.ts` - Tests poller logic (requires SFDX Auth URL)
+
+**Recommended for local development**: Use SFDX Auth URL with a scratch org:
+
+```bash
+# Create a scratch org (if you haven't already)
+sf org create scratch --definition-file config/project-scratch-def.json --set-default --duration-days 7
+
+# Get the auth URL
+sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
+
+# Add to your .env file:
+echo "SFDX_AUTH_URL=<paste-auth-url-here>" >> .env
+```
+
+**For testing JWT authentication**: If you need to test the JWT auth flow specifically, set up a Connected App and use:
+
+```bash
+# In .env file:
+SF_DOMAIN=your-org.my.salesforce.com
+SF_USERNAME=integration-user@example.com
+SF_CLIENT_ID=3MVG9...your-client-id
+SF_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+```
+
+Tests will automatically skip if credentials are not configured.
+
 ### Running Tests
 
 ```bash

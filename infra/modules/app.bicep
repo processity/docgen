@@ -8,7 +8,7 @@
 //   - Azure Container Registry
 //   - Azure Key Vault
 // Resources Created:
-//   - Container App (2 vCPU, 4 GB, auto-scaling 1-5 replicas)
+//   - Container App (configurable CPU/memory, auto-scaling replicas)
 //   - System-assigned Managed Identity
 //   - RBAC role assignments (Key Vault Secrets User, AcrPull)
 // ============================================================================
@@ -48,6 +48,21 @@ param imageAllowlist string = ''
 
 @description('Common tags for all resources')
 param tags object = {}
+
+@description('CPU allocation for container (e.g., 1.0, 2.0, 4.0)')
+param cpuCores string = '2.0'
+
+@description('Memory allocation for container (e.g., 2Gi, 4Gi, 8Gi, 16Gi)')
+param memorySize string = '4Gi'
+
+@description('Minimum number of replicas')
+param minReplicas int = 1
+
+@description('Maximum number of replicas')
+param maxReplicas int = 5
+
+@description('Maximum concurrent LibreOffice conversions')
+param libreOfficeMaxConcurrent string = '8'
 
 // ============================================================================
 // Variables
@@ -107,8 +122,8 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'docgen-api'
           image: containerImage
           resources: {
-            cpu: json('2.0')
-            memory: '4Gi'
+            cpu: json(cpuCores)
+            memory: memorySize
           }
           env: [
             // Node.js environment
@@ -149,7 +164,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             // LibreOffice configuration
             {
               name: 'LIBREOFFICE_CONCURRENCY'
-              value: '8'
+              value: libreOfficeMaxConcurrent
             }
             {
               name: 'CONVERSION_TIMEOUT'
@@ -161,13 +176,10 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'CONVERSION_MAX_CONCURRENT'
-              value: '8'
+              value: libreOfficeMaxConcurrent
             }
             // Poller configuration (batch worker)
-            {
-              name: 'POLLER_ENABLED'
-              value: 'true'
-            }
+            // Note: Poller is always-on (auto-starts with application)
             {
               name: 'POLLER_INTERVAL_MS'
               value: '15000'
@@ -246,16 +258,14 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 5
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
         rules: [
           {
-            name: 'cpu-scaling'
-            custom: {
-              type: 'cpu'
+            name: 'http-scaling'
+            http: {
               metadata: {
-                type: 'Utilization'
-                value: '70'
+                concurrentRequests: '10'
               }
             }
           }

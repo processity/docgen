@@ -19,6 +19,7 @@ export interface TestData {
 
 export interface SalesforceFixture {
   orgInfo: ScratchOrgInfo;
+  scratchOrgConfig: ScratchOrgInfo; // Alias for consistency with test helpers
   testData: TestData;
   authenticatedPage: Page;
 }
@@ -53,6 +54,7 @@ export const test = base.extend<{ salesforce: SalesforceFixture }>({
     // Provide fixture to test
     await use({
       orgInfo,
+      scratchOrgConfig: orgInfo, // Alias for consistency with test helpers
       testData,
       authenticatedPage: page,
     });

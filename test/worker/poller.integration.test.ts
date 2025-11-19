@@ -9,13 +9,10 @@ import type { DocgenRequest } from '../../src/types';
 config();
 
 // Get Salesforce credentials from environment
-const SF_DOMAIN = process.env.SF_DOMAIN;
-const SF_USERNAME = process.env.SF_USERNAME;
-const SF_CLIENT_ID = process.env.SF_CLIENT_ID;
-const SF_PRIVATE_KEY_PATH = process.env.SF_PRIVATE_KEY_PATH;
+const SFDX_AUTH_URL = process.env.SFDX_AUTH_URL;
 
 // Check if we have all required credentials
-const hasCredentials = !!(SF_DOMAIN && SF_USERNAME && SF_CLIENT_ID && (process.env.SF_PRIVATE_KEY || SF_PRIVATE_KEY_PATH));
+const hasCredentials = !!SFDX_AUTH_URL;
 
 // Conditionally run integration tests only when credentials are available
 const describeIntegration = hasCredentials ? describe : describe.skip;
@@ -25,13 +22,10 @@ if (!hasCredentials) {
 ================================================================================
 SKIPPING POLLER INTEGRATION TESTS: Missing Salesforce credentials.
 
-To run these tests locally, create a .env file with:
-  SF_DOMAIN=your-domain.my.salesforce.com
-  SF_USERNAME=your-username@example.com
-  SF_CLIENT_ID=your-connected-app-client-id
-  SF_PRIVATE_KEY=your-rsa-private-key (or SF_PRIVATE_KEY_PATH=/path/to/key)
+To run these tests locally, set SFDX_AUTH_URL in your .env file.
+Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 
-For CI/CD, set these as environment variables or secrets.
+For CI/CD, set SFDX_AUTH_URL as an environment variable or secret.
 ================================================================================
   `);
 }
@@ -44,9 +38,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
   beforeAll(async () => {
     // Set up environment for tests
     process.env.NODE_ENV = 'development';
-    process.env.SF_DOMAIN = SF_DOMAIN;
-    process.env.SF_USERNAME = SF_USERNAME;
-    process.env.SF_CLIENT_ID = SF_CLIENT_ID;
+    process.env.SFDX_AUTH_URL = SFDX_AUTH_URL;
 
     // Initialize Salesforce API - must create auth before getting it
     const { loadConfig } = await import('../../src/config');
@@ -54,10 +46,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
 
     const { createSalesforceAuth } = await import('../../src/sf/auth');
     createSalesforceAuth({
-      sfDomain: config.sfDomain!,
-      sfUsername: config.sfUsername!,
-      sfClientId: config.sfClientId!,
-      sfPrivateKey: config.sfPrivateKey!,
+      sfdxAuthUrl: config.sfdxAuthUrl!,
     });
 
     // NOW get the auth instance
@@ -65,7 +54,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
     if (!sfAuth) {
       throw new Error('Failed to initialize Salesforce auth');
     }
-    sfApi = new SalesforceApi(sfAuth, `https://${SF_DOMAIN}`);
+    sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
     // Upload a test template to Salesforce
     const { createTestDocxBuffer } = await import('../helpers/test-docx');

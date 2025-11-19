@@ -3,8 +3,6 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getSystemStatus from '@salesforce/apex/DocgenStatusController.getSystemStatus';
 import getWorkerStatus from '@salesforce/apex/DocgenStatusController.getWorkerStatus';
 import getWorkerStats from '@salesforce/apex/DocgenStatusController.getWorkerStats';
-import startWorker from '@salesforce/apex/DocgenStatusController.startWorker';
-import stopWorker from '@salesforce/apex/DocgenStatusController.stopWorker';
 import getQueueMetrics from '@salesforce/apex/DocgenStatusController.getQueueMetrics';
 import getRecentDocuments from '@salesforce/apex/DocgenStatusController.getRecentDocuments';
 
@@ -26,8 +24,6 @@ export default class DocgenStatus extends LightningElement {
     @track error;
     @track isLoading = true;
     @track lastUpdated = '';
-
-    isWorkerActionInProgress = false;
 
     // Column definitions for recent documents table
     documentColumns = [
@@ -120,58 +116,6 @@ export default class DocgenStatus extends LightningElement {
     }
 
     /**
-     * Start worker
-     */
-    async handleStartWorker() {
-        if (this.isWorkerActionInProgress) return;
-
-        this.isWorkerActionInProgress = true;
-        try {
-            const result = await startWorker();
-            this.showToast('Success', result.message || 'Worker started successfully', 'success');
-            await this.loadAllData();
-        } catch (error) {
-            this.showToast('Error', this.reduceErrors(error), 'error');
-        } finally {
-            this.isWorkerActionInProgress = false;
-        }
-    }
-
-    /**
-     * Stop worker with confirmation
-     */
-    async handleStopWorker() {
-        if (this.isWorkerActionInProgress) return;
-
-        // Show confirmation dialog
-        const result = await this.showConfirmDialog(
-            'Stop Worker',
-            'Are you sure you want to stop the worker? Documents in the queue will not be processed until it is restarted.'
-        );
-
-        if (!result) return;
-
-        this.isWorkerActionInProgress = true;
-        try {
-            const response = await stopWorker();
-            this.showToast('Success', response.message || 'Worker stopped successfully', 'success');
-            await this.loadAllData();
-        } catch (error) {
-            this.showToast('Error', this.reduceErrors(error), 'error');
-        } finally {
-            this.isWorkerActionInProgress = false;
-        }
-    }
-
-    /**
-     * Show confirmation dialog (simple implementation)
-     */
-    async showConfirmDialog(title, message) {
-        // eslint-disable-next-line no-alert
-        return confirm(`${title}\n\n${message}`);
-    }
-
-    /**
      * Format current time for display
      */
     formatCurrentTime() {
@@ -236,11 +180,11 @@ export default class DocgenStatus extends LightningElement {
     }
 
     get workerStatusLabel() {
-        return this.workerStatus.isRunning ? 'Running' : 'Stopped';
+        return 'Always Running';
     }
 
     get workerStatusBadgeClass() {
-        return this.workerStatus.isRunning ? 'success-badge' : 'error-badge';
+        return 'success-badge';
     }
 
     get lastPollTime() {
@@ -255,13 +199,5 @@ export default class DocgenStatus extends LightningElement {
         } catch (e) {
             return this.workerStatus.lastPollTime;
         }
-    }
-
-    get disableStartButton() {
-        return this.isWorkerActionInProgress || this.workerStatus.isRunning;
-    }
-
-    get disableStopButton() {
-        return this.isWorkerActionInProgress || !this.workerStatus.isRunning;
     }
 }

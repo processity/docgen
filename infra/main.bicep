@@ -9,7 +9,9 @@
 //   - Azure Container Registry
 //   - Azure Key Vault (RBAC-enabled)
 //   - Container Apps Environment
-//   - Container App (2 vCPU / 4 GB, auto-scaling 1-5 replicas)
+//   - Container App (2 vCPU / 4 GB, auto-scaling replicas)
+//     - CI: 3-5 replicas, LibreOffice concurrency: 5 (~800MB per conversion)
+//     - Staging/Prod: 1-5 replicas, LibreOffice concurrency: 8
 //
 // Usage:
 //   az deployment group create \
@@ -165,6 +167,13 @@ module containerApp './modules/app.bicep' = {
     clientId: clientId
     imageAllowlist: imageAllowlist
     tags: tags
+    // Environment-specific resource allocation
+    cpuCores: '2.0'
+    memorySize: '4Gi'
+    minReplicas: environment == 'ci' ? 3 : 1
+    maxReplicas: environment == 'ci' ? 5 : 5
+    // Reduce LibreOffice concurrency to give more memory per conversion
+    libreOfficeMaxConcurrent: environment == 'ci' ? '5' : '8'
   }
 }
 

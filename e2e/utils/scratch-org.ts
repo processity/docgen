@@ -69,20 +69,33 @@ export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
   }
 }
 
+export interface ApexExecutionResult {
+  success: boolean;
+  compiled: boolean;
+  compileProblem?: string;
+  exceptionMessage?: string;
+  exceptionStackTrace?: string;
+  logs?: string;
+}
+
 /**
  * Execute Anonymous Apex code in the scratch org
  * Useful for setting up test state or enabling test modes
  */
-export async function executeAnonymousApex(apexCode: string): Promise<void> {
+export async function executeAnonymousApex(apexCode: string): Promise<ApexExecutionResult> {
   try {
-    // Write Apex code to temporary file
-    const tempFile = '/tmp/apex-temp.apex';
+    // Write Apex code to temporary file (use unique filename to avoid race conditions)
+    const tempFile = `/tmp/apex-temp-${Date.now()}-${Math.random().toString(36).substring(7)}.apex`;
     const fs = require('fs');
     fs.writeFileSync(tempFile, apexCode);
 
+    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    const targetOrg = process.env.SF_USERNAME;
+    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
+
     // Execute via CLI (disable colors for JSON output)
-    const { stdout, stderr } = await execAsync(
-      `sf apex run --file ${tempFile} --json`,
+    const { stdout } = await execAsync(
+      `sf apex run --file ${tempFile}${targetOrgFlag} --json`,
       { env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' } }
     );
 
@@ -90,17 +103,61 @@ export async function executeAnonymousApex(apexCode: string): Promise<void> {
     const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
     const result = JSON.parse(cleanStdout);
 
-    if (!result.result.success) {
-      throw new Error(
-        `Apex execution failed: ${result.result.compileProblem || result.result.exceptionMessage}`
-      );
-    }
-
     // Clean up
     fs.unlinkSync(tempFile);
+
+    return result.result;
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Failed to execute Anonymous Apex: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Create a record via Salesforce REST API (for binary data like ContentVersion)
+ */
+async function createRecordViaRestAPI(
+  objectType: string,
+  fields: Record<string, any>
+): Promise<string> {
+  const orgInfo = await getScratchOrgInfo();
+
+  // Write JSON to temp file
+  const fs = require('fs');
+  const tempFile = `/tmp/sf-record-rest-${Date.now()}.json`;
+  fs.writeFileSync(tempFile, JSON.stringify(fields));
+
+  try {
+    const url = `${orgInfo.instanceUrl}/services/data/v65.0/sobjects/${objectType}`;
+
+    const command = `curl -X POST "${url}" \\
+      -H "Authorization: Bearer ${orgInfo.accessToken}" \\
+      -H "Content-Type: application/json" \\
+      -d @${tempFile}`;
+
+    const { stdout } = await execAsync(command, {
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large responses
+    });
+
+    const result = JSON.parse(stdout);
+
+    // Clean up temp file
+    if (fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile);
+    }
+
+    if (!result.success || !result.id) {
+      throw new Error(`REST API creation failed: ${JSON.stringify(result)}`);
+    }
+
+    return result.id;
+  } catch (error) {
+    // Clean up temp file on error
+    const fs = require('fs');
+    if (fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile);
     }
     throw error;
   }
@@ -157,41 +214,85 @@ export async function createRecord(
   fields: Record<string, any>
 ): Promise<string> {
   try {
-    // Build field values string
+    // For ContentVersion and other objects with binary data, use REST API via curl
+    if (objectType === 'ContentVersion' || Object.keys(fields).some(k => k === 'VersionData')) {
+      return await createRecordViaRestAPI(objectType, fields);
+    }
+
+    // For records with complex JSON fields (like RequestJSON__c), use REST API
+    // SF CLI has issues with nested JSON in --values parameter
+    const hasComplexJson = Object.entries(fields).some(([key, value]) => {
+      // Check if it's an object (not null, not array)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        return true;
+      }
+      // Check if it's a JSON string field (field name ends with JSON__c and value is a non-empty string)
+      if (key.endsWith('JSON__c') && typeof value === 'string' && value.length > 0) {
+        return true;
+      }
+      return false;
+    });
+
+    if (hasComplexJson) {
+      console.log(`Creating ${objectType} via REST API (complex JSON fields)...`);
+      return await createRecordViaRestAPI(objectType, fields);
+    }
+
+    // Use Salesforce CLI for reliable record creation with JSON output
+    // Build field values string for SF CLI --values parameter
     const fieldValues = Object.entries(fields)
       .map(([key, value]) => {
-        // Escape single quotes in string values
-        const escapedValue =
-          typeof value === 'string' ? value.replace(/'/g, "\\'") : value;
-        return `${key}='${escapedValue}'`;
+        if (value === null) {
+          return `${key}=null`;
+        } else if (typeof value === 'string') {
+          // Escape single quotes in string values
+          const escapedValue = value.replace(/'/g, "\\'");
+          return `${key}='${escapedValue}'`;
+        } else if (typeof value === 'boolean') {
+          return `${key}=${value}`;
+        } else if (typeof value === 'number') {
+          return `${key}=${value}`;
+        } else if (typeof value === 'object') {
+          // For complex objects (like RequestJSON__c), stringify and escape double quotes for shell
+          const jsonStr = JSON.stringify(value).replace(/"/g, '\\"');
+          return `${key}='${jsonStr}'`;
+        }
+        return `${key}=${value}`;
       })
+      .filter(Boolean)
       .join(' ');
 
-    // In CI, use SF_USERNAME env var if available to explicitly target the org
+    // Use target org from environment (for CI compatibility)
     const targetOrg = process.env.SF_USERNAME;
     const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
 
-    // Log command for debugging in CI
+    // Execute sf data create record with JSON output
     const command = `sf data create record --sobject ${objectType} --values "${fieldValues}"${targetOrgFlag} --json`;
-    console.log('Executing:', command);
+
+    console.log(`Creating ${objectType} record via SF CLI...`);
 
     const { stdout, stderr } = await execAsync(command, {
       env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' }
     });
 
-    // Log stderr if present for debugging
+    // Log stderr for debugging
     if (stderr) {
-      console.error('SF CLI stderr (create):', stderr);
+      console.error('SF CLI stderr:', stderr);
     }
 
+    // Parse JSON response
     const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '');
     const result = JSON.parse(cleanStdout);
 
     if (result.status !== 0) {
-      console.error('SF CLI error response:', JSON.stringify(result, null, 2));
-      throw new Error(`Record creation failed: ${result.message}`);
+      throw new Error(`Record creation failed: ${result.message || JSON.stringify(result)}`);
     }
 
+    if (!result.result?.id) {
+      throw new Error(`No record ID returned from CLI: ${JSON.stringify(result)}`);
+    }
+
+    console.log(`✓ Created ${objectType}: ${result.result.id}`);
     return result.result.id;
   } catch (error) {
     if (error instanceof Error) {
@@ -356,4 +457,47 @@ export async function waitForSalesforceRecord(
     `3. Network latency is higher than anticipated in CI\n` +
     `Consider increasing maxAttempts or delayMs for CI environments.`
   );
+}
+
+/**
+ * ScratchOrgHelper class
+ * Provides a higher-level interface for test operations
+ */
+export class ScratchOrgHelper {
+  constructor(
+    _page: any, // Playwright Page (unused but kept for interface compatibility)
+    public scratchOrgConfig: ScratchOrgInfo
+  ) {}
+
+  async query<T = any>(soql: string): Promise<T[]> {
+    return await querySalesforce(soql);
+  }
+
+  async createRecord(objectType: string, fields: Record<string, any>): Promise<{ id: string }> {
+    const id = await createRecord(objectType, fields);
+    return { id };
+  }
+
+  async updateRecord(objectType: string, recordId: string, fields: Record<string, any>): Promise<void> {
+    await updateRecord(objectType, recordId, fields);
+  }
+
+  async deleteRecords(objectType: string, recordIds: string[]): Promise<void> {
+    await deleteRecords(objectType, recordIds);
+  }
+
+  async executeAnonymousApex(apexCode: string): Promise<ApexExecutionResult> {
+    return await executeAnonymousApex(apexCode);
+  }
+
+  async waitForRecord(
+    queryFn: () => Promise<any[]>,
+    options?: {
+      maxAttempts?: number;
+      delayMs?: number;
+      description?: string;
+    }
+  ): Promise<any[]> {
+    return await waitForSalesforceRecord(queryFn, options);
+  }
 }

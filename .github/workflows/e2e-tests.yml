@@ -10,16 +10,10 @@ concurrency:
   cancel-in-progress: true  
 
 jobs:
-  deploy-ci-backend:
-    name: Deploy CI Backend
-    uses: ./.github/workflows/deploy-ci-backend.yml
-    secrets: inherit
-
   e2e-tests:
-    name: Playwright E2E Tests with Real Backend
+    name: Setup Org, Deploy Backend, and Run E2E Tests
     runs-on: ubuntu-latest
-    needs: deploy-ci-backend
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: ci
 
     steps:
@@ -38,9 +32,6 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
-
       - name: Authenticate Dev Hub
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
@@ -52,9 +43,12 @@ jobs:
       - name: Create scratch org
         id: create-org
         run: |
+          ORG_ALIAS="e2e-test-${{ github.run_number }}"
+          echo "org_alias=${ORG_ALIAS}" >> $GITHUB_OUTPUT
+
           sf org create scratch \
             --definition-file config/project-scratch-def.json \
-            --alias e2e-test-${{ github.run_number }} \
+            --alias ${ORG_ALIAS} \
             --set-default \
             --duration-days 1 \
             --wait 10 \
@@ -72,7 +66,7 @@ jobs:
       - name: Deploy Salesforce metadata
         run: |
           sf project deploy start --source-dir force-app --wait 10
-          echo "✅ Metadata deployed (includes Named Credential with CI backend URL)"
+          echo "✅ Metadata deployed"
 
       - name: Configure External Credential with AAD secrets
         id: apex-config
@@ -110,11 +104,97 @@ jobs:
       - name: Set Azure Subscription
         run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Configure CI backend with scratch org credentials
+      - name: Ensure CI Resource Group exists
         run: |
-          echo "Configuring CI backend to authenticate with scratch org..."
+          if ! az group show --name docgen-ci-rg &>/dev/null; then
+            echo "Creating resource group docgen-ci-rg..."
+            az group create \
+              --name docgen-ci-rg \
+              --location eastus \
+              --tags \
+                Environment=ci \
+                Project=Salesforce-Docgen \
+                Purpose=E2E-Testing \
+                ManagedBy=GitHub-Actions
+            echo "✅ Resource group created"
+          else
+            echo "✅ Resource group already exists"
+          fi
 
-          # Get SFDX Auth URL from scratch org
+      - name: Build and push Docker image
+        run: |
+          echo "🏗️ Building and pushing CI Docker image..."
+
+          # Login to ACR
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+          # Build and push image with ci-specific tag
+          IMAGE_TAG="ci-${{ github.sha }}"
+          docker build -t ${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:${IMAGE_TAG} .
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/docgen-api:${IMAGE_TAG}
+
+          echo "✅ Docker image built and pushed"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Deploy CI backend infrastructure
+        run: |
+          echo "🚀 Deploying CI backend infrastructure..."
+
+          az deployment group create \
+            --resource-group docgen-ci-rg \
+            --template-file infra/main.bicep \
+            --parameters infra/parameters/ci.bicepparam \
+            --parameters imageTag=${{ env.IMAGE_TAG }} \
+            --mode Incremental \
+            --output json > deployment-output.json
+
+          echo "✅ CI backend infrastructure deployed"
+
+          # Extract and save backend URL
+          APP_FQDN=$(az containerapp show \
+            --name docgen-ci \
+            --resource-group docgen-ci-rg \
+            --query properties.configuration.ingress.fqdn -o tsv)
+
+          BACKEND_URL="https://${APP_FQDN}"
+          echo "BACKEND_URL=${BACKEND_URL}" >> $GITHUB_ENV
+          echo "📍 CI Backend URL: ${BACKEND_URL}"
+
+      - name: Populate CI Key Vault secrets
+        run: |
+          echo "🔐 Populating CI Key Vault secrets..."
+
+          KEY_VAULT_NAME="docgen-ci-kv"
+
+          # Set SF private key (for Node -> Salesforce JWT Bearer flow)
+          echo "${{ secrets.CI_SF_PRIVATE_KEY }}" | az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-PRIVATE-KEY \
+            --value @/dev/stdin \
+            --output none
+
+          # Set SF client ID (Connected App)
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-CLIENT-ID \
+            --value "${{ secrets.CI_SF_CLIENT_ID }}" \
+            --output none
+
+          # Set SF username (Integration User)
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-USERNAME \
+            --value "${{ secrets.CI_SF_USERNAME }}" \
+            --output none
+
+          # Set SF domain
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-DOMAIN \
+            --value "test.salesforce.com" \
+            --output none
+
+          # Set SFDX Auth URL (from earlier scratch org creation)
           SFDX_AUTH_URL=$(sf org display --verbose --json | jq -r '.result.sfdxAuthUrl')
 
           if [ -z "$SFDX_AUTH_URL" ] || [ "$SFDX_AUTH_URL" = "null" ]; then
@@ -122,35 +202,48 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Extracted SFDX Auth URL from scratch org"
-
-          # Update Key Vault secret
-          az keyvault secret set \
-            --vault-name docgen-ci-kv \
+          echo "$SFDX_AUTH_URL" | az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
             --name SFDX-AUTH-URL \
-            --value "$SFDX_AUTH_URL" \
+            --value @/dev/stdin \
             --output none
 
-          echo "✅ Updated Key Vault with scratch org credentials"
+          # Set Azure Monitor connection string
+          APP_INSIGHTS_CONN=$(az monitor app-insights component show \
+            --resource-group docgen-ci-rg \
+            --query '[0].connectionString' -o tsv)
 
-          # Restart Container App to pick up new secret
-          az containerapp update \
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name AZURE-MONITOR-CONNECTION-STRING \
+            --value "${APP_INSIGHTS_CONN}" \
+            --output none
+
+          echo "✅ CI Key Vault secrets populated (including scratch org SFDX Auth URL)"
+
+      - name: Restart Container App to pick up all secrets
+        run: |
+          echo "🔄 Restarting Container App to pick up all secrets..."
+
+          az containerapp revision restart \
             --name docgen-ci \
             --resource-group docgen-ci-rg \
-            --output none
+            --revision $(az containerapp revision list \
+              --name docgen-ci \
+              --resource-group docgen-ci-rg \
+              --query '[0].name' -o tsv)
 
-          echo "✅ Container App restart initiated"
-
-          # Wait for container to fully restart and reload secrets
-          echo "Waiting 30 seconds for container to restart and reload secrets from Key Vault..."
+          echo "✅ Container App restarted"
+          echo "⏳ Waiting 30 seconds for secrets to propagate..."
           sleep 30
 
-          echo "✅ Container App should now have reloaded with new scratch org credentials"
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
 
       - name: Get org credentials
         id: org-info
         run: |
-          # Get org info
+          # Get org info (org is already authenticated and set as default)
           sf org display --json > org-info.json
 
           # Extract credentials and set as environment variables
@@ -167,7 +260,6 @@ jobs:
 
       - name: Verify CI backend is healthy
         run: |
-          BACKEND_URL="${{ needs.deploy-ci-backend.outputs.backend_url }}"
           echo "Verifying CI backend health at: ${BACKEND_URL}/readyz"
 
           MAX_ATTEMPTS=20
@@ -211,7 +303,7 @@ jobs:
         run: npm run test:e2e
         env:
           CI: true
-          BACKEND_URL: ${{ needs.deploy-ci-backend.outputs.backend_url }}
+          BACKEND_URL: ${{ env.BACKEND_URL }}
 
       - name: Upload Playwright report
         if: always()
@@ -232,8 +324,9 @@ jobs:
       - name: Delete scratch org
         if: always()
         run: |
+          ORG_ALIAS="${{ steps.create-org.outputs.org_alias }}"
           sf org delete scratch \
-            --target-org e2e-test-${{ github.run_number }} \
+            --target-org ${ORG_ALIAS} \
             --no-prompt || echo "Org already deleted or not found"
 
       - name: Comment PR with test results

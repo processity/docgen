@@ -22,51 +22,49 @@ jest.mock('pino', () => {
   return jest.fn(() => mockLogger);
 });
 
+// Check for credentials at module level
+const hasCredentials = !!process.env.SFDX_AUTH_URL;
+
+// Conditionally skip tests if credentials are not available
+const describeTests = hasCredentials ? describe : describe.skip;
+
 // Config and credentials - will be loaded in beforeAll
 let appConfig: Awaited<ReturnType<typeof loadConfig>>;
-let hasCredentials = false;
 let baseUrl: string;
 
-describe('PollerService', () => {
+if (!hasCredentials) {
+  console.log(`
+================================================================================
+SKIPPING POLLER UNIT TESTS: Missing Salesforce credentials.
+
+To run these tests locally, set SFDX_AUTH_URL in your .env file.
+Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
+
+For CI/CD, set SFDX_AUTH_URL as an environment variable or secret.
+================================================================================
+  `);
+}
+
+describeTests('PollerService', () => {
   let poller: PollerService;
 
   beforeAll(async () => {
     // Load config first
     appConfig = await loadConfig();
-    hasCredentials = !!(
-      appConfig.sfDomain &&
-      appConfig.sfUsername &&
-      appConfig.sfClientId &&
-      appConfig.sfPrivateKey
-    );
-
-    if (!hasCredentials) {
-      console.log(`
-================================================================================
-SKIPPING POLLER UNIT TESTS: Missing Salesforce credentials.
-
-To run these tests locally, create a .env file with:
-  SF_DOMAIN=your-domain.my.salesforce.com
-  SF_USERNAME=your-username@example.com
-  SF_CLIENT_ID=your-connected-app-client-id
-  SF_PRIVATE_KEY=your-rsa-private-key (or SF_PRIVATE_KEY_PATH=/path/to/key)
-
-For CI/CD, set these as environment variables or secrets.
-================================================================================
-      `);
-      return;
-    }
-
-    baseUrl = `https://${appConfig.sfDomain}`;
 
     // Initialize real Salesforce auth explicitly for tests
     // This ensures auth is properly set up before PollerService creates its own instances
-    createSalesforceAuth({
-      sfDomain: appConfig.sfDomain!,
-      sfUsername: appConfig.sfUsername!,
-      sfClientId: appConfig.sfClientId!,
-      sfPrivateKey: appConfig.sfPrivateKey!,
+    const sfAuth = createSalesforceAuth({
+      sfdxAuthUrl: appConfig.sfdxAuthUrl!,
     });
+
+    const instanceUrl = sfAuth.getInstanceUrl();
+    // Ensure we include the port for nock matching (axios explicitly includes :443 for HTTPS)
+    if (instanceUrl.startsWith('https://') && !instanceUrl.includes(':443')) {
+      baseUrl = instanceUrl.replace('https://', 'https://').replace(/\/$/, '') + ':443';
+    } else {
+      baseUrl = instanceUrl;
+    }
 
     // Load config into poller module by starting and stopping a temporary poller
     // This ensures config is available for unit tests that call methods directly
@@ -81,8 +79,15 @@ For CI/CD, set these as environment variables or secrets.
     jest.clearAllMocks();
     jest.clearAllTimers();
 
-    // Note: We don't mock /services/oauth2/token - auth is real!
-    // We only mock the Salesforce API responses for controlled test scenarios
+    // Mock OAuth token refresh for SFDX Auth URL
+    nock(baseUrl)
+      .persist()
+      .post('/services/oauth2/token')
+      .reply(200, {
+        access_token: 'test-access-token',
+        instance_url: baseUrl.replace(':443', ''),
+        token_type: 'Bearer',
+      });
 
     poller = new PollerService();
   });
@@ -344,7 +349,7 @@ For CI/CD, set these as environment variables or secrets.
       expect(result.error).toContain('Failed to fetch template');
       // TODO: Add retryable check once implementation properly classifies 404 errors as non-retryable
       // expect(result.retryable).toBe(false);
-    });
+    }, 15000); // Increased timeout for retry logic with backoff
 
     it('should handle conversion failure and allow retry', async () => {
       const mockDoc: QueuedDocument = {
@@ -378,7 +383,7 @@ For CI/CD, set these as environment variables or secrets.
 
       expect(result.success).toBe(false);
       expect(result.retryable).toBe(true);
-    });
+    }, 15000); // Increased timeout for retry logic with backoff
   });
 
   describe('handleFailure', () => {

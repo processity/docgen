@@ -231,8 +231,9 @@ export class LibreOfficeConverter {
     workdir: string,
     correlationId: string
   ): Promise<Buffer> {
-    // Create unique temp directory
-    const jobId = `docgen-${correlationId}-${Date.now()}`;
+    // Create unique temp directory with random component to prevent collisions
+    const randomSuffix = Math.random().toString(36).substring(2, 15);
+    const jobId = `docgen-${correlationId}-${Date.now()}-${randomSuffix}`;
     const jobWorkdir = path.join(workdir, jobId);
 
     try {
@@ -299,12 +300,16 @@ export class LibreOfficeConverter {
     timeout: number,
     correlationId: string
   ): Promise<void> {
+    // Create unique user profile directory to prevent lock conflicts
+    const userProfile = path.join(outputDir, '.libreoffice-profile');
+
     const args = [
       '--headless',
       '--convert-to',
       'pdf',
       '--outdir',
       outputDir,
+      `-env:UserInstallation=file://${userProfile}`,
       inputPath,
     ];
 
@@ -350,10 +355,14 @@ export class LibreOfficeConverter {
 
       // Check if error is non-zero exit code
       if (error.code) {
+        // Build detailed error message with both stderr and stdout
+        const errorDetails = [];
+        if (error.stderr) errorDetails.push(`stderr: ${error.stderr.trim()}`);
+        if (error.stdout) errorDetails.push(`stdout: ${error.stdout.trim()}`);
+        const detailsStr = errorDetails.length > 0 ? ` | ${errorDetails.join(' | ')}` : '';
+
         const exitError = new Error(
-          `LibreOffice conversion failed with exit code ${error.code}: ${
-            error.stderr || error.message
-          }`
+          `LibreOffice conversion failed with exit code ${error.code}: ${error.message}${detailsStr}`
         );
         logger.error(
           {
@@ -361,6 +370,7 @@ export class LibreOfficeConverter {
             exitCode: error.code,
             stderr: error.stderr,
             stdout: error.stdout,
+            command: error.cmd,
           },
           'LibreOffice conversion failed'
         );

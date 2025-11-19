@@ -42,36 +42,82 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      - name: Run tests
+      - name: Run unit tests
         run: npm test
         env:
           CI: true
           LOG_LEVEL: error
+          # JWT credentials for auth-specific tests
           SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
           SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
-          # Poller configs (using defaults - poller disabled in CI)
-          POLLER_ENABLED: false
+          # Poller configs (using defaults)
+          # Note: Poller auto-starts but won't process anything without a scratch org
           POLLER_INTERVAL_MS: 15000
           POLLER_BATCH_SIZE: 20
 
+      - name: Setup scratch org for integration tests
+        id: setup-scratch-org
+        if: env.DEVHUB_SFDX_AUTH_URL != ''
+        run: |
+          echo "📦 Setting up scratch org for integration tests..."
+
+          # Install Salesforce CLI if not present
+          if ! command -v sf &> /dev/null; then
+            npm install -g @salesforce/cli
+          fi
+
+          # Authenticate to Dev Hub
+          echo "${{ secrets.SFDX_AUTH_URL }}" > devhub_auth.txt
+          sf org login sfdx-url --sfdx-url-file devhub_auth.txt --set-default-dev-hub --alias DevHub
+          rm devhub_auth.txt
+
+          # Create scratch org for tests
+          sf org create scratch \
+            --definition-file config/project-scratch-def.json \
+            --alias ci-test-org \
+            --set-default \
+            --duration-days 1 \
+            --wait 10
+
+          # Get scratch org auth URL
+          SCRATCH_ORG_AUTH_URL=$(sf org display --verbose --json --target-org ci-test-org | jq -r '.result.sfdxAuthUrl')
+          echo "scratch_org_auth_url=$SCRATCH_ORG_AUTH_URL" >> $GITHUB_OUTPUT
+
+          # Deploy metadata to scratch org
+          echo "📤 Deploying metadata to scratch org..."
+          sf project deploy start --source-dir force-app --wait 10
+
+          # Assign permission set to user
+          echo "🔐 Assigning Docgen_User permission set..."
+          sf org assign permset --name Docgen_User --target-org ci-test-org
+
+          echo "✅ Scratch org created and configured successfully"
+        env:
+          DEVHUB_SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        continue-on-error: true
+
       - name: Run integration tests
         run: |
-          echo "Running Salesforce JWT Integration Tests..."
+          echo "Running Salesforce Integration Tests..."
+          # Check for either JWT credentials or scratch org auth URL
           if [ -n "${{ secrets.SF_DOMAIN }}" ] && [ -n "${{ secrets.SF_USERNAME }}" ] && [ -n "${{ secrets.SF_CLIENT_ID }}" ] && [ -n "${{ secrets.SF_PRIVATE_KEY }}" ]; then
-            echo "✅ Salesforce JWT credentials configured - running integration tests"
+            echo "✅ JWT credentials configured - running integration tests with JWT auth"
+            npm run test:integration
+          elif [ -n "${{ steps.setup-scratch-org.outputs.scratch_org_auth_url }}" ]; then
+            echo "✅ Scratch org configured - running integration tests with SFDX auth"
+            export SFDX_AUTH_URL="${{ steps.setup-scratch-org.outputs.scratch_org_auth_url }}"
             npm run test:integration
           else
-            echo "⚠️ Salesforce JWT credentials not configured - skipping integration tests"
-            echo "To enable integration tests in CI, configure these GitHub secrets:"
-            echo "  - SF_DOMAIN"
-            echo "  - SF_USERNAME"
-            echo "  - SF_CLIENT_ID"
-            echo "  - SF_PRIVATE_KEY"
+            echo "⚠️ No Salesforce credentials configured - skipping integration tests"
+            echo "To enable integration tests, configure either:"
+            echo "  JWT Auth: SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY"
+            echo "  OR Dev Hub: SFDX_AUTH_URL (for scratch org creation)"
           fi
         env:
           CI: true
+          # JWT credentials (for JWT auth tests)
           SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
@@ -79,16 +125,26 @@ jobs:
         continue-on-error: true
 
       - name: Run tests with coverage
-        run: npm run test:coverage
+        run: |
+          # Set scratch org auth URL if available
+          if [ -n "${{ steps.setup-scratch-org.outputs.scratch_org_auth_url }}" ]; then
+            export SFDX_AUTH_URL="${{ steps.setup-scratch-org.outputs.scratch_org_auth_url }}"
+          fi
+          npm run test:coverage
         env:
           CI: true
           LOG_LEVEL: error
+          # JWT credentials for auth-specific tests
           SF_DOMAIN: ${{ secrets.SF_DOMAIN }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
           SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
-          # Poller configs (using defaults - poller disabled in CI)
-          POLLER_ENABLED: false
+
+      - name: Cleanup scratch org
+        if: always() && steps.setup-scratch-org.outputs.scratch_org_auth_url != ''
+        run: |
+          sf org delete scratch --target-org ci-test-org --no-prompt || true
+        continue-on-error: true
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4

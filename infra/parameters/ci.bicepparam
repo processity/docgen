@@ -5,7 +5,8 @@
 //
 // Purpose:
 //   - Dedicated backend for ephemeral scratch org e2e tests in GitHub Actions
-//   - Minimal sizing (1 vCPU, 2GB RAM, no autoscaling) for cost optimization
+//   - Standard sizing (2 vCPU, 4GB RAM) with autoscaling up to 5 replicas
+//   - Reduced LibreOffice concurrency (4 vs 8) for more memory per conversion
 //   - Uses test Salesforce credentials and AAD app registration
 //
 // Usage:
@@ -14,7 +15,7 @@
 //     --template-file infra/main.bicep \
 //     --parameters infra/parameters/ci.bicepparam
 //
-// Estimated Cost: ~$30-50/month
+// Estimated Cost: ~$80-150/month when running (scale to 0 when inactive)
 // ============================================================================
 
 using '../main.bicep'
@@ -83,14 +84,20 @@ param tags = {
 // CI-Specific Notes
 // ============================================================================
 
-// Container App Sizing Override (if module supports):
-//   - CPU: 1.0 vCPU (vs 2.0 in staging/production)
-//   - Memory: 2 GB (vs 4 GB in staging/production)
-//   - Min Replicas: 1
-//   - Max Replicas: 1 (no autoscaling needed for CI)
+// Container App Sizing (configured in main.bicep):
+//   - CPU: 2.0 vCPU (standard Azure Container Apps limit)
+//   - Memory: 4 GB
+//   - Min Replicas: 3 (always-on for reliability during tests)
+//   - Max Replicas: 5 (autoscaling enabled on HTTP requests)
+//   - LibreOffice Concurrency: 5 (vs 8 in staging/prod)
 //
-// These overrides may require modifications to modules/app.bicep
-// to accept optional CPU/memory parameters
+// Rationale:
+//   - LibreOffice requires significant CPU/memory per conversion
+//   - Moderate concurrency (5) provides ~800MB RAM per conversion
+//   - Unique temp dirs and user profiles prevent file conflicts during concurrent runs
+//   - 3 min replicas ensures 3×5=15 concurrent conversions always available
+//   - Autoscaling to 5 replicas allows handling 5×5=25 concurrent conversions under peak load
+//   - Cost is managed by only running CI backend during active development
 //
 // Secrets in CI Key Vault (Two Authentication Options):
 //

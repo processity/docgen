@@ -17,6 +17,10 @@ describe('Sample Payloads Validation', () => {
     // Set up environment to bypass auth in development mode
     process.env.NODE_ENV = 'development';
     process.env.AUTH_BYPASS_DEVELOPMENT = 'true';
+
+    // Use JWT auth for these unit tests (with mocked endpoints)
+    // Explicitly unset SFDX_AUTH_URL to ensure JWT auth is used
+    delete process.env.SFDX_AUTH_URL;
     process.env.SF_DOMAIN = 'test.salesforce.com';
     process.env.SF_USERNAME = 'test@example.com';
     process.env.SF_CLIENT_ID = 'test-client-id';

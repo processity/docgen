@@ -393,15 +393,17 @@ Database.executeBatch(batch, 200); // Batch size
 
 **Class**: `PollerService` (`src/worker/poller.ts`)
 
+**Always-On Architecture**:
+The poller **auto-starts** when the application starts and runs continuously on all replicas. In multi-replica deployments (Azure Container Apps with 1-5 replicas), each replica runs its own poller. The Salesforce lock mechanism (`LockedUntil__c`) prevents duplicate work across replicas, making concurrent polling safe and efficient.
+
 **API Endpoints** (all require AAD authentication):
-- **POST /worker/start**: Start the poller
-- **POST /worker/stop**: Stop gracefully (waits for in-flight jobs)
-- **GET /worker/status**: Current state (running, queue depth, last poll time)
-- **GET /worker/stats**: Detailed metrics (processed, succeeded, failed, retries, uptime)
+- **GET /worker/status**: Current state for this replica (running, queue depth, last poll time)
+- **GET /worker/stats**: Detailed metrics for this replica (processed, succeeded, failed, retries, uptime)
+
+**Note**: In multi-replica deployments, status and stats are per-replica. Different requests may return different values depending on which replica handles the request.
 
 **Configuration** (environment variables):
 ```env
-POLLER_ENABLED=false           # Default: disabled (API-controlled)
 POLLER_INTERVAL_MS=15000       # Active polling interval (15s)
 POLLER_IDLE_INTERVAL_MS=60000  # Idle polling interval (60s)
 POLLER_BATCH_SIZE=20           # Documents per poll (reduced from 50)
@@ -444,21 +446,16 @@ Attempt 4+ → FAILED permanently
 
 **Example Usage**:
 ```bash
-# Start poller
-curl -X POST https://docgen.azurecontainerapps.io/worker/start \
-  -H "Authorization: Bearer $AAD_TOKEN"
-
-# Check status
+# Check status (per-replica)
 curl -X GET https://docgen.azurecontainerapps.io/worker/status \
   -H "Authorization: Bearer $AAD_TOKEN"
 
-# Get detailed stats
+# Get detailed stats (per-replica)
 curl -X GET https://docgen.azurecontainerapps.io/worker/stats \
   -H "Authorization: Bearer $AAD_TOKEN"
 
-# Stop poller
-curl -X POST https://docgen.azurecontainerapps.io/worker/stop \
-  -H "Authorization: Bearer $AAD_TOKEN"
+# Note: Poller auto-starts with the application
+# To stop polling, scale the container to 0 replicas
 ```
 
 **Test Coverage**: 39 tests across 2 test files
