@@ -128,16 +128,6 @@ jobs:
 
           echo "✅ Updated Key Vault with scratch org SFDX Auth URL"
 
-          # Save SFDX Auth URL to file for e2e-tests job
-          echo "$SFDX_AUTH_URL" > sfdx-auth-url.txt
-
-      - name: Upload SFDX Auth URL artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sfdx-auth-url
-          path: sfdx-auth-url.txt
-          retention-days: 1
-
       - name: Restart Container App to pick up new SFDX Auth URL
         run: |
           echo "🔄 Restarting Container App to pick up scratch org credentials..."
@@ -191,17 +181,19 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Download SFDX Auth URL artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sfdx-auth-url
-
-      - name: Authenticate to scratch org
+      - name: Authenticate Dev Hub
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
         run: |
-          echo "Authenticating to scratch org using SFDX Auth URL..."
-          sf org login sfdx-url --sfdx-url-file sfdx-auth-url.txt --alias ${{ needs.create-scratch-org.outputs.org_alias }} --set-default
-          rm sfdx-auth-url.txt
-          echo "✅ Authenticated to scratch org"
+          echo "$SFDX_AUTH_URL" > auth.txt
+          sf org login sfdx-url --sfdx-url-file auth.txt --alias devhub --set-default-dev-hub
+          rm auth.txt
+
+      - name: Set scratch org as default
+        run: |
+          echo "Setting scratch org as default: ${{ needs.create-scratch-org.outputs.org_alias }}"
+          sf config set target-org=${{ needs.create-scratch-org.outputs.org_alias }}
+          echo "✅ Using scratch org from create-scratch-org job"
 
       - name: Get org credentials
         id: org-info
