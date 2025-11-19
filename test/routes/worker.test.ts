@@ -12,28 +12,17 @@ dotenvConfig();
 
 // Config will be loaded in beforeAll
 let appConfig: Awaited<ReturnType<typeof loadConfig>>;
-let hasCredentials = false;
 
-describe('Worker Routes', () => {
+// Use conditional describe to skip entire suite if no credentials
+const describeIfCredentials = process.env.SFDX_AUTH_URL ? describe : describe.skip;
+
+describeIfCredentials('Worker Routes', () => {
   let app: FastifyInstance;
   let request: ReturnType<typeof supertest>;
 
   beforeAll(async () => {
     // Load config first
     appConfig = await loadConfig();
-    hasCredentials = !!appConfig.sfdxAuthUrl;
-
-    if (!hasCredentials) {
-      console.log(`
-================================================================================
-SKIPPING WORKER ROUTE TESTS: Missing Salesforce credentials.
-
-To run these tests locally, set SFDX_AUTH_URL in your .env file.
-Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
-================================================================================
-      `);
-      return;
-    }
 
     // Initialize real Salesforce auth
     createSalesforceAuth({
@@ -52,10 +41,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
   });
 
   beforeEach(async () => {
-    if (!hasCredentials) {
-      return;
-    }
-
     nock.cleanAll();
 
     // Note: We don't mock /services/oauth2/token - auth is real!
@@ -87,10 +72,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 
   describe('GET /worker/status', () => {
     it('should return current poller status', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const token = await generateValidJWT();
 
       const response = await request
@@ -107,10 +88,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should return status with isRunning field', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const token = await generateValidJWT();
 
       // Note: In production, poller auto-starts. In tests, it may not be running.
@@ -125,10 +102,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should require AAD authentication', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const response = await request.get('/worker/status').send();
 
       expect(response.status).toBe(401);
@@ -137,10 +110,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 
   describe('GET /worker/stats', () => {
     it('should return detailed poller statistics', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const token = await generateValidJWT();
 
       const response = await request
@@ -160,10 +129,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should show zero counts for new poller', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const token = await generateValidJWT();
 
       const response = await request
@@ -179,10 +144,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should require AAD authentication', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const response = await request.get('/worker/stats').send();
 
       expect(response.status).toBe(401);
@@ -191,10 +152,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 
   describe('Authentication enforcement', () => {
     it('should reject requests with missing Authorization header', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const statusResponse = await request.get('/worker/status').send();
       const statsResponse = await request.get('/worker/stats').send();
 
@@ -203,10 +160,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should reject requests with malformed token', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const token = 'not.a.valid.jwt';
 
       const statusResponse = await request
@@ -218,10 +171,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
     });
 
     it('should include correlation ID in error responses', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const response = await request.get('/worker/status').send();
 
       expect(response.status).toBe(401);
@@ -231,10 +180,6 @@ Generate it with: sf org display --verbose --json | jq -r '.result.sfdxAuthUrl'
 
   describe('Error handling', () => {
     it('should return proper error structure', async () => {
-      if (!hasCredentials) {
-        return; // Skip test if no credentials
-      }
-
       const response = await request.get('/worker/status').send();
 
       expect(response.status).toBe(401);
