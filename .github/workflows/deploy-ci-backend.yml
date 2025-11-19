@@ -7,6 +7,12 @@ name: Deploy CI Backend
 on:
   workflow_dispatch:  # Manual trigger when needed
   workflow_call:       # Can be called from e2e-tests workflow
+    inputs:
+      sfdx_auth_url:
+        description: 'SFDX Auth URL for scratch org authentication'
+        required: false
+        type: string
+        default: ''
     outputs:
       backend_url:
         description: 'CI backend URL'
@@ -168,6 +174,19 @@ jobs:
             --value "test.salesforce.com" \
             --output none
 
+          # Set SFDX Auth URL if provided (for scratch org authentication)
+          if [ -n "${{ inputs.sfdx_auth_url }}" ]; then
+            echo "Setting SFDX-AUTH-URL from workflow input..."
+            echo "${{ inputs.sfdx_auth_url }}" | az keyvault secret set \
+              --vault-name ${KEY_VAULT_NAME} \
+              --name SFDX-AUTH-URL \
+              --value @/dev/stdin \
+              --output none
+            echo "✅ SFDX-AUTH-URL secret set"
+          else
+            echo "ℹ️  No SFDX Auth URL provided, skipping SFDX-AUTH-URL secret"
+          fi
+
           # Set Azure Monitor connection string
           APP_INSIGHTS_CONN=$(az monitor app-insights component show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -180,6 +199,23 @@ jobs:
             --output none
 
           echo "✅ CI Key Vault secrets populated"
+
+      - name: Restart Container App (if SFDX Auth URL provided)
+        if: inputs.sfdx_auth_url != ''
+        run: |
+          echo "🔄 Restarting Container App to pick up new SFDX Auth URL..."
+
+          az containerapp revision restart \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --revision $(az containerapp revision list \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query '[0].name' -o tsv)
+
+          echo "✅ Container App restarted"
+          echo "⏳ Waiting 30 seconds for secret to propagate..."
+          sleep 30
 
   health-check:
     name: Verify CI Backend Health

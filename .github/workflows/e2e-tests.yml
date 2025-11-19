@@ -10,17 +10,14 @@ concurrency:
   cancel-in-progress: true  
 
 jobs:
-  deploy-ci-backend:
-    name: Deploy CI Backend
-    uses: ./.github/workflows/deploy-ci-backend.yml
-    secrets: inherit
-
-  e2e-tests:
-    name: Playwright E2E Tests with Real Backend
+  create-scratch-org:
+    name: Create Scratch Org
     runs-on: ubuntu-latest
-    needs: deploy-ci-backend
-    timeout-minutes: 30
+    timeout-minutes: 15
     environment: ci
+    outputs:
+      sfdx_auth_url: ${{ steps.extract-auth-url.outputs.sfdx_auth_url }}
+      org_alias: ${{ steps.create-org.outputs.org_alias }}
 
     steps:
       - name: Checkout code
@@ -38,9 +35,6 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
-
       - name: Authenticate Dev Hub
         env:
           SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
@@ -52,9 +46,12 @@ jobs:
       - name: Create scratch org
         id: create-org
         run: |
+          ORG_ALIAS="e2e-test-${{ github.run_number }}"
+          echo "org_alias=${ORG_ALIAS}" >> $GITHUB_OUTPUT
+
           sf org create scratch \
             --definition-file config/project-scratch-def.json \
-            --alias e2e-test-${{ github.run_number }} \
+            --alias ${ORG_ALIAS} \
             --set-default \
             --duration-days 1 \
             --wait 10 \
@@ -72,7 +69,7 @@ jobs:
       - name: Deploy Salesforce metadata
         run: |
           sf project deploy start --source-dir force-app --wait 10
-          echo "✅ Metadata deployed (includes Named Credential with CI backend URL)"
+          echo "✅ Metadata deployed"
 
       - name: Configure External Credential with AAD secrets
         id: apex-config
@@ -102,19 +99,11 @@ jobs:
         run: |
           sf org assign permset --name Docgen_User
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Set Azure Subscription
-        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Configure CI backend with scratch org credentials
+      - name: Extract SFDX Auth URL
+        id: extract-auth-url
         run: |
-          echo "Configuring CI backend to authenticate with scratch org..."
+          echo "Extracting SFDX Auth URL from scratch org..."
 
-          # Get SFDX Auth URL from scratch org
           SFDX_AUTH_URL=$(sf org display --verbose --json | jq -r '.result.sfdxAuthUrl')
 
           if [ -z "$SFDX_AUTH_URL" ] || [ "$SFDX_AUTH_URL" = "null" ]; then
@@ -123,29 +112,51 @@ jobs:
           fi
 
           echo "✅ Extracted SFDX Auth URL from scratch org"
+          echo "sfdx_auth_url=${SFDX_AUTH_URL}" >> $GITHUB_OUTPUT
 
-          # Update Key Vault secret
-          az keyvault secret set \
-            --vault-name docgen-ci-kv \
-            --name SFDX-AUTH-URL \
-            --value "$SFDX_AUTH_URL" \
-            --output none
+  deploy-ci-backend:
+    name: Deploy CI Backend
+    needs: create-scratch-org
+    uses: ./.github/workflows/deploy-ci-backend.yml
+    with:
+      sfdx_auth_url: ${{ needs.create-scratch-org.outputs.sfdx_auth_url }}
+    secrets: inherit
 
-          echo "✅ Updated Key Vault with scratch org credentials"
+  e2e-tests:
+    name: Playwright E2E Tests with Real Backend
+    runs-on: ubuntu-latest
+    needs: [create-scratch-org, deploy-ci-backend]
+    timeout-minutes: 30
+    environment: ci
 
-          # Restart Container App to pick up new secret
-          az containerapp update \
-            --name docgen-ci \
-            --resource-group docgen-ci-rg \
-            --output none
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-          echo "✅ Container App restart initiated"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-          # Wait for container to fully restart and reload secrets
-          echo "Waiting 30 seconds for container to restart and reload secrets from Key Vault..."
-          sleep 30
+      - name: Install dependencies
+        run: npm ci
 
-          echo "✅ Container App should now have reloaded with new scratch org credentials"
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Authenticate to scratch org
+        env:
+          SFDX_AUTH_URL: ${{ needs.create-scratch-org.outputs.sfdx_auth_url }}
+        run: |
+          echo "Authenticating to scratch org created in previous job..."
+          echo "$SFDX_AUTH_URL" > auth.txt
+          sf org login sfdx-url --sfdx-url-file auth.txt --alias e2e-test-${{ github.run_number }} --set-default
+          rm auth.txt
+          echo "✅ Authenticated to scratch org"
 
       - name: Get org credentials
         id: org-info
@@ -233,7 +244,7 @@ jobs:
         if: always()
         run: |
           sf org delete scratch \
-            --target-org e2e-test-${{ github.run_number }} \
+            --target-org ${{ needs.create-scratch-org.outputs.org_alias }} \
             --no-prompt || echo "Org already deleted or not found"
 
       - name: Comment PR with test results
