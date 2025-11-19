@@ -179,10 +179,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: libreOfficeMaxConcurrent
             }
             // Poller configuration (batch worker)
-            {
-              name: 'POLLER_ENABLED'
-              value: 'true'
-            }
+            // Note: Poller is always-on (auto-starts with application)
             {
               name: 'POLLER_INTERVAL_MS'
               value: '15000'

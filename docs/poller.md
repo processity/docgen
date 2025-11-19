@@ -279,50 +279,30 @@ graph TD
 
 ## Operational Runbook
 
-### Starting the Poller
+### Always-On Architecture
 
-**Via API** (recommended):
-```bash
-curl -X POST https://<domain>/worker/start \
-  -H "Authorization: Bearer <AAD_TOKEN>"
-```
+**Note**: The poller **auto-starts** when the application starts and runs continuously on all replicas. In multi-replica deployments (Azure Container Apps with 1-5 replicas), each replica runs its own poller. The Salesforce lock mechanism (`LockedUntil__c`) prevents duplicate work across replicas.
 
-**Response** (200 OK):
-```json
-{
-  "message": "Poller started successfully",
-  "isRunning": true,
-  "correlationId": "..."
-}
-```
+**To stop polling entirely**:
+- Scale the Azure Container App to 0 replicas
+- Or terminate the application (SIGTERM/SIGINT triggers graceful shutdown)
 
-**Notes**:
-- Poller starts automatically if `POLLER_ENABLED=true` in environment
-- API endpoint is protected by AAD authentication
-- Idempotent: Returns 409 Conflict if already running
-
-### Stopping the Poller
-
-**Via API**:
-```bash
-curl -X POST https://<domain>/worker/stop \
-  -H "Authorization: Bearer <AAD_TOKEN>"
-```
-
-**Graceful shutdown**:
+**Graceful shutdown** (on SIGTERM/SIGINT):
 1. Stops scheduling new poll cycles
 2. Waits for in-flight jobs to complete (max ~5 minutes for longest conversion)
-3. Returns 200 OK when fully stopped
+3. Application exits cleanly
+
+**To reduce polling frequency**: Adjust `POLLER_INTERVAL_MS` environment variable and restart the application
 
 ### Checking Status
 
-**GET /worker/status**:
+**GET /worker/status** (per-replica):
 ```bash
 curl https://<domain>/worker/status \
   -H "Authorization: Bearer <AAD_TOKEN>"
 ```
 
-**Response**:
+**Response** (per-replica, may vary between requests):
 ```json
 {
   "isRunning": true,
@@ -492,9 +472,10 @@ ORDER BY COUNT(Id) DESC
 
 ### Environment Variables
 
+**Note**: Poller is always-on (auto-starts with application). No manual start/stop control.
+
 | Variable                     | Default | Description                                      |
 |------------------------------|---------|--------------------------------------------------|
-| `POLLER_ENABLED`             | `false` | Auto-start poller on container startup           |
 | `POLLER_INTERVAL_MS`         | `15000` | Polling interval when queue active (15s)         |
 | `POLLER_IDLE_INTERVAL_MS`    | `60000` | Polling interval when queue empty (60s)          |
 | `POLLER_BATCH_SIZE`          | `20`    | Max documents to fetch per cycle                 |
@@ -522,9 +503,10 @@ ORDER BY COUNT(Id) DESC
 2. **Monitor API limits**: Set alerts at 70% and 90% thresholds
 3. **Use priorities**: Assign `Priority__c` to urgent jobs (e.g., interactive follow-ups)
 4. **Test failure modes**: Simulate crashes (kill container) to verify lock reclamation
-5. **Graceful deployments**: Always `POST /worker/stop` before scaling down replicas
-6. **Idempotency checks**: Apex should set `RequestHash__c` to prevent duplicate work
-7. **Correlation tracing**: Use `CorrelationId__c` to trace documents through logs and metrics
+5. **Graceful deployments**: Scale down replicas gradually to allow in-flight jobs to complete
+6. **Multi-replica safety**: Trust the lock mechanism - multiple pollers are safe by design
+7. **Idempotency checks**: Apex should set `RequestHash__c` to prevent duplicate work
+8. **Correlation tracing**: Use `CorrelationId__c` to trace documents through logs and metrics
 
 ---
 

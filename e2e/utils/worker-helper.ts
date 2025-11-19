@@ -215,24 +215,8 @@ export class WorkerHelper {
   }
 
   /**
-   * Start the worker poller via centralized worker-control
-   * Required before tests that depend on automatic document processing
-   */
-  async startWorker(): Promise<void> {
-    await WorkerControl.startWorker();
-  }
-
-  /**
-   * Stop the worker poller via centralized worker-control
-   * Useful for test cleanup
-   */
-  async stopWorker(): Promise<void> {
-    await WorkerControl.stopWorker();
-  }
-
-  /**
-   * Verify worker is running via centralized worker-control
-   * Should be called before tests that depend on the poller
+   * Verify worker is running via worker status check
+   * Note: Worker is always-on, so this should always return true
    */
   async verifyWorkerRunning(): Promise<boolean> {
     try {
@@ -241,35 +225,6 @@ export class WorkerHelper {
     } catch (error) {
       console.error('Failed to verify worker status:', error);
       return false;
-    }
-  }
-
-  /**
-   * Ensure worker is running, start it if not
-   * Convenience method for test setup
-   */
-  async ensureWorkerRunning(): Promise<void> {
-    console.log('\nEnsuring worker poller is running...');
-
-    const isRunning = await this.verifyWorkerRunning();
-
-    if (!isRunning) {
-      console.log('Worker not running, starting it now...');
-      await this.startWorker();
-
-      // Wait a moment for worker to initialize
-      await this.page.waitForTimeout(3000);
-
-      // Verify it started successfully
-      const nowRunning = await this.verifyWorkerRunning();
-      if (!nowRunning) {
-        console.warn('Warning: Worker may not have started successfully');
-        // Don't throw - the worker might be running but stats call failed
-      } else {
-        console.log('✓ Worker is now running');
-      }
-    } else {
-      console.log('✓ Worker is already running');
     }
   }
 

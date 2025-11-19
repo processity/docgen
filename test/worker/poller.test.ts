@@ -58,7 +58,7 @@ describeTests('PollerService', () => {
       sfdxAuthUrl: appConfig.sfdxAuthUrl!,
     });
 
-    let instanceUrl = sfAuth.getInstanceUrl();
+    const instanceUrl = sfAuth.getInstanceUrl();
     // Ensure we include the port for nock matching (axios explicitly includes :443 for HTTPS)
     if (instanceUrl.startsWith('https://') && !instanceUrl.includes(':443')) {
       baseUrl = instanceUrl.replace('https://', 'https://').replace(/\/$/, '') + ':443';

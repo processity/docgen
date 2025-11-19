@@ -44,8 +44,8 @@ test.describe('Worker and Poller E2E Tests', () => {
       orgHelper
     );
 
-    // Ensure worker poller is running before tests
-    await workerHelper.ensureWorkerRunning();
+    // Note: Worker poller is always-on (auto-starts with application)
+    // No need to explicitly start it before tests
   });
 
   test('single document: batch enqueue → poller processes → SUCCEEDED', async ({ salesforce }) => {
@@ -267,8 +267,9 @@ test.describe('Worker and Poller E2E Tests', () => {
     console.log(`✓ Document created: ${documentId}`);
 
     // Try to wait for document to be locked by poller
+    // Note: Poller may be in idle mode (60s interval) if queue was empty after previous tests
     console.log('\nAttempting to catch document lock...');
-    const lockedDoc = await workerHelper.waitForDocumentLock(documentId, 30000);
+    const lockedDoc = await workerHelper.waitForDocumentLock(documentId, 70000); // 70s to accommodate idle polling
 
     if (lockedDoc) {
       // Successfully caught the lock

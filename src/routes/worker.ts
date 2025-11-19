@@ -2,129 +2,21 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pollerService } from '../worker';
 
 /**
- * Worker routes for controlling the document generation poller
+ * Worker routes for monitoring the document generation poller
+ *
+ * NOTE: In multi-replica deployments (Azure Container Apps with 1-5 replicas),
+ * the poller runs automatically on ALL replicas. The Salesforce lock mechanism
+ * (LockedUntil__c) prevents duplicate work. Status and stats are per-replica.
+ *
  * All endpoints require AAD authentication
  */
 export async function workerRoutes(fastify: FastifyInstance) {
   /**
-   * POST /worker/start
-   * Start the poller service
-   */
-  fastify.post(
-    '/start',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        description: 'Start the document generation poller',
-        tags: ['worker'],
-        security: [{ oauth2: [] }],
-        response: {
-          200: {
-            description: 'Poller started successfully',
-            type: 'object',
-            properties: {
-              message: { type: 'string' },
-              isRunning: { type: 'boolean' },
-              correlationId: { type: 'string' },
-            },
-          },
-          409: {
-            description: 'Poller is already running',
-            type: 'object',
-            properties: {
-              error: { type: 'string' },
-              correlationId: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const correlationId = (request.headers['x-correlation-id'] as string) || request.id;
-
-      try {
-        // Check if already running
-        if (pollerService.isRunning()) {
-          return reply.code(409).send({
-            error: 'Poller is already running',
-            correlationId,
-          });
-        }
-
-        // Start the poller
-        await pollerService.start();
-
-        fastify.log.info({ correlationId }, 'Poller started via API');
-
-        return reply.code(200).send({
-          message: 'Poller started successfully',
-          isRunning: true,
-          correlationId,
-        });
-      } catch (error: any) {
-        fastify.log.error({ error, correlationId }, 'Failed to start poller');
-
-        return reply.code(500).send({
-          error: error.message || 'Failed to start poller',
-          correlationId,
-        });
-      }
-    }
-  );
-
-  /**
-   * POST /worker/stop
-   * Stop the poller service gracefully
-   */
-  fastify.post(
-    '/stop',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        description: 'Stop the document generation poller gracefully',
-        tags: ['worker'],
-        security: [{ oauth2: [] }],
-        response: {
-          200: {
-            description: 'Poller stopped successfully',
-            type: 'object',
-            properties: {
-              message: { type: 'string' },
-              isRunning: { type: 'boolean' },
-              correlationId: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const correlationId = (request.headers['x-correlation-id'] as string) || request.id;
-
-      try {
-        // Stop the poller (idempotent - OK if not running)
-        await pollerService.stop();
-
-        fastify.log.info({ correlationId }, 'Poller stopped via API');
-
-        return reply.code(200).send({
-          message: 'Poller stopped successfully',
-          isRunning: false,
-          correlationId,
-        });
-      } catch (error: any) {
-        fastify.log.error({ error, correlationId }, 'Failed to stop poller');
-
-        return reply.code(500).send({
-          error: error.message || 'Failed to stop poller',
-          correlationId,
-        });
-      }
-    }
-  );
-
-  /**
    * GET /worker/status
-   * Get current poller status
+   * Get current poller status for this replica
+   *
+   * NOTE: In multi-replica deployments, each replica has independent status.
+   * Multiple requests may return different results depending on which replica handles the request.
    */
   fastify.get(
     '/status',
@@ -173,14 +65,18 @@ export async function workerRoutes(fastify: FastifyInstance) {
 
   /**
    * GET /worker/stats
-   * Get detailed poller statistics
+   * Get detailed poller statistics for this replica
+   *
+   * NOTE: In multi-replica deployments, statistics are per-replica.
+   * To get total counts across all replicas, you would need to query all replicas
+   * and aggregate the results (typically done via load balancer or monitoring tools).
    */
   fastify.get(
     '/stats',
     {
       preHandler: [fastify.authenticate],
       schema: {
-        description: 'Get detailed poller statistics',
+        description: 'Get detailed poller statistics for this replica',
         tags: ['worker'],
         security: [{ oauth2: [] }],
         response: {

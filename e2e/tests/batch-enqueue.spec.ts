@@ -43,8 +43,6 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
       orgHelper
     );
 
-    // Ensure worker poller is running before tests that need it
-    await workerHelper.ensureWorkerRunning();
   });
 
   test('batch 20 records: all QUEUED → poller processes → all SUCCEEDED', async ({ salesforce }) => {

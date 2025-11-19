@@ -49,6 +49,11 @@ public with sharing class DocgenStatusController {
 
     /**
      * Get worker status from /worker/status endpoint
+     *
+     * NOTE: In multi-replica deployments (Azure Container Apps), status is per-replica.
+     * The poller runs automatically on all replicas. Results may vary depending on which
+     * replica handles this request.
+     *
      * @return Map containing isRunning, currentQueueDepth, lastPollTime
      */
     @AuraEnabled
@@ -74,6 +79,11 @@ public with sharing class DocgenStatusController {
 
     /**
      * Get worker statistics from /worker/stats endpoint
+     *
+     * NOTE: In multi-replica deployments (Azure Container Apps), statistics are per-replica.
+     * The poller runs automatically on all replicas. Results may vary depending on which
+     * replica handles this request.
+     *
      * @return Map containing totalProcessed, totalSucceeded, totalFailed, totalRetries, uptimeSeconds
      */
     @AuraEnabled
@@ -94,73 +104,6 @@ public with sharing class DocgenStatusController {
             }
         } catch (Exception e) {
             throw new AuraHandledException('Failed to get worker stats: ' + e.getMessage());
-        }
-    }
-
-    /**
-     * Start the worker poller
-     * @return Map containing success status and message
-     */
-    @AuraEnabled
-    public static Map<String, Object> startWorker() {
-        try {
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('callout:' + getNamedCredentialName() + '/worker/start');
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/json');
-            req.setBody('{}'); // Empty JSON object required by backend
-            req.setTimeout(TIMEOUT_MS);
-
-            Http http = new Http();
-            HTTPResponse res = http.send(req);
-
-            if (res.getStatusCode() == 200) {
-                return (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-            } else if (res.getStatusCode() == 409) {
-                // Worker already running - treat as success (idempotent operation)
-                // Parse the response to get the error message
-                Map<String, Object> errorResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-                String errorMsg = (String) errorResponse.get('error');
-
-                // Return a success response indicating worker is already running
-                return new Map<String, Object>{
-                    'message' => errorMsg,  // "Poller is already running"
-                    'isRunning' => true,
-                    'alreadyRunning' => true
-                };
-            } else {
-                throw new CustomException('Failed to start worker with status: ' + res.getStatusCode() +
-                                        ', body: ' + res.getBody());
-            }
-        } catch (Exception e) {
-            throw new AuraHandledException('Failed to start worker: ' + e.getMessage());
-        }
-    }
-
-    /**
-     * Stop the worker poller
-     * @return Map containing success status and message
-     */
-    @AuraEnabled
-    public static Map<String, Object> stopWorker() {
-        try {
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('callout:' + getNamedCredentialName() + '/worker/stop');
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/json');
-            req.setBody('{}'); // Empty JSON object required by backend
-            req.setTimeout(TIMEOUT_MS);
-
-            Http http = new Http();
-            HTTPResponse res = http.send(req);
-
-            if (res.getStatusCode() == 200) {
-                return (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-            } else {
-                throw new CustomException('Failed to stop worker with status: ' + res.getStatusCode());
-            }
-        } catch (Exception e) {
-            throw new AuraHandledException('Failed to stop worker: ' + e.getMessage());
         }
     }
 

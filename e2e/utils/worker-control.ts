@@ -1,8 +1,11 @@
 /**
- * Worker Control Utilities for E2E Tests
+ * Worker Status Utilities for E2E Tests
  *
- * Provides helper functions to start/stop/check worker poller status
- * via Anonymous Apex scripts.
+ * Provides helper functions to check worker poller status.
+ *
+ * Note: The worker poller is now always-on (auto-starts with application).
+ * Start/stop functionality has been removed as the poller runs automatically
+ * on all backend replicas.
  */
 
 import { execSync } from 'child_process';
@@ -14,52 +17,6 @@ export interface WorkerStatus {
   isRunning: boolean;
   currentQueueDepth: number;
   lastPollTime: string;
-}
-
-/**
- * Start the worker poller
- * Note: Does not throw if worker is already running - check status separately
- */
-export async function startWorker(): Promise<void> {
-  try {
-    const scriptPath = path.join(SCRIPTS_DIR, 'StartWorker.apex');
-    console.log('Starting worker poller...');
-
-    const output = execSync(`sf apex run --file "${scriptPath}"`, {
-      encoding: 'utf-8',
-    });
-
-    // Check if start was successful or worker already running
-    if (output.includes('Worker started successfully') || output.includes('isRunning":true')) {
-      console.log('✅ Worker start command completed');
-    } else {
-      console.warn('⚠️  Worker start completed with unknown status - verify separately');
-    }
-  } catch (error) {
-    // Script no longer throws exceptions, but handle exec errors gracefully
-    console.warn('Worker start script encountered an issue:', error);
-    console.log('Continuing - worker status will be verified separately');
-  }
-}
-
-/**
- * Stop the worker poller
- * @throws Error if worker fails to stop
- */
-export async function stopWorker(): Promise<void> {
-  try {
-    const scriptPath = path.join(SCRIPTS_DIR, 'StopWorker.apex');
-    console.log('Stopping worker poller...');
-
-    execSync(`sf apex run --file "${scriptPath}"`, {
-      encoding: 'utf-8',
-      stdio: 'inherit',
-    });
-
-    console.log('✅ Worker stopped successfully');
-  } catch (error) {
-    throw new Error(`Failed to stop worker: ${error}`);
-  }
 }
 
 /**
@@ -92,43 +49,3 @@ export async function getWorkerStatus(): Promise<WorkerStatus> {
   }
 }
 
-/**
- * Wait for worker to be running
- * @param timeoutMs Maximum time to wait in milliseconds (default: 10000)
- * @param pollIntervalMs How often to check status (default: 1000)
- * @throws Error if worker doesn't start within timeout
- */
-export async function waitForWorkerRunning(
-  timeoutMs: number = 10000,
-  pollIntervalMs: number = 1000
-): Promise<void> {
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const status = await getWorkerStatus();
-      if (status.isRunning) {
-        console.log('✅ Worker is running');
-        return;
-      }
-    } catch (error) {
-      // Ignore errors during polling
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-
-  throw new Error(`Worker did not start within ${timeoutMs}ms`);
-}
-
-/**
- * Ensure worker is stopped (best effort)
- * Useful for test cleanup - doesn't throw if already stopped
- */
-export async function ensureWorkerStopped(): Promise<void> {
-  try {
-    await stopWorker();
-  } catch (error) {
-    console.log('Worker may already be stopped (ignoring error)');
-  }
-}

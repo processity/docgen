@@ -25,25 +25,8 @@ private class DocgenStatusControllerTest {
                 res.setBody('{"isRunning":true,"currentQueueDepth":5,"lastPollTime":"2025-01-17T10:30:00Z"}');
             } else if (endpoint.endsWith('/worker/stats')) {
                 res.setBody('{"totalProcessed":100,"totalSucceeded":95,"totalFailed":5,"totalRetries":3,"uptimeSeconds":3600}');
-            } else if (endpoint.endsWith('/worker/start')) {
-                res.setBody('{"success":true,"message":"Worker started"}');
-            } else if (endpoint.endsWith('/worker/stop')) {
-                res.setBody('{"success":true,"message":"Worker stopped"}');
             }
 
-            return res;
-        }
-    }
-
-    /**
-     * Mock class for 409 Conflict response (worker already running)
-     */
-    private class ConflictMock implements HttpCalloutMock {
-        public HTTPResponse respond(HTTPRequest req) {
-            HTTPResponse res = new HTTPResponse();
-            res.setHeader('Content-Type', 'application/json');
-            res.setStatusCode(409);
-            res.setBody('{"error":"Poller is already running","correlationId":"test-correlation-id"}');
             return res;
         }
     }
@@ -144,45 +127,6 @@ private class DocgenStatusControllerTest {
         System.assertEquals(100, result.get('totalProcessed'), 'Total processed should be 100');
         System.assertEquals(95, result.get('totalSucceeded'), 'Total succeeded should be 95');
         System.assertEquals(5, result.get('totalFailed'), 'Total failed should be 5');
-    }
-
-    @isTest
-    static void testStartWorker_Success() {
-        Test.setMock(HttpCalloutMock.class, new SuccessMock('/worker/start'));
-
-        Test.startTest();
-        Map<String, Object> result = DocgenStatusController.startWorker();
-        Test.stopTest();
-
-        System.assertNotEquals(null, result, 'Result should not be null');
-        System.assertEquals(true, result.get('success'), 'Start should succeed');
-    }
-
-    @isTest
-    static void testStartWorker_AlreadyRunning() {
-        // Test that 409 response is treated as success (idempotent operation)
-        Test.setMock(HttpCalloutMock.class, new ConflictMock());
-
-        Test.startTest();
-        Map<String, Object> result = DocgenStatusController.startWorker();
-        Test.stopTest();
-
-        System.assertNotEquals(null, result, 'Result should not be null');
-        System.assertEquals(true, result.get('isRunning'), 'Worker should be running');
-        System.assertEquals(true, result.get('alreadyRunning'), 'Should indicate worker was already running');
-        System.assertEquals('Poller is already running', result.get('message'), 'Should return the error message as info');
-    }
-
-    @isTest
-    static void testStopWorker_Success() {
-        Test.setMock(HttpCalloutMock.class, new SuccessMock('/worker/stop'));
-
-        Test.startTest();
-        Map<String, Object> result = DocgenStatusController.stopWorker();
-        Test.stopTest();
-
-        System.assertNotEquals(null, result, 'Result should not be null');
-        System.assertEquals(true, result.get('success'), 'Stop should succeed');
     }
 
     @isTest

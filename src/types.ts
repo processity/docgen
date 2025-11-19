@@ -367,10 +367,9 @@ export interface QueuedDocument {
 
 /**
  * Configuration for the poller worker
+ * Note: Poller is always-on (auto-starts with application)
  */
 export interface PollerConfig {
-  /** Whether the poller is enabled (default: false) */
-  enabled: boolean;
   /** Polling interval in milliseconds when active (default: 15000 = 15s) */
   intervalMs: number;
   /** Polling interval in milliseconds when idle (default: 60000 = 60s) */

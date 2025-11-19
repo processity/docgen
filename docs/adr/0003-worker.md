@@ -1,10 +1,49 @@
 # ADR 0003: Worker Polling and Batch Processing Model
 
-**Status**: Accepted
+**Status**: Accepted (Amended 2025-11-19)
 **Date**: 2025-11-05
 **Decision Makers**: Architecture Team
 
+## Amendment (2025-11-19): Always-On Poller in Multi-Replica Deployments
+
+### Context
+The initial implementation included API endpoints (`POST /worker/start`, `POST /worker/stop`) for manual poller control. However, in Azure Container Apps multi-replica deployments (1-5 replicas), these APIs created a **stateful service problem in a stateless architecture**:
+
+- Start/stop commands only affected the replica that handled the request
+- Other replicas remained unaffected, creating inconsistent state
+- Status checks returned different results depending on which replica responded
+- Statistics were fragmented across replicas with no aggregation
+
+### Amendment Decision
+**Remove worker control APIs and make the poller always-on**:
+- Poller auto-starts when the application starts on **all replicas**
+- No manual start/stop control (scale to 0 replicas to stop polling)
+- Monitoring endpoints (`GET /worker/status`, `GET /worker/stats`) remain for observability
+- Per-replica stats are acceptable for monitoring purposes
+
+### Rationale
+- The existing Salesforce lock mechanism (`LockedUntil__c`) already prevents duplicate work across replicas
+- Multiple pollers polling concurrently is **safe by design** (optimistic locking)
+- Eliminates state synchronization complexity (no Redis, no leader election needed)
+- Simpler operational model: poller "just works" without manual intervention
+- Aligns with cloud-native stateless service principles
+
+### Updated API Endpoints
+- ~~`POST /worker/start`~~ (removed)
+- ~~`POST /worker/stop`~~ (removed)
+- `GET /worker/status` (kept, returns per-replica status)
+- `GET /worker/stats` (kept, returns per-replica stats)
+
+### Operational Changes
+- **To stop polling**: Scale container to 0 replicas
+- **To reduce API load**: Scale down replicas or adjust `POLLER_INTERVAL_MS`
+- **Monitoring**: Status/stats are per-replica; use Azure Monitor for aggregate metrics
+
+---
+
 ## Context
+
+### Original Requirements (2025-11-05)
 
 The service must support two document generation modes:
 1. **Interactive**: Real-time generation triggered by user button clicks (sub-second response)
@@ -129,8 +168,10 @@ QUEUED → PROCESSING → SUCCEEDED
 - **Salesforce API dependency**: Polling requires API calls (counts toward limits)
 
 ### Operational Impact
-- **Scaling**: More replicas = faster queue drain (but more API calls)
-- **Monitoring**: Track `queue_depth`, `processing_rate`, `retry_rate` metrics
+- **Scaling**: More replicas = faster queue drain (but more API calls). Each replica polls independently.
+- **Always-On**: Poller auto-starts on all replicas. Scale to 0 to stop polling entirely.
+- **Multi-Replica Safety**: Optimistic locking prevents duplicate work across replicas
+- **Monitoring**: Track `queue_depth`, `processing_rate`, `retry_rate` metrics (per-replica stats via `/worker/stats`)
 - **Dead letter queue**: `FAILED` records require manual review
 - **Lock tuning**: Adjust TTL if jobs frequently timeout
 
