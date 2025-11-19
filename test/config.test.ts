@@ -164,7 +164,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -186,7 +185,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -214,7 +212,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -241,7 +238,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -268,7 +264,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -295,7 +290,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -319,7 +313,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -353,7 +346,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -385,7 +377,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -587,7 +578,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
@@ -620,7 +610,6 @@ describe('Config', () => {
         conversionWorkdir: '/tmp',
         conversionMaxConcurrent: 8,
         poller: {
-          enabled: false,
           intervalMs: 15000,
           idleIntervalMs: 60000,
           batchSize: 20,
