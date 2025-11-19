@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 15
     environment: ci
     outputs:
-      sfdx_auth_url: ${{ steps.extract-auth-url.outputs.sfdx_auth_url }}
       org_alias: ${{ steps.create-org.outputs.org_alias }}
 
     steps:
@@ -99,8 +98,15 @@ jobs:
         run: |
           sf org assign permset --name Docgen_User
 
-      - name: Extract SFDX Auth URL
-        id: extract-auth-url
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update Key Vault with scratch org SFDX Auth URL
         run: |
           echo "Extracting SFDX Auth URL from scratch org..."
 
@@ -113,19 +119,50 @@ jobs:
 
           echo "✅ Extracted SFDX Auth URL from scratch org"
 
-          # Use delimiter syntax for outputs with special characters
-          {
-            echo "sfdx_auth_url<<EOF"
-            echo "$SFDX_AUTH_URL"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          # Update Key Vault secret directly
+          echo "$SFDX_AUTH_URL" | az keyvault secret set \
+            --vault-name docgen-ci-kv \
+            --name SFDX-AUTH-URL \
+            --value @/dev/stdin \
+            --output none
+
+          echo "✅ Updated Key Vault with scratch org SFDX Auth URL"
+
+          # Save SFDX Auth URL to file for e2e-tests job
+          echo "$SFDX_AUTH_URL" > sfdx-auth-url.txt
+
+      - name: Upload SFDX Auth URL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfdx-auth-url
+          path: sfdx-auth-url.txt
+          retention-days: 1
+
+      - name: Restart Container App to pick up new SFDX Auth URL
+        run: |
+          echo "🔄 Restarting Container App to pick up scratch org credentials..."
+
+          # Check if container app exists first
+          if az containerapp show --name docgen-ci --resource-group docgen-ci-rg &>/dev/null; then
+            az containerapp revision restart \
+              --name docgen-ci \
+              --resource-group docgen-ci-rg \
+              --revision $(az containerapp revision list \
+                --name docgen-ci \
+                --resource-group docgen-ci-rg \
+                --query '[0].name' -o tsv)
+
+            echo "✅ Container App restarted"
+            echo "⏳ Waiting 30 seconds for secret to propagate..."
+            sleep 30
+          else
+            echo "ℹ️  Container App doesn't exist yet (will be created by deploy-ci-backend job)"
+          fi
 
   deploy-ci-backend:
     name: Deploy CI Backend
     needs: create-scratch-org
     uses: ./.github/workflows/deploy-ci-backend.yml
-    with:
-      sfdx_auth_url: ${{ needs.create-scratch-org.outputs.sfdx_auth_url }}
     secrets: inherit
 
   e2e-tests:
@@ -154,14 +191,16 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
+      - name: Download SFDX Auth URL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sfdx-auth-url
+
       - name: Authenticate to scratch org
-        env:
-          SFDX_AUTH_URL: ${{ needs.create-scratch-org.outputs.sfdx_auth_url }}
         run: |
-          echo "Authenticating to scratch org created in previous job..."
-          echo "$SFDX_AUTH_URL" > auth.txt
-          sf org login sfdx-url --sfdx-url-file auth.txt --alias e2e-test-${{ github.run_number }} --set-default
-          rm auth.txt
+          echo "Authenticating to scratch org using SFDX Auth URL..."
+          sf org login sfdx-url --sfdx-url-file sfdx-auth-url.txt --alias ${{ needs.create-scratch-org.outputs.org_alias }} --set-default
+          rm sfdx-auth-url.txt
           echo "✅ Authenticated to scratch org"
 
       - name: Get org credentials
