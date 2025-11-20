@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All_Generated_Documents</fullName>
+    <label>All Generated Documents</label>
+    <filterScope>Everything</filterScope>
+    <columns>NAME</columns>
+    <columns>Status__c</columns>
+    <columns>Template__c</columns>
+    <columns>Priority__c</columns>
+    <columns>Account__c</columns>
+    <columns>Opportunity__c</columns>
+    <columns>Case__c</columns>
+    <columns>Contact__c</columns>
+    <columns>RequestedBy__c</columns>
+    <columns>OutputFormat__c</columns>
+    <columns>Attempts__c</columns>
+    <columns>Error__c</columns>
+    <columns>CREATED_DATE</columns>
+</ListView>

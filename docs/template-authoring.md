@@ -10,17 +10,18 @@ This guide explains how to create DOCX templates for the Salesforce PDF Generati
 4. [Working with Data](#working-with-data)
 5. [Loops and Arrays](#loops-and-arrays)
 6. [Conditional Logic](#conditional-logic)
-7. [Formatted Values](#formatted-values)
-8. [Images](#images)
-9. [Best Practices](#best-practices)
-10. [Examples](#examples)
-11. [Troubleshooting](#troubleshooting)
+7. [JavaScript Expressions](#javascript-expressions)
+8. [Formatted Values](#formatted-values)
+9. [Images](#images)
+10. [Best Practices](#best-practices)
+11. [Examples](#examples)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-Templates are standard Microsoft Word (.docx) files with special tags that get replaced with data from Salesforce. The system uses the `docx-templates` library with Handlebars-style syntax (`{{` and `}}`).
+Templates are standard Microsoft Word (.docx) files with special tags that get replaced with data from Salesforce. The system uses the `docx-templates` library with native syntax using `{{` and `}}` delimiters.
 
 ### Key Principles
 
@@ -140,13 +141,15 @@ Use conditionals to provide defaults:
 
 ### Basic Loop
 
-Use `{{#each}}` to iterate over arrays:
+Use `FOR`/`END-FOR` to iterate over arrays:
 
 ```
-{{#each Opportunity.LineItems}}
-  - {{Name}}: {{Quantity}} x {{UnitPrice__formatted}} = {{TotalPrice__formatted}}
-{{/each}}
+{{FOR item IN Opportunity.LineItems}}
+  - {{$item.Name}}: {{$item.Quantity}} x {{$item.UnitPrice__formatted}} = {{$item.TotalPrice__formatted}}
+{{END-FOR item}}
 ```
+
+**Important:** Use `$item` prefix to access properties inside the loop.
 
 ### Table Rows
 
@@ -154,43 +157,41 @@ Create a table in Word with a single data row containing loop tags:
 
 | Product | Quantity | Unit Price | Total |
 |---------|----------|------------|-------|
-| `{{#each Opportunity.LineItems}}{{Name}}{{/each}}` | `{{Quantity}}` | `{{UnitPrice__formatted}}` | `{{TotalPrice__formatted}}` |
+| `{{FOR item IN Opportunity.LineItems}}{{$item.Name}}{{END-FOR item}}` | `{{$item.Quantity}}` | `{{$item.UnitPrice__formatted}}` | `{{$item.TotalPrice__formatted}}` |
 
-**Note**: Place `{{#each}}` and `{{/each}}` in the same table cell for proper row repetition.
+**Note**: Place `{{FOR}}` and `{{END-FOR}}` in the same table cell for proper row repetition.
 
 ### Accessing Parent Context
 
 Inside loops, use `..` to access parent data:
 
 ```
-{{#each Opportunity.LineItems}}
+{{FOR item IN Opportunity.LineItems}}
   Opportunity: {{../Opportunity.Name}}
-  Product: {{Name}}
-{{/each}}
+  Product: {{$item.Name}}
+{{END-FOR item}}
 ```
 
 ### Loop with Index
 
-```
-{{#each Opportunity.LineItems}}
-  {{@index}}. {{Name}}
-{{/each}}
-```
+Use JavaScript expressions to calculate index:
 
-(Note: `@index` is 0-based; use expressions for 1-based: `{{@index + 1}}`)
+```
+{{FOR item IN Opportunity.LineItems}}
+  {{= Opportunity.LineItems.indexOf($item) + 1 }}. {{$item.Name}}
+{{END-FOR item}}
+```
 
 ### Empty Arrays
 
-Check if array has items:
+Check if array has items before looping:
 
 ```
-{{#if Opportunity.LineItems.length}}
-  {{#each Opportunity.LineItems}}
-    - {{Name}}
-  {{/each}}
-{{else}}
-  No line items
-{{/if}}
+{{IF Opportunity.LineItems.length}}
+  {{FOR item IN Opportunity.LineItems}}
+    - {{$item.Name}}
+  {{END-FOR item}}
+{{END-IF}}
 ```
 
 ---
@@ -200,46 +201,58 @@ Check if array has items:
 ### Basic If
 
 ```
-{{#if Account.IsPartner}}
+{{IF Account.IsPartner}}
   Partner Discount: 15%
-{{/if}}
+{{END-IF}}
 ```
 
 ### If-Else
 
 ```
-{{#if Opportunity.IsWon}}
+{{IF Opportunity.IsWon}}
   Congratulations! Deal closed.
-{{else}}
-  Opportunity still in progress.
-{{/if}}
+{{END-IF}}
 ```
 
 ### Checking for Values
 
 ```
-{{#if Account.AnnualRevenue}}
+{{IF Account.AnnualRevenue}}
   Revenue: {{Account.AnnualRevenue__formatted}}
-{{else}}
-  Revenue: Not disclosed
-{{/if}}
+{{END-IF}}
 ```
 
 ### Multiple Conditions (AND)
 
-docx-templates doesn't support `&&` directly. Use nested `{{#if}}`:
+For complex conditions, use JavaScript expressions:
 
 ```
-{{#if Account.IsPartner}}
-  {{#if Account.IsActive}}
+{{IF Account.IsPartner && Account.IsActive}}
+  Active Partner
+{{END-IF}}
+```
+
+Or use nested IF blocks:
+
+```
+{{IF Account.IsPartner}}
+  {{IF Account.IsActive}}
     Active Partner
-  {{/if}}
-{{/if}}
+  {{END-IF}}
+{{END-IF}}
 ```
 
 ### Multiple Conditions (OR)
 
-For OR logic, Apex should pre-compute a boolean field:
+Use JavaScript expressions:
+
+```
+{{IF Account.IsPartner || Account.IsVIP}}
+  Special discount available
+{{END-IF}}
+```
+
+Or pre-compute in Apex for cleaner templates:
 
 **Apex:**
 ```apex
@@ -248,10 +261,182 @@ data.put('ShouldShowDiscount', account.IsPartner || account.IsVIP);
 
 **Template:**
 ```
-{{#if ShouldShowDiscount}}
+{{IF ShouldShowDiscount}}
   Special discount available
-{{/if}}
+{{END-IF}}
 ```
+
+---
+
+## JavaScript Expressions
+
+Templates support JavaScript for dynamic calculations and data manipulation. However, **prefer Apex for complex logic** to keep templates deterministic.
+
+### Basic JavaScript Syntax
+
+Use `{{=` to evaluate JavaScript and insert the result:
+
+```
+Total Contacts: {{= Account.Contacts.length }}
+
+Revenue per Employee: {{= (Account.AnnualRevenue / Account.NumberOfEmployees).toFixed(2) }}
+```
+
+### EXEC Blocks (No Output)
+
+Use `{{EXEC` to execute JavaScript without inserting anything (useful for defining variables):
+
+```
+{{EXEC
+  const contacts = Account.Contacts || [];
+  const byDept = {};
+  contacts.forEach(c => {
+    const dept = c.Department || 'Unassigned';
+    byDept[dept] = (byDept[dept] || 0) + 1;
+  });
+  deptList = Object.entries(byDept).sort((a, b) => b[1] - a[1]);
+}}
+
+{{FOR dept IN deptList}}
+  {{$dept[0]}}: {{$dept[1]}} contacts
+{{END-FOR dept}}
+```
+
+**Key difference:**
+- `{{= code }}` - Executes and **inserts result**
+- `{{EXEC code }}` - Executes but **inserts nothing**
+
+### Array Operations
+
+**Filter:**
+```
+Open Opportunities: {{= Account.Opportunities.filter(o => o.StageName !== 'Closed Won' && o.StageName !== 'Closed Lost').length }}
+```
+
+**Map and Join:**
+```
+Contact Emails: {{= Account.Contacts.map(c => c.Email).join(', ') }}
+```
+
+**Reduce (Aggregate):**
+```
+Total Pipeline: {{= Account.Opportunities.reduce((sum, o) => sum + (o.Amount || 0), 0).toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+```
+
+### Conditional Expressions (Ternary)
+
+```
+Account Tier: {{= Account.AnnualRevenue > 10000000 ? 'Enterprise' : Account.AnnualRevenue > 1000000 ? 'Corporate' : 'SMB' }}
+
+Status: {{= opportunityCount > 0 ? opportunityCount + ' opportunities' : 'No opportunities' }}
+```
+
+### Date Calculations
+
+```
+{{=
+const closeDate = new Date($opp.CloseDate);
+const today = new Date();
+const diffDays = Math.ceil((closeDate - today) / (1000 * 60 * 60 * 24));
+diffDays > 0 ? diffDays + ' days remaining' :
+diffDays === 0 ? 'Closes TODAY' :
+Math.abs(diffDays) + ' days overdue'
+}}
+```
+
+### Number Formatting
+
+```
+Currency: {{= amount.toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+
+Percentage: {{= (0.755).toLocaleString('en-GB', {style: 'percent'}) }}
+
+Thousands separator: {{= number.toLocaleString('en-GB') }}
+```
+
+### Grouping and Aggregation
+
+```
+{{EXEC
+const opps = Account.Opportunities || [];
+const byStage = {};
+
+opps.forEach(opp => {
+  const stage = opp.StageName || 'Unknown';
+  if (!byStage[stage]) {
+    byStage[stage] = { count: 0, total: 0 };
+  }
+  byStage[stage].count++;
+  byStage[stage].total += opp.Amount || 0;
+});
+
+stageList = Object.entries(byStage)
+  .sort((a, b) => b[1].total - a[1].total)
+  .map(([stage, data]) => ({
+    stage: stage,
+    count: data.count,
+    total: data.total
+  }));
+}}
+
+{{FOR stage IN stageList}}
+{{$stage.stage}}: {{$stage.count}} opp{{= $stage.count > 1 ? 's' : '' }} | {{= $stage.total.toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+{{END-FOR stage}}
+```
+
+### Safe Property Access
+
+Always handle null/undefined values:
+
+```
+{{= (Account.Contacts || []).length }}
+
+{{= Account.Owner?.Name || 'Unassigned' }}
+
+{{= (opportunity.Amount || 0) }}
+```
+
+### Multi-line JavaScript
+
+```
+{{=
+const contacts = Account.Contacts || [];
+const total = contacts.length;
+const withEmail = contacts.filter(c => c.Email).length;
+const percentage = total > 0 ? ((withEmail / total) * 100).toFixed(1) : 0;
+`${withEmail} of ${total} contacts have email (${percentage}%)`
+}}
+```
+
+### Important Limitations
+
+1. **Line breaks don't work:** `\n` in template literals won't create Word paragraph breaks
+   - **Solution:** Use FOR loops to generate multiple paragraphs
+
+2. **No cross-block variables:** Variables from one `{{=` block aren't available in another
+   - **Solution:** Use EXEC blocks to define shared variables
+
+3. **Avoid IIFEs:** Immediately Invoked Function Expressions are unnecessary
+   - **Bad:** `{{= (() => { return value; })() }}`
+   - **Good:** `{{= value }}`
+
+4. **Keep it simple:** Complex logic should be in Apex
+   - Templates are for presentation, not business logic
+
+### When to Use JavaScript vs Apex
+
+**Use JavaScript in templates for:**
+- ✅ Simple calculations (length, counts)
+- ✅ Array filtering and sorting
+- ✅ Conditional text/formatting
+- ✅ Grouping data for display
+
+**Use Apex for:**
+- ✅ Complex business logic
+- ✅ Data fetching (SOQL)
+- ✅ Currency/date formatting (locale-aware)
+- ✅ Security/validation
+- ✅ Calculations that need testing
 
 ---
 
@@ -568,13 +753,14 @@ DESCRIPTION:
 
 ### Issue: Loop Not Working
 
-**Problem:** `{{#each Opportunity.LineItems}}` doesn't repeat
+**Problem:** `{{FOR item IN Opportunity.LineItems}}` doesn't repeat
 
 **Solutions:**
 1. Verify `LineItems` is an array in data
 2. Check array isn't empty
-3. Ensure `{{#each}}` and `{{/each}}` are properly paired
+3. Ensure `{{FOR}}` and `{{END-FOR}}` are properly paired
 4. For tables, make sure both tags are in the same cell
+5. Use `$item` prefix to access loop variable properties
 
 ---
 
@@ -609,13 +795,46 @@ Not:
 
 ### Issue: Template Merge Fails
 
-**Error:** "Invalid field path"
+**Error:** "Invalid field path" or silent failure
 
 **Solutions:**
 1. Check all field references exist in data
 2. Verify nested object syntax (e.g., `Opportunity.Owner.Name`)
 3. Use developer console to log the exact data structure sent from Apex
 4. Test template with sample data first
+5. Check for syntax errors in EXEC blocks (extra `}`, missing semicolons)
+6. Ensure EXEC blocks end with `}}` not `}}}`
+7. Avoid line breaks inside function calls (keep on one line)
+
+---
+
+### Issue: JavaScript Block Not Rendering
+
+**Problem:** `{{= expression }}` shows nothing
+
+**Solutions:**
+1. Ensure the expression returns a value (last expression is inserted)
+2. Check for JavaScript errors (test in browser console first)
+3. Avoid `\n` for line breaks - use FOR loops instead
+4. Use EXEC for variable definition, `{{=` for output
+5. Simplify IIFEs - they're usually unnecessary
+
+**Example of common issue:**
+```
+BAD (won't render):
+{{=
+const items = ['a', 'b', 'c'];
+items.map(i => i).join('\n')  // \n doesn't work!
+}}
+
+GOOD (use FOR loop):
+{{EXEC
+  items = ['a', 'b', 'c'];
+}}
+{{FOR item IN items}}
+{{$item}}
+{{END-FOR item}}
+```
 
 ---
 

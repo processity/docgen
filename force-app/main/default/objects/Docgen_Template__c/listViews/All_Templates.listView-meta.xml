@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All_Templates</fullName>
+    <label>All Templates</label>
+    <filterScope>Everything</filterScope>
+    <columns>NAME</columns>
+    <columns>PrimaryParent__c</columns>
+    <columns>DataSource__c</columns>
+    <columns>ClassName__c</columns>
+    <columns>TemplateContentVersionId__c</columns>
+    <columns>ReturnDocxToBrowser__c</columns>
+    <columns>StoreMergedDocx__c</columns>
+    <columns>CREATED_DATE</columns>
+</ListView>
