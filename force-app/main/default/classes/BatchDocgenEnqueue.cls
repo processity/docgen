@@ -5,22 +5,53 @@
  * for mass document generation. The Node.js poller worker will pick up these
  * queued records and process them asynchronously.
  *
- * Usage:
+ * Supports both single-template and composite document generation.
+ *
+ * Usage - Single Template:
  *   List<Id> accountIds = new List<Id>{acc1.Id, acc2.Id, acc3.Id};
  *   BatchDocgenEnqueue batch = new BatchDocgenEnqueue(templateId, accountIds, 'PDF');
  *   Database.executeBatch(batch, 200);
  *
+ * Usage - Composite Document:
+ *   List<Id> accountIds = new List<Id>{acc1.Id, acc2.Id, acc3.Id};
+ *   BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+ *       compositeDocId,
+ *       accountIds,
+ *       'PDF',
+ *       'accountId'
+ *   );
+ *   Database.executeBatch(batch, 50);
+ *
+ * Usage - Composite with Additional Static IDs:
+ *   Map<String, Id> additionalIds = new Map<String, Id>{'termsId' => termsRecord.Id};
+ *   BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+ *       compositeDocId,
+ *       accountIds,
+ *       'PDF',
+ *       'accountId',
+ *       additionalIds
+ *   );
+ *   Database.executeBatch(batch, 50);
+ *
  * @group Batch
  * @see Generated_Document__c
  * @see DocgenEnvelopeService
+ * @see CompositeDocgenDataProvider
  */
 public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, Database.Stateful {
 
-    // State variables
+    // State variables - Single Template
     private Id templateId;
     private List<Id> recordIds;
     private String outputFormat;
     private Docgen_Template__c template;
+
+    // State variables - Composite Document
+    private Boolean isComposite = false;
+    private Id compositeDocId;
+    private Composite_Document__c composite;
+    private String recordIdFieldName;
+    private Map<String, Id> additionalRecordIds;
 
     // Statistics (tracked across batches via Database.Stateful)
     private Integer successCount = 0;
@@ -69,6 +100,83 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
     }
 
     /**
+     * Constructor for Composite Documents
+     * @param compositeDocId ID of the Composite_Document__c record
+     * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
+     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
+     * @throws QueryException if composite not found
+     */
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName
+    ) {
+        this(compositeDocId, recordIds, outputFormat, recordIdFieldName, null);
+    }
+
+    /**
+     * Constructor for Composite Documents with Additional Static RecordIds
+     * @param compositeDocId ID of the Composite_Document__c record
+     * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
+     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
+     * @param additionalRecordIds Static IDs shared across all batch records (e.g., {'termsId': termRecord.Id})
+     * @throws QueryException if composite not found
+     */
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName,
+        Map<String, Id> additionalRecordIds
+    ) {
+        this.isComposite = true;
+        this.compositeDocId = compositeDocId;
+        this.recordIds = recordIds;
+        this.outputFormat = outputFormat;
+        this.recordIdFieldName = recordIdFieldName;
+        this.additionalRecordIds = additionalRecordIds;
+
+        // Validate inputs
+        if (compositeDocId == null) {
+            throw new IllegalArgumentException('compositeDocId cannot be null');
+        }
+
+        if (recordIds == null || recordIds.isEmpty()) {
+            throw new IllegalArgumentException('recordIds cannot be null or empty');
+        }
+
+        if (outputFormat != 'PDF' && outputFormat != 'DOCX') {
+            throw new IllegalArgumentException('outputFormat must be PDF or DOCX');
+        }
+
+        if (String.isBlank(recordIdFieldName)) {
+            throw new IllegalArgumentException('recordIdFieldName cannot be blank');
+        }
+
+        // Load composite configuration
+        List<Composite_Document__c> composites = [
+            SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
+                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c, IsActive__c
+            FROM Composite_Document__c
+            WHERE Id = :compositeDocId
+            LIMIT 1
+        ];
+
+        if (composites.isEmpty()) {
+            throw new QueryException('Composite Document not found: ' + compositeDocId);
+        }
+
+        this.composite = composites[0];
+
+        if (!this.composite.IsActive__c) {
+            throw new IllegalArgumentException('Composite Document is not active: ' + compositeDocId);
+        }
+    }
+
+    /**
      * Start method - returns iterable of record IDs
      * @param bc BatchableContext
      * @return Iterable of record IDs to process
@@ -81,34 +189,51 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
     /**
      * Execute method - processes a batch of record IDs
      * Creates Generated_Document__c records with Status=QUEUED for each record
+     * Supports both single-template and composite document modes
      * @param bc BatchableContext
      * @param scope List of record IDs in this batch chunk
      */
     public void execute(Database.BatchableContext bc, List<Id> scope) {
-        System.debug('BatchDocgenEnqueue executing batch of ' + scope.size() + ' records');
+        String mode = isComposite ? 'composite' : 'template';
+        System.debug('BatchDocgenEnqueue executing batch of ' + scope.size() + ' records (' + mode + ' mode)');
 
         List<Generated_Document__c> documentsToInsert = new List<Generated_Document__c>();
 
         for (Id recordId : scope) {
             try {
-                // Build envelope using DocgenEnvelopeService
-                DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.build(
-                    recordId,
-                    this.template,
-                    this.outputFormat,
-                    'en-GB', // Default locale (could be parameterized in future)
-                    'Europe/London' // Default timezone (could be parameterized in future)
-                );
+                DocgenEnvelopeService.Envelope envelope;
 
-                // Serialize envelope to JSON
+                if (isComposite) {
+                    // COMPOSITE MODE: Build recordIds map and call buildForComposite
+                    Map<String, Id> recordIdsMap = buildCompositeRecordIdsMap(recordId);
+
+                    envelope = DocgenEnvelopeService.buildForComposite(
+                        this.compositeDocId,
+                        recordIdsMap,
+                        this.outputFormat,
+                        'en-GB', // Default locale (could be parameterized in future)
+                        'Europe/London' // Default timezone (could be parameterized in future)
+                    );
+                } else {
+                    // SINGLE TEMPLATE MODE: Use existing build method
+                    envelope = DocgenEnvelopeService.build(
+                        recordId,
+                        this.template,
+                        this.outputFormat,
+                        'en-GB', // Default locale (could be parameterized in future)
+                        'Europe/London' // Default timezone (could be parameterized in future)
+                    );
+                }
+
+                // Serialize envelope to JSON and truncate if needed
                 String requestJSON = DocgenEnvelopeService.toJSON(envelope);
+                requestJSON = truncateIfNeeded(requestJSON);
 
                 // Generate correlation ID (for Generated_Document__c tracking only)
                 String correlationId = generateCorrelationId();
 
                 // Create Generated_Document__c record
                 Generated_Document__c doc = new Generated_Document__c(
-                    Template__c = this.templateId,
                     Status__c = 'QUEUED',
                     RequestJSON__c = requestJSON,
                     RequestHash__c = envelope.requestHash,
@@ -117,6 +242,13 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                     Priority__c = 0, // Default priority
                     Attempts__c = 0  // Start with 0 attempts
                 );
+
+                // Set Template__c or Composite_Document__c based on mode
+                if (isComposite) {
+                    doc.Composite_Document__c = this.compositeDocId;
+                } else {
+                    doc.Template__c = this.templateId;
+                }
 
                 // Set parent lookups based on record type
                 setParentLookup(doc, recordId, envelope.parents);
@@ -127,7 +259,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
             } catch (Exception e) {
                 // Log error but continue processing other records
                 failureCount++;
-                String errorMsg = 'Error processing record ' + recordId + ': ' + e.getMessage();
+                String context = isComposite ? 'composite ' + compositeDocId : 'template ' + templateId;
+                String errorMsg = 'Error processing ' + context + ' for record ' + recordId + ': ' + e.getMessage();
                 errors.add(errorMsg);
                 System.debug(LoggingLevel.ERROR, errorMsg);
             }
@@ -163,12 +296,22 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
 
     /**
      * Finish method - logs completion statistics
+     * Supports both template and composite modes
      * @param bc BatchableContext
      */
     public void finish(Database.BatchableContext bc) {
         System.debug('========================================');
         System.debug('BatchDocgenEnqueue completed');
-        System.debug('Template: ' + template.Name + ' (' + templateId + ')');
+
+        if (isComposite) {
+            System.debug('Mode: Composite Document');
+            System.debug('Composite: ' + composite.Name + ' (' + compositeDocId + ')');
+            System.debug('Strategy: ' + composite.Template_Strategy__c);
+        } else {
+            System.debug('Mode: Single Template');
+            System.debug('Template: ' + template.Name + ' (' + templateId + ')');
+        }
+
         System.debug('Output Format: ' + outputFormat);
         System.debug('Records Processed: ' + (successCount + failureCount));
         System.debug('Successes: ' + successCount);
@@ -184,14 +327,24 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         System.debug('========================================');
 
         // Query actual count of queued documents for verification
-        Integer queuedCount = [
-            SELECT COUNT()
-            FROM Generated_Document__c
-            WHERE Template__c = :templateId
-            AND Status__c = 'QUEUED'
-        ];
-
-        System.debug('Total QUEUED documents for this template: ' + queuedCount);
+        Integer queuedCount;
+        if (isComposite) {
+            queuedCount = [
+                SELECT COUNT()
+                FROM Generated_Document__c
+                WHERE Composite_Document__c = :compositeDocId
+                AND Status__c = 'QUEUED'
+            ];
+            System.debug('Total QUEUED documents for this composite: ' + queuedCount);
+        } else {
+            queuedCount = [
+                SELECT COUNT()
+                FROM Generated_Document__c
+                WHERE Template__c = :templateId
+                AND Status__c = 'QUEUED'
+            ];
+            System.debug('Total QUEUED documents for this template: ' + queuedCount);
+        }
     }
 
     /**
@@ -230,6 +383,47 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                 }
             }
         }
+    }
+
+    /**
+     * Build recordIds map for composite document generation
+     * Merges additionalRecordIds with current batch recordId
+     * @param recordId Current batch record ID
+     * @return Map<String, Id> with all recordIds for this composite generation
+     */
+    private Map<String, Id> buildCompositeRecordIdsMap(Id recordId) {
+        Map<String, Id> recordIdsMap = new Map<String, Id>();
+
+        // Start with additional static IDs (if provided)
+        if (additionalRecordIds != null && !additionalRecordIds.isEmpty()) {
+            recordIdsMap.putAll(additionalRecordIds);
+        }
+
+        // Add the current batch recordId with its field name
+        recordIdsMap.put(recordIdFieldName, recordId);
+
+        return recordIdsMap;
+    }
+
+    /**
+     * Truncate JSON string if it exceeds RequestJSON__c field limit (131KB)
+     * @param json JSON string to truncate
+     * @return Truncated JSON with [TRUNCATED] marker if necessary
+     */
+    private String truncateIfNeeded(String json) {
+        final Integer MAX_SIZE = 131072; // 131KB in bytes (RequestJSON__c field limit)
+
+        if (String.isBlank(json)) {
+            return json;
+        }
+
+        if (json.length() > MAX_SIZE) {
+            String truncatedMarker = '[TRUNCATED]';
+            Integer truncateAt = MAX_SIZE - truncatedMarker.length();
+            return json.substring(0, truncateAt) + truncatedMarker;
+        }
+
+        return json;
     }
 
     /**
