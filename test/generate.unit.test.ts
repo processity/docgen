@@ -459,7 +459,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       const body = JSON.parse(response.body);
       expect(body.error).toBe('Bad Gateway');
       expect(body.message).toContain('Salesforce API error');
-    }, 15000); // Increased timeout for retry logic (4 retries with backoff: 1s + 2s + 4s + overhead)
+    }, 30000); // Increased timeout for retry logic (4 retries with backoff: 1s + 2s + 4s + overhead, + extra buffer for test suite interference)
 
     // NOTE: LibreOffice conversion failure test omitted due to test infrastructure limitations
     // The error handling code exists in generate.ts (lines 341-343) and correctly returns 502,

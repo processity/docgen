@@ -53,7 +53,8 @@ private class CompositeDocumentTest {
         // Given: Composite with "Own Template" strategy but no template ID
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Test composite without template ID',
-            Template_Strategy__c = 'Own Template'
+            Template_Strategy__c = 'Own Template',
+            IsActive__c = true
             // TemplateContentVersionId__c is intentionally blank
         );
 
@@ -83,7 +84,8 @@ private class CompositeDocumentTest {
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Test composite with forbidden template ID',
             Template_Strategy__c = 'Concatenate Templates',
-            TemplateContentVersionId__c = '0681e000000000AAA' // Should be blank
+            TemplateContentVersionId__c = '0681e000000000AAA', // Should be blank
+            IsActive__c = true
         );
 
         // When: Attempt to insert
