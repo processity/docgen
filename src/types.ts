@@ -173,6 +173,19 @@ export interface MergeOptions {
 }
 
 /**
+ * Template section for concatenation (T-23)
+ * Represents a single DOCX document that will be merged into a composite document
+ */
+export interface TemplateSection {
+  /** DOCX buffer to be included in concatenation */
+  buffer: Buffer;
+  /** Sequence number for ordering (lower numbers come first) */
+  sequence: number;
+  /** Namespace identifier for this section (e.g., "Account", "Terms") */
+  namespace: string;
+}
+
+/**
  * Salesforce ContentVersion metadata
  */
 export interface ContentVersionMetadata {
