@@ -162,6 +162,51 @@
         <readable>true</readable>
     </fieldPermissions>
 
+    <!-- Field Permissions for Composite_Document__c -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.Description__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.IsActive__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.PrimaryParent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.ReturnDocxToBrowser__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.StoreMergedDocx__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document__c.TemplateContentVersionId__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+
+    <!-- Field Permissions for Composite_Document_Template__c -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document_Template__c.IsActive__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document_Template__c.Unique_Key__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
 
     <!-- External Credential Principal Access -->
     <externalCredentialPrincipalAccesses>
@@ -179,9 +224,19 @@
         <visible>true</visible>
     </applicationVisibilities>
 
+    <!-- Apex Class Access -->
+    <classAccesses>
+        <apexClass>CompositeDocumentController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+
     <!-- Custom Tab Visibility -->
     <tabSettings>
         <tab>Docgen_Template__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Composite_Document__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
     <tabSettings>
