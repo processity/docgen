@@ -342,6 +342,10 @@ export class PollerService {
       const templateService = new TemplateService(sfApi);
 
       // Fetch template
+      // Note: Poller only supports single-template documents (composite documents handled by interactive route)
+      if (!request.templateId) {
+        throw new Error('templateId is required for batch processing (composite documents not supported in poller yet)');
+      }
       log.debug({ templateId: request.templateId }, 'Fetching template');
       const templateBuffer = await templateService.getTemplate(
         request.templateId,
@@ -412,7 +416,7 @@ export class PollerService {
       // Track success metrics
       const duration = Date.now() - startTime;
       trackMetric('docgen_duration_ms', duration, {
-        templateId: request.templateId,
+        templateId: request.templateId!, // Already validated above
         outputFormat: request.outputFormat,
         mode: 'batch',
         correlationId: doc.CorrelationId__c,
@@ -447,7 +451,7 @@ export class PollerService {
       // Track failure metrics
       trackMetric('docgen_failures_total', 1, {
         reason: failureReason,
-        templateId: request.templateId,
+        templateId: request.templateId || 'unknown',
         outputFormat: request.outputFormat,
         mode: 'batch',
         correlationId: doc.CorrelationId__c,

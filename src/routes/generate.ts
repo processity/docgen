@@ -1,10 +1,10 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastify';
-import type { DocgenRequest, DocgenResponse, FileUploadResult } from '../types';
+import type { DocgenRequest, DocgenResponse, FileUploadResult, TemplateSection } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
 import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
-import { mergeTemplate } from '../templates/merge';
+import { mergeTemplate, concatenateDocx } from '../templates';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { loadConfig } from '../config';
@@ -19,11 +19,12 @@ declare module 'fastify' {
 
 /**
  * Fastify JSON Schema for POST /generate request validation
+ * Updated for T-24: Composite Documents support
  */
 const docgenRequestSchema = {
   type: 'object',
   required: [
-    'templateId',
+    // templateId is conditionally required (validated in handler)
     'outputFileName',
     'outputFormat',
     'locale',
@@ -32,10 +33,44 @@ const docgenRequestSchema = {
     'data',
   ],
   properties: {
+    // Single-template field (backward compatible)
     templateId: {
       type: 'string',
-      description: 'ContentVersionId of the template DOCX file',
+      description: 'ContentVersionId of the template DOCX file (required for single-template OR composite with Own Template strategy)',
     },
+    // Composite document fields (T-24)
+    compositeDocumentId: {
+      type: 'string',
+      description: 'ID of Composite_Document__c record (indicates composite generation)',
+    },
+    templateStrategy: {
+      type: 'string',
+      enum: ['Own Template', 'Concatenate Templates'],
+      description: 'Strategy for composite document generation',
+    },
+    templates: {
+      type: 'array',
+      description: 'Template references for Concatenate Templates strategy',
+      items: {
+        type: 'object',
+        required: ['templateId', 'namespace', 'sequence'],
+        properties: {
+          templateId: {
+            type: 'string',
+            description: 'ContentVersionId of the template',
+          },
+          namespace: {
+            type: 'string',
+            description: 'Data key in the data object (e.g., "Account", "Terms")',
+          },
+          sequence: {
+            type: 'number',
+            description: 'Ordering sequence (lower numbers first)',
+          },
+        },
+      },
+    },
+    // Common fields
     outputFileName: {
       type: 'string',
       description: 'Desired output file name (may contain placeholders)',
@@ -69,7 +104,7 @@ const docgenRequestSchema = {
     },
     data: {
       type: 'object',
-      description: 'Template data object with Salesforce field paths',
+      description: 'Template data object with Salesforce field paths. For composites, contains namespace keys.',
       additionalProperties: true,
     },
     parents: {
@@ -136,26 +171,143 @@ async function generateHandler(
     const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
     const templateService = new TemplateService(sfApi);
 
-    // Step 1: Fetch template from Salesforce (with caching)
-    request.log.info({ correlationId, templateId: request.body.templateId }, 'Fetching template');
-    const templateBuffer = await templateService.getTemplate(
-      request.body.templateId,
-      correlationId
-    );
+    // Detect composite vs single-template request
+    const isComposite = !!request.body.compositeDocumentId;
 
-    // Step 2: Merge template with data
-    request.log.info({ correlationId }, 'Merging template with data');
-    const mergedDocx = await mergeTemplate(
-      templateBuffer,
-      request.body.data,
-      {
-        locale: request.body.locale,
-        timezone: request.body.timezone,
-        imageAllowlist: config.imageAllowlist,
+    // Conditional validation based on document type
+    if (!isComposite) {
+      // Single-template document: require templateId
+      if (!request.body.templateId) {
+        throw new Error('templateId is required for single-template documents');
       }
-    );
+    } else {
+      // Composite document: validate strategy-specific requirements
+      if (!request.body.templateStrategy) {
+        throw new Error('templateStrategy is required for composite documents');
+      }
 
-    // Step 3: Convert to PDF if needed
+      if (request.body.templateStrategy === 'Own Template') {
+        if (!request.body.templateId) {
+          throw new Error('Own Template strategy requires templateId');
+        }
+      } else if (request.body.templateStrategy === 'Concatenate Templates') {
+        if (!request.body.templates || request.body.templates.length === 0) {
+          throw new Error('Concatenate Templates strategy requires templates array');
+        }
+      } else {
+        throw new Error('Invalid templateStrategy');
+      }
+    }
+
+    let mergedDocx: Buffer;
+
+    if (isComposite) {
+      // COMPOSITE DOCUMENT PATH
+      request.log.info(
+        {
+          correlationId,
+          compositeDocumentId: request.body.compositeDocumentId,
+          templateStrategy: request.body.templateStrategy,
+        },
+        'Processing composite document'
+      );
+
+      if (request.body.templateStrategy === 'Own Template') {
+        // Strategy 1: Single template merged with full composite data (all namespaces)
+        request.log.info({ correlationId, templateId: request.body.templateId }, 'Fetching composite template (Own Template)');
+
+        const templateBuffer = await templateService.getTemplate(
+          request.body.templateId!,
+          correlationId
+        );
+
+        request.log.info({ correlationId }, 'Merging composite template with full data');
+        mergedDocx = await mergeTemplate(
+          templateBuffer,
+          request.body.data, // Full data with all namespaces
+          {
+            locale: request.body.locale,
+            timezone: request.body.timezone,
+            imageAllowlist: config.imageAllowlist,
+          }
+        );
+      } else {
+        // Strategy 2: Concatenate Templates
+        request.log.info(
+          { correlationId, templateCount: request.body.templates!.length },
+          'Processing Concatenate Templates strategy'
+        );
+
+        // Fetch and merge each template with its namespace data
+        const sections: TemplateSection[] = [];
+
+        for (const templateRef of request.body.templates!) {
+          request.log.info(
+            {
+              correlationId,
+              templateId: templateRef.templateId,
+              namespace: templateRef.namespace,
+              sequence: templateRef.sequence,
+            },
+            'Fetching and merging template section'
+          );
+
+          // Fetch template
+          const templateBuffer = await templateService.getTemplate(
+            templateRef.templateId,
+            correlationId
+          );
+
+          // Extract namespace data
+          const namespaceData = request.body.data[templateRef.namespace];
+          if (namespaceData === undefined) {
+            throw new Error(`Missing namespace data: ${templateRef.namespace}`);
+          }
+
+          // Merge template with namespace data
+          const mergedSection = await mergeTemplate(
+            templateBuffer,
+            namespaceData,
+            {
+              locale: request.body.locale,
+              timezone: request.body.timezone,
+              imageAllowlist: config.imageAllowlist,
+            }
+          );
+
+          // Add to sections array
+          sections.push({
+            buffer: mergedSection,
+            sequence: templateRef.sequence,
+            namespace: templateRef.namespace,
+          });
+        }
+
+        // Concatenate all sections
+        request.log.info({ correlationId, sectionCount: sections.length }, 'Concatenating template sections');
+        mergedDocx = await concatenateDocx(sections, correlationId);
+      }
+    } else {
+      // SINGLE-TEMPLATE PATH (backward compatible)
+      request.log.info({ correlationId, templateId: request.body.templateId }, 'Fetching template');
+      const templateBuffer = await templateService.getTemplate(
+        request.body.templateId!,
+        correlationId
+      );
+
+      request.log.info({ correlationId }, 'Merging template with data');
+      mergedDocx = await mergeTemplate(
+        templateBuffer,
+        request.body.data,
+        {
+          locale: request.body.locale,
+          timezone: request.body.timezone,
+          imageAllowlist: config.imageAllowlist,
+        }
+      );
+    }
+
+    // Step 3: Convert to PDF if needed (same for both single and composite)
     let pdfBuffer: Buffer | null = null;
 
     if (request.body.outputFormat === 'PDF') {
@@ -205,7 +357,7 @@ async function generateHandler(
 
     // Track metrics with App Insights
     trackMetric('docgen_duration_ms', duration, {
-      templateId: request.body.templateId,
+      templateId: request.body.templateId || request.body.compositeDocumentId || 'unknown',
       outputFormat: request.body.outputFormat,
       mode: 'interactive',
       correlationId,
@@ -268,7 +420,7 @@ async function generateHandler(
     // Track failure metric with App Insights
     trackMetric('docgen_failures_total', 1, {
       reason: failureReason,
-      templateId: request.body.templateId,
+      templateId: request.body.templateId || request.body.compositeDocumentId || 'unknown',
       outputFormat: request.body.outputFormat,
       mode: 'interactive',
       correlationId,
@@ -341,7 +493,12 @@ async function generateHandler(
       if (error.message.includes('404') || error.message.includes('not found')) {
         statusCode = 404;
         errorName = 'Not Found';
-      } else if (error.message.includes('validation') || error.message.includes('invalid')) {
+      } else if (
+        error.message.includes('validation') ||
+        error.message.includes('invalid') ||
+        error.message.includes('required') ||
+        error.message.includes('requires')
+      ) {
         statusCode = 400;
         errorName = 'Bad Request';
       } else if (error.message.includes('timeout') || error.message.includes('conversion failed')) {

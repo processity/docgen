@@ -77,8 +77,25 @@ export interface DocgenOptions {
 export type DocgenParents = Record<string, string | null>;
 
 /**
+ * Template reference for composite document concatenation (T-24)
+ * Used in CONCATENATE_TEMPLATES strategy
+ */
+export interface TemplateReference {
+  /** ContentVersionId of the template */
+  templateId: string;
+  /** Namespace key in data object (e.g., "Account", "Terms") */
+  namespace: string;
+  /** Sequence number for ordering (lower numbers first) */
+  sequence: number;
+}
+
+/**
  * Document generation request
  *
+ * @property templateId - Required for single-template OR composite with Own Template strategy
+ * @property compositeDocumentId - When present, indicates composite document generation
+ * @property templateStrategy - Required for composite documents
+ * @property templates - Required for Concatenate Templates strategy
  * @property parents - Optional parent record IDs for file linking
  *   NOTE: If provided, must be an object (not null). To indicate "no parents",
  *   either omit the field entirely or provide an object with null properties.
@@ -95,9 +112,40 @@ export type DocgenParents = Record<string, string | null>;
  * // Option 3: Provide specific parent IDs
  * { templateId: "...", parents: { AccountId: "001xxx", OpportunityId: null, CaseId: null } }
  * ```
+ *
+ * @example Composite document with Own Template strategy:
+ * ```typescript
+ * {
+ *   compositeDocumentId: "a00xxx",
+ *   templateId: "068xxx",
+ *   templateStrategy: "Own Template",
+ *   data: { Account: {...}, Terms: {...} }
+ * }
+ * ```
+ *
+ * @example Composite document with Concatenate Templates strategy:
+ * ```typescript
+ * {
+ *   compositeDocumentId: "a00xxx",
+ *   templateStrategy: "Concatenate Templates",
+ *   templates: [
+ *     { templateId: "068xxx", namespace: "Account", sequence: 1 },
+ *     { templateId: "068yyy", namespace: "Terms", sequence: 2 }
+ *   ],
+ *   data: { Account: {...}, Terms: {...} }
+ * }
+ * ```
  */
 export interface DocgenRequest {
-  templateId: string;
+  // Single-template fields (backward compatible)
+  templateId?: string; // Now optional - required for single-template OR composite with Own Template
+
+  // Composite document fields (T-24)
+  compositeDocumentId?: string;
+  templateStrategy?: 'Own Template' | 'Concatenate Templates';
+  templates?: TemplateReference[]; // For CONCATENATE_TEMPLATES strategy
+
+  // Common fields
   outputFileName: string;
   outputFormat: 'PDF' | 'DOCX';
   locale: string;
