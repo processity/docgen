@@ -566,32 +566,48 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
 - `force-app/main/default/classes/DocgenEnvelopeServiceTest.cls` (modified, ~200 new lines, 7 new test methods)
 
 **Definition of Done**:
-- [ ] buildForComposite() method creates valid envelope for composite documents
-- [ ] Parent extraction works across multiple namespaces
-- [ ] RequestHash computation uses compositeDocId correctly
-- [ ] Template strategy determines whether templateId or templates array is populated
-- [ ] Options mapping from Composite_Document__c fields works
-- [ ] Envelope.TemplateRef inner class supports concatenation metadata
-- [ ] All 7 new tests pass with existing tests
-- [ ] Code coverage maintained ≥95%
+- [x] buildForComposite() method creates valid envelope for composite documents
+- [x] Parent extraction works across multiple namespaces
+- [x] RequestHash computation uses compositeDocId correctly
+- [x] Template strategy determines whether templateId or templates array is populated
+- [x] Options mapping from Composite_Document__c fields works
+- [x] Envelope.TemplateRef inner class supports concatenation metadata
+- [x] All 7 new tests pass with existing tests
+- [x] Code coverage maintained ≥95%
 
-**Timebox**: ≤2 days
+**Timebox**: ≤2 days (Completed in ~6 hours)
 
 **Progress checklist**:
-- [ ] buildForComposite() method implemented
-- [ ] extractParentIdsFromCompositeData() handles single and list namespaces
-- [ ] loadTemplateSequence() returns ordered list of templates
-- [ ] Envelope class enhanced with composite fields
-- [ ] RequestHash logic supports compositeDocId
-- [ ] generateCompositeFileName() implemented
-- [ ] All 7 test scenarios passing
+- [x] buildForComposite() method implemented
+- [x] extractParentIdsFromCompositeData() handles single and list namespaces
+- [x] loadTemplateSequence() returns ordered list of templates
+- [x] Envelope class enhanced with composite fields
+- [x] RequestHash logic supports compositeDocId
+- [x] generateCompositeFileName() implemented
+- [x] All 7 test scenarios passing
+
+**Implementation Notes**:
+- Test-Driven Development: All 7 tests written first before implementation
+- Enhanced Envelope class with 3 new fields: compositeDocumentId, templateStrategy, templates
+- Created TemplateRef inner class with templateId, namespace, and sequence fields
+- Implemented buildForComposite() with full orchestration of composite data loading
+- Hash computation includes recordIds for uniqueness: `sha256:{compositeDocId}|{outputFormat}|{recordIdsJson}|{dataJson}`
+- Parent extraction uses "first namespace wins" strategy for duplicate parent types
+- Output filename format: `Composite_{Name}_{timestamp}.{ext}`
+- All 32 tests passing (25 existing + 7 new) with 100% pass rate
+- Code coverage: 97% for DocgenEnvelopeService
+- Successfully deployed to scratch org `docgen-dev`
+
+**Artifacts committed**:
+- `force-app/main/default/classes/DocgenEnvelopeService.cls` (enhanced with ~150 new lines, total ~427 lines)
+- `force-app/main/default/classes/DocgenEnvelopeServiceTest.cls` (enhanced with ~200 new lines, total ~1549 lines)
 
 **PR checklist**:
-- [ ] Tests cover external behaviour and edge cases
-- [ ] Security & secrets handled per policy
-- [ ] Observability (logs/metrics/traces) added where relevant
-- [ ] Docs updated (README/Runbook/ADR)
-- [ ] Reviewer notes: Parent extraction logic handles both single objects and lists; verify edge cases like empty namespaces
+- [x] Tests cover external behaviour and edge cases
+- [x] Security & secrets handled per policy (no sensitive data in tests)
+- [ ] Observability (logs/metrics/traces) added where relevant (will be added in T-21/T-24)
+- [x] Docs updated (this playbook)
+- [x] Reviewer notes: Parent extraction uses first-by-sequence for duplicates; RequestHash includes recordIds for cache safety; follows existing DocgenEnvelopeService patterns
 
 ---
 
