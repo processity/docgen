@@ -36,7 +36,8 @@ private class DocgenStatusControllerTest {
         // Create test data
         Docgen_Template__c template = new Docgen_Template__c(
             Name = 'Test Template',
-            TemplateContentVersionId__c = '068000000000001AAA'
+            TemplateContentVersionId__c = '068000000000001AAA',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 

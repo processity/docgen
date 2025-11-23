@@ -19,7 +19,8 @@ private class CompositeDocumentControllerTest {
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
             TemplateContentVersionId__c = '068000000000001',
             StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false
+            ReturnDocxToBrowser__c = false,
+            ReturnMultipleRecords__c = false
         ));
 
         templates.add(new Docgen_Template__c(
@@ -29,7 +30,8 @@ private class CompositeDocumentControllerTest {
             SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId',
             TemplateContentVersionId__c = '068000000000002',
             StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false
+            ReturnDocxToBrowser__c = false,
+            ReturnMultipleRecords__c = false
         ));
 
         insert templates;

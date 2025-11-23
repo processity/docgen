@@ -20,7 +20,8 @@ private class GeneratedDocumentTest {
         Docgen_Template__c template = new Docgen_Template__c(
             Name = 'Test Template',
             TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL'
+            DataSource__c = 'SOQL',
+            ReturnMultipleRecords__c = false
         );
         insert template;
         return template.Id;
@@ -395,7 +396,8 @@ private class GeneratedDocumentTest {
         Docgen_Template__c template = new Docgen_Template__c(
             Name = 'Test Template',
             TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL'
+            DataSource__c = 'SOQL',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
