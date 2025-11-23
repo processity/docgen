@@ -127,7 +127,8 @@ private class DocgenControllerTest {
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -139,7 +140,8 @@ private class DocgenControllerTest {
             SOQL__c = 'SELECT Id, Name, Email FROM Contact WHERE Id = :recordId',
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
         insert contactTemplate;
 
@@ -151,7 +153,8 @@ private class DocgenControllerTest {
             SOQL__c = 'SELECT Id, Name, Company FROM Lead WHERE Id = :recordId',
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Lead'
+            PrimaryParent__c = 'Lead',
+            ReturnMultipleRecords__c = false
         );
         insert leadTemplate;
 
@@ -429,7 +432,8 @@ private class DocgenControllerTest {
         // Given
         Docgen_Template__c template = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
-                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
+                   ReturnMultipleRecords__c
             FROM Docgen_Template__c
             LIMIT 1
         ];

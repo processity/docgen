@@ -23,7 +23,8 @@ private class BatchDocgenEnqueueTest {
             SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -482,6 +483,7 @@ private class BatchDocgenEnqueueTest {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
 
         // Create junction records for 2 namespaces
+        // Note: Using 'Terms' as second namespace (not a standard SObject) to avoid potential conflicts
         DocgenTestDataFactory.createCompositeDocumentTemplate(
             composite.Id,
             template.Id,
@@ -491,7 +493,7 @@ private class BatchDocgenEnqueueTest {
         DocgenTestDataFactory.createCompositeDocumentTemplate(
             composite.Id,
             template.Id,
-            'Contact',
+            'Terms',
             20
         );
 

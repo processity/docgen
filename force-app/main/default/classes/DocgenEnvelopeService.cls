@@ -353,30 +353,50 @@ public with sharing class DocgenEnvelopeService {
             if (namespaceValue instanceof Map<String, Object>) {
                 Map<String, Object> namespaceMap = (Map<String, Object>) namespaceValue;
 
-                // Look for the nested object data (e.g., "Account" key within "Account" namespace)
-                for (String key : namespaceMap.keySet()) {
-                    Object dataValue = namespaceMap.get(key);
+                // Check if this is already unwrapped (has Id directly) or needs unwrapping
+                if (namespaceMap.containsKey('Id')) {
+                    // Already unwrapped - process directly
+                    String objectId = (String) namespaceMap.get('Id');
+                    if (objectId != null && objectId != '') {
+                        String parentKey = namespace + 'Id';
+                        if (!parents.containsKey(parentKey)) {
+                            parents.put(parentKey, objectId);
+                        }
+                    }
 
-                    if (dataValue instanceof Map<String, Object>) {
-                        Map<String, Object> objectData = (Map<String, Object>) dataValue;
-
-                        // Extract object ID (use object type as key)
-                        String objectId = (String) objectData.get('Id');
-                        if (objectId != null && objectId != '') {
-                            String parentKey = key + 'Id';
-                            // First namespace wins - only add if not already present
-                            if (!parents.containsKey(parentKey)) {
-                                parents.put(parentKey, objectId);
+                    // Extract parent relationship fields
+                    for (String parentField : potentialParentFields) {
+                        if (namespaceMap.containsKey(parentField)) {
+                            String parentId = (String) namespaceMap.get(parentField);
+                            if (parentId != null && parentId != '' && !parents.containsKey(parentField)) {
+                                parents.put(parentField, parentId);
                             }
                         }
+                    }
+                } else {
+                    // Not unwrapped - look for nested object data (legacy format)
+                    for (String key : namespaceMap.keySet()) {
+                        Object dataValue = namespaceMap.get(key);
 
-                        // Extract parent relationship fields
-                        for (String parentField : potentialParentFields) {
-                            if (objectData.containsKey(parentField)) {
-                                String parentId = (String) objectData.get(parentField);
-                                // Only add non-null parent IDs, first occurrence wins
-                                if (parentId != null && parentId != '' && !parents.containsKey(parentField)) {
-                                    parents.put(parentField, parentId);
+                        if (dataValue instanceof Map<String, Object>) {
+                            Map<String, Object> objectData = (Map<String, Object>) dataValue;
+
+                            // Extract object ID (use object type as key)
+                            String objectId = (String) objectData.get('Id');
+                            if (objectId != null && objectId != '') {
+                                String parentKey = key + 'Id';
+                                if (!parents.containsKey(parentKey)) {
+                                    parents.put(parentKey, objectId);
+                                }
+                            }
+
+                            // Extract parent relationship fields
+                            for (String parentField : potentialParentFields) {
+                                if (objectData.containsKey(parentField)) {
+                                    String parentId = (String) objectData.get(parentField);
+                                    if (parentId != null && parentId != '' && !parents.containsKey(parentField)) {
+                                        parents.put(parentField, parentId);
+                                    }
                                 }
                             }
                         }

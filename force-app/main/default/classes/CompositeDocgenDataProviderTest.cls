@@ -97,10 +97,10 @@ private class CompositeDocgenDataProviderTest {
         Assert.isTrue(compositeData.containsKey('Terms'), 'Should contain Terms namespace');
 
         // Verify Account data structure
+        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.isNotNull(accountData, 'Account namespace data should not be null');
-        Map<String, Object> accountRecord = (Map<String, Object>) accountData.get('Account');
-        Assert.areEqual('Acme Ltd', accountRecord.get('Name'), 'Should contain Account Name');
+        Assert.areEqual('Acme Ltd', accountData.get('Name'), 'Should contain Account Name');
     }
 
     /**
@@ -158,11 +158,11 @@ private class CompositeDocgenDataProviderTest {
         Test.stopTest();
 
         // Then: Child relationships should be preserved
+        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
-        Map<String, Object> accountRecord = (Map<String, Object>) accountData.get('Account');
-        Assert.isTrue(accountRecord.containsKey('Contacts'), 'Should contain Contacts child relationship');
+        Assert.isTrue(accountData.containsKey('Contacts'), 'Should contain Contacts child relationship');
 
-        List<Object> contactsList = (List<Object>) accountRecord.get('Contacts');
+        List<Object> contactsList = (List<Object>) accountData.get('Contacts');
         Assert.areEqual(2, contactsList.size(), 'Should have 2 contacts');
     }
 
@@ -516,10 +516,10 @@ private class CompositeDocgenDataProviderTest {
         Assert.isTrue(compositeData.containsKey('Account'), 'Should contain Account namespace');
 
         // Verify Account data was populated (proves accountId was extracted)
+        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
-        Map<String, Object> accountRecord = (Map<String, Object>) accountData.get('Account');
-        Assert.areEqual('Test Account', accountRecord.get('Name'), 'Account data should be populated');
-        Assert.areEqual('London', accountRecord.get('BillingCity'), 'Account city should be populated');
+        Assert.areEqual('Test Account', accountData.get('Name'), 'Account data should be populated');
+        Assert.areEqual('London', accountData.get('BillingCity'), 'Account city should be populated');
     }
 
     /**
@@ -573,10 +573,10 @@ private class CompositeDocgenDataProviderTest {
         Test.stopTest();
 
         // Then: Formatted fields should use German formatting
+        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
-        Map<String, Object> accountRecord = (Map<String, Object>) accountData.get('Account');
 
-        String formattedRevenue = (String) accountRecord.get('AnnualRevenue__formatted');
+        String formattedRevenue = (String) accountData.get('AnnualRevenue__formatted');
         Assert.isNotNull(formattedRevenue, 'Should have formatted revenue');
         // German format uses € symbol and period/comma separators
         // Just verify it exists - exact format depends on StandardSOQLProvider implementation

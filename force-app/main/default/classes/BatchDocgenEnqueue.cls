@@ -86,7 +86,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         // Load template (will throw QueryException if not found)
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
-                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
+                   ReturnMultipleRecords__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
