@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Composite_Document__c</fullName>
+    <deleteConstraint>Restrict</deleteConstraint>
+    <description>Reference to the parent Composite Document configuration.</description>
+    <externalId>false</externalId>
+    <label>Composite Document</label>
+    <referenceTo>Composite_Document__c</referenceTo>
+    <relationshipLabel>Composite Document Templates</relationshipLabel>
+    <relationshipName>Composite_Document_Templates</relationshipName>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

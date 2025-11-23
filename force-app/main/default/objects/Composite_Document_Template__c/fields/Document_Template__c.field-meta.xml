@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Document_Template__c</fullName>
+    <deleteConstraint>Restrict</deleteConstraint>
+    <description>Reference to the Docgen Template used for this section of the composite document.</description>
+    <externalId>false</externalId>
+    <label>Document Template</label>
+    <referenceTo>Docgen_Template__c</referenceTo>
+    <relationshipLabel>Composite Document Templates</relationshipLabel>
+    <relationshipName>Composite_Document_Templates</relationshipName>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

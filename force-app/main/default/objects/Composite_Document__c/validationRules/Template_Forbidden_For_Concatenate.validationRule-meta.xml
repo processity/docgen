@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Template_Forbidden_For_Concatenate</fullName>
+    <active>true</active>
+    <description>When Template Strategy is 'Concatenate Templates', the TemplateContentVersionId field must be blank.</description>
+    <errorConditionFormula>AND(
+    ISPICKVAL(Template_Strategy__c, &quot;Concatenate Templates&quot;),
+    NOT(ISBLANK(TemplateContentVersionId__c))
+)</errorConditionFormula>
+    <errorDisplayField>TemplateContentVersionId__c</errorDisplayField>
+    <errorMessage>Template ContentVersion ID must be blank when strategy is 'Concatenate Templates'.</errorMessage>
+</ValidationRule>
