@@ -75,7 +75,8 @@ private class DocgenEnvelopeServiceTest {
             SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = true,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -125,7 +126,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000002AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -165,7 +167,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000003AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -238,7 +241,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Custom Provider Template',
             TemplateContentVersionId__c = '068000000000004AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider'
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -270,7 +274,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Invalid Source',
             TemplateContentVersionId__c = '068000000000005AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -304,7 +309,8 @@ private class DocgenEnvelopeServiceTest {
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = true,
-            ReturnDocxToBrowser__c = true
+            ReturnDocxToBrowser__c = true,
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -342,7 +348,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000007AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -384,7 +391,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000008AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -419,7 +427,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000009AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -461,7 +470,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000010AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -512,7 +522,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000011AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -570,7 +581,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000012AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -606,7 +618,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Failing Provider Template',
             TemplateContentVersionId__c = '068000000000013AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'FailingCustomProvider'
+            ClassName__c = 'FailingCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -641,7 +654,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Non-Existent Provider Template',
             TemplateContentVersionId__c = '068000000000014AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'NonExistentProvider'
+            ClassName__c = 'NonExistentProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -690,7 +704,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000015AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName, Email, Description FROM Contacts) FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -741,7 +756,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000016AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -796,7 +812,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000017AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -839,7 +856,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000018AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, Company, Email FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead'
+            PrimaryParent__c = 'Lead',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -884,7 +902,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000019AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, AccountId, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -930,7 +949,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000020AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c contactTemplate = new Docgen_Template__c(
@@ -938,7 +958,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000021AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, LastName, AccountId FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c leadTemplate = new Docgen_Template__c(
@@ -946,7 +967,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000022AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, LastName, Company FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead'
+            PrimaryParent__c = 'Lead',
+            ReturnMultipleRecords__c = false
         );
 
         insert new List<Docgen_Template__c>{ accTemplate, contactTemplate, leadTemplate };
@@ -993,7 +1015,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000023AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -1040,14 +1063,16 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Account Summary',
             TemplateContentVersionId__c = '068000000000024AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c termsTemplate = new Docgen_Template__c(
             Name = 'Terms and Conditions',
             TemplateContentVersionId__c = '068000000000025AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider'
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert new List<Docgen_Template__c>{ accountTemplate, termsTemplate };
 
@@ -1119,7 +1144,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Account Data Provider',
             TemplateContentVersionId__c = '068000000000026AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert accountTemplate;
 
@@ -1172,21 +1198,24 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Section 1',
             TemplateContentVersionId__c = '068000000000028AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c template2 = new Docgen_Template__c(
             Name = 'Section 2',
             TemplateContentVersionId__c = '068000000000029AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c template3 = new Docgen_Template__c(
             Name = 'Section 3',
             TemplateContentVersionId__c = '068000000000030AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert new List<Docgen_Template__c>{ template1, template2, template3 };
 
@@ -1275,14 +1304,16 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Account Template',
             TemplateContentVersionId__c = '068000000000031AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c contactTemplate = new Docgen_Template__c(
             Name = 'Contact Template',
             TemplateContentVersionId__c = '068000000000032AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId FROM Contact WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId FROM Contact WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert new List<Docgen_Template__c>{ accountTemplate, contactTemplate };
 
@@ -1346,7 +1377,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Hash Template',
             TemplateContentVersionId__c = '068000000000033AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -1435,7 +1467,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Options Template',
             TemplateContentVersionId__c = '068000000000036AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -1488,7 +1521,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Filename Template',
             TemplateContentVersionId__c = '068000000000038AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 

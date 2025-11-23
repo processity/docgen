@@ -44,7 +44,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Account Summary',
             TemplateContentVersionId__c = '068000000000001AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert accountTemplate;
 
@@ -53,7 +54,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Terms and Conditions',
             TemplateContentVersionId__c = '068000000000002AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider'
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert termsTemplate;
 
@@ -129,7 +131,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Account with Contacts',
             TemplateContentVersionId__c = '068000000000003AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, (SELECT Id, LastName FROM Contacts) FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert accountTemplate;
 
@@ -184,7 +187,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Template 1',
             TemplateContentVersionId__c = '068000000000004AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template1;
 
@@ -192,7 +196,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Template 2',
             TemplateContentVersionId__c = '068000000000005AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template2;
 
@@ -289,7 +294,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Active Template',
             TemplateContentVersionId__c = '068000000000006AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert activeTemplate;
 
@@ -297,7 +303,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Inactive Template',
             TemplateContentVersionId__c = '068000000000007AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, BillingCity FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, BillingCity FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert inactiveTemplate;
 
@@ -361,19 +368,22 @@ private class CompositeDocgenDataProviderTest {
                 Name = 'First (Seq 10)',
                 TemplateContentVersionId__c = '068000000000008AAA',
                 DataSource__c = 'Custom',
-                ClassName__c = 'MockCustomProvider'
+                ClassName__c = 'MockCustomProvider',
+                ReturnMultipleRecords__c = false
             ),
             new Docgen_Template__c(
                 Name = 'Second (Seq 20)',
                 TemplateContentVersionId__c = '068000000000009AAA',
                 DataSource__c = 'Custom',
-                ClassName__c = 'MockCustomProvider'
+                ClassName__c = 'MockCustomProvider',
+                ReturnMultipleRecords__c = false
             ),
             new Docgen_Template__c(
                 Name = 'Third (Seq 30)',
                 TemplateContentVersionId__c = '068000000000010AAA',
                 DataSource__c = 'Custom',
-                ClassName__c = 'MockCustomProvider'
+                ClassName__c = 'MockCustomProvider',
+                ReturnMultipleRecords__c = false
             )
         };
         insert templates;
@@ -454,7 +464,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Opportunity Template',
             TemplateContentVersionId__c = '068000000000011AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AccountId FROM Opportunity WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, AccountId FROM Opportunity WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert oppTemplate;
 
@@ -463,7 +474,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Account Template',
             TemplateContentVersionId__c = '068000000000012AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, BillingCity FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert accTemplate;
 
@@ -534,7 +546,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Account Template',
             TemplateContentVersionId__c = '068000000000013AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -590,7 +603,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Invalid Provider Template',
             TemplateContentVersionId__c = '068000000000014AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'NonExistentProviderClass'  // This class doesn't exist
+            ClassName__c = 'NonExistentProviderClass',  // This class doesn't exist
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -646,7 +660,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'SOQL Template',
             TemplateContentVersionId__c = '068000000000015AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert soqlTemplate;
 
@@ -655,7 +670,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Custom Template',
             TemplateContentVersionId__c = '068000000000016AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider'
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert customTemplate;
 
@@ -717,7 +733,8 @@ private class CompositeDocgenDataProviderTest {
             Name = 'Test Template',
             TemplateContentVersionId__c = '068000000000017AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
