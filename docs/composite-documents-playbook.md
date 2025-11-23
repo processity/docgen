@@ -465,28 +465,28 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
 - `force-app/main/default/classes/CompositeDocgenException.cls-meta.xml`
 
 **Definition of Done**:
-- [ ] CompositeDocgenDataProvider implements DocgenDataProvider interface
-- [ ] buildCompositeData() static method orchestrates multiple providers
-- [ ] Namespace collision detection prevents duplicate keys
-- [ ] Sequence ordering enforced (templates execute in correct order)
-- [ ] Variable pool enables data sharing between templates
-- [ ] Locale/timezone propagated to all child providers
-- [ ] Mix of SOQL and Custom providers supported
-- [ ] 11 test methods pass with 100% code coverage
-- [ ] Exception handling for missing providers/templates
-- [ ] Inactive junction records properly filtered
+- [x] CompositeDocgenDataProvider implements DocgenDataProvider interface
+- [x] buildCompositeData() static method orchestrates multiple providers
+- [x] Namespace collision detection prevents duplicate keys
+- [x] Sequence ordering enforced (templates execute in correct order)
+- [x] Variable pool enables data sharing between templates
+- [x] Locale/timezone propagated to all child providers
+- [x] Mix of SOQL and Custom providers supported
+- [x] 11 test methods pass with 100% code coverage
+- [x] Exception handling for missing providers/templates
+- [x] Inactive junction records properly filtered
 
 **Timebox**: ≤2 days
 
 **Progress checklist**:
-- [ ] CompositeDocgenDataProvider.cls created with buildCompositeData() method
-- [ ] Junction record querying with ORDER BY Sequence__c
-- [ ] Namespace collision validation implemented
-- [ ] Variable pool extraction logic working
-- [ ] Provider factory pattern (SOQL vs Custom)
-- [ ] CompositeDocgenException created
-- [ ] All 11 test methods written and passing
-- [ ] Code coverage ≥95% on new classes
+- [x] CompositeDocgenDataProvider.cls created with buildCompositeData() method
+- [x] Junction record querying with ORDER BY Sequence__c
+- [x] Namespace collision validation implemented
+- [x] Variable pool extraction logic working (with smart object type matching from SOQL)
+- [x] Provider factory pattern (SOQL vs Custom)
+- [x] CompositeDocgenException created
+- [x] All 11 test methods written and passing
+- [x] Code coverage 100% on CompositeDocgenDataProvider and CompositeDocgenException
 
 **PR checklist**:
 - [ ] Tests cover external behaviour and edge cases
