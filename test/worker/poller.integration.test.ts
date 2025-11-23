@@ -33,6 +33,7 @@ For CI/CD, set SFDX_AUTH_URL as an environment variable or secret.
 describeIntegration('Poller Service - Integration Tests with Real Salesforce', () => {
   let sfApi: SalesforceApi;
   let testTemplateId: string;
+  let testTemplateRecordId: string; // Docgen_Template__c record ID
   let generatedDocumentId: string;
 
   beforeAll(async () => {
@@ -61,6 +62,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
     const docxTemplate = await createTestDocxBuffer();
 
     try {
+      // Upload ContentVersion first
       const uploadResponse = await sfApi.post(
         '/services/data/v59.0/sobjects/ContentVersion',
         {
@@ -71,6 +73,22 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
       );
       testTemplateId = uploadResponse.id;
       console.log(`Test template uploaded with ID: ${testTemplateId}`);
+
+      // Create Docgen_Template__c record that references the ContentVersion
+      const templateRecordResponse = await sfApi.post(
+        '/services/data/v59.0/sobjects/Docgen_Template__c',
+        {
+          Name: 'Test Template for Poller',
+          PrimaryParent__c: 'Account',
+          DataSource__c: 'SOQL',
+          SOQL__c: 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+          TemplateContentVersionId__c: testTemplateId,
+          StoreMergedDocx__c: false,
+          ReturnDocxToBrowser__c: true,
+        }
+      );
+      testTemplateRecordId = templateRecordResponse.id;
+      console.log(`Test Docgen_Template__c created with ID: ${testTemplateRecordId}`);
     } catch (error) {
       console.error('Failed to upload test template:', error);
       throw error;
@@ -87,6 +105,18 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         console.log(`Cleaned up Generated_Document__c: ${generatedDocumentId}`);
       } catch (error) {
         console.warn('Failed to clean up Generated_Document__c:', error);
+      }
+    }
+
+    // Delete Docgen_Template__c record first (before ContentDocument, due to reference)
+    if (testTemplateRecordId) {
+      try {
+        await sfApi.delete(
+          `/services/data/v59.0/sobjects/Docgen_Template__c/${testTemplateRecordId}`
+        );
+        console.log(`Cleaned up Docgen_Template__c: ${testTemplateRecordId}`);
+      } catch (error) {
+        console.warn('Failed to clean up Docgen_Template__c:', error);
       }
     }
 
@@ -130,6 +160,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
@@ -225,6 +256,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-inv-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
@@ -322,6 +354,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-lock-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
