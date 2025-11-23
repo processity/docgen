@@ -204,7 +204,8 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
             if (fromMatcher.find()) {
                 String objectType = fromMatcher.group(1);
                 // Try to find matching variable (e.g., "account" -> "accountId")
-                String variableKey = objectType + 'id';
+                // Note: objectType is lowercase from the regex match, so we need "accountId" format
+                String variableKey = objectType + 'Id';
 
                 if (variablePool.containsKey(variableKey)) {
                     return variablePool.get(variableKey);
