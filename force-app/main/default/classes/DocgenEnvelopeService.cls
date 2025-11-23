@@ -104,12 +104,48 @@ public with sharing class DocgenEnvelopeService {
 
     /**
      * Convert envelope to JSON string for storage
+     * Excludes null composite fields to maintain backward compatibility with backend schema
      *
      * @param env Envelope to serialize
      * @return JSON string
      */
     public static String toJSON(Envelope env) {
-        return JSON.serialize(env);
+        Map<String, Object> jsonMap = new Map<String, Object>();
+
+        // Always include these fields (even if null for some)
+        jsonMap.put('outputFileName', env.outputFileName);
+        jsonMap.put('outputFormat', env.outputFormat);
+        jsonMap.put('locale', env.locale);
+        jsonMap.put('timezone', env.timezone);
+        jsonMap.put('options', env.options);
+        jsonMap.put('data', env.data);
+
+        // Include optional fields only if they have values
+        if (env.templateId != null) {
+            jsonMap.put('templateId', env.templateId);
+        }
+        if (env.parents != null && !env.parents.isEmpty()) {
+            jsonMap.put('parents', env.parents);
+        }
+        if (env.requestHash != null) {
+            jsonMap.put('requestHash', env.requestHash);
+        }
+        if (env.generatedDocumentId != null) {
+            jsonMap.put('generatedDocumentId', env.generatedDocumentId);
+        }
+
+        // Include composite fields only if they have values (avoid null in JSON for enum validation)
+        if (env.compositeDocumentId != null) {
+            jsonMap.put('compositeDocumentId', env.compositeDocumentId);
+        }
+        if (env.templateStrategy != null) {
+            jsonMap.put('templateStrategy', env.templateStrategy);
+        }
+        if (env.templates != null && !env.templates.isEmpty()) {
+            jsonMap.put('templates', env.templates);
+        }
+
+        return JSON.serialize(jsonMap);
     }
 
     /**

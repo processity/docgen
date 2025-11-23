@@ -327,7 +327,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Composite_Document__c = compositeDocId;
         doc.RequestHash__c = envelope.requestHash;
-        doc.RequestJSON__c = JSON.serialize(envelope);
+        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
         doc.Status__c = 'PROCESSING';
         doc.OutputFormat__c = envelope.outputFormat;
         doc.Attempts__c = 0;
@@ -404,7 +404,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Template__c = templateId;
         doc.RequestHash__c = envelope.requestHash;
-        doc.RequestJSON__c = JSON.serialize(envelope);
+        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
         doc.Status__c = 'PROCESSING';
         doc.OutputFormat__c = envelope.outputFormat;
         doc.Attempts__c = 0;
@@ -434,7 +434,7 @@ public with sharing class DocgenController {
         req.setMethod('POST');
         req.setHeader('Content-Type', 'application/json');
         req.setHeader('Accept', 'application/json');
-        req.setBody(JSON.serialize(envelope));
+        req.setBody(DocgenEnvelopeService.toJSON(envelope));
         req.setTimeout(120000); // 2 minutes timeout
 
         Http http = new Http();
