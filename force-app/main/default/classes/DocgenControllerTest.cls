@@ -881,4 +881,345 @@ private class DocgenControllerTest {
         Assert.isFalse(DocgenObjectConfigService.isObjectSupported(''),
             'Empty string should return false');
     }
+
+    // ====================================================================================
+    // COMPOSITE DOCUMENT GENERATION TESTS (T-21)
+    // ====================================================================================
+
+    /**
+     * Mock HTTP callout for successful composite document generation
+     * Validates composite-specific envelope structure
+     */
+    private class MockCompositeDocgenSuccessCallout implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            // Verify request structure
+            Assert.areEqual('POST', req.getMethod(), 'HTTP method should be POST');
+            Assert.areEqual('callout:Docgen_Node_API/generate', req.getEndpoint(), 'Should call Named Credential endpoint');
+            Assert.isTrue(req.getHeader('Content-Type').contains('application/json'), 'Content-Type should be JSON');
+
+            // Parse and verify composite request body
+            Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(req.getBody());
+            Assert.isNotNull(body.get('compositeDocumentId'), 'Request should include compositeDocumentId');
+            Assert.isNotNull(body.get('templateStrategy'), 'Request should include templateStrategy');
+            Assert.isNotNull(body.get('requestHash'), 'Request should include requestHash');
+            Assert.isNotNull(body.get('data'), 'Request should include data');
+
+            // Verify data contains namespaces
+            Map<String, Object> data = (Map<String, Object>) body.get('data');
+            Assert.isTrue(data.size() > 0, 'Data should contain at least one namespace');
+
+            // Create successful response
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(200);
+            res.setStatus('OK');
+            res.setHeader('Content-Type', 'application/json');
+
+            Map<String, Object> responseBody = new Map<String, Object>{
+                'downloadUrl' => 'https://test.my.salesforce.com/sfc/servlet.shepherd/version/download/068YYYYYYYYYYYYYY',
+                'contentVersionId' => '068YYYYYYYYYYYYYY',
+                'correlationId' => 'composite-test-correlation-id'
+            };
+            res.setBody(JSON.serialize(responseBody));
+
+            return res;
+        }
+    }
+
+    /**
+     * Test 17: Composite Document Generation - Success Path
+     * Given: Composite with 2 templates (Account + Section1 namespaces)
+     * When: generateComposite() is called with accountId
+     * Then: Generated_Document__c created with Composite_Document__c populated, download URL returned
+     */
+    @isTest
+    static void testGenerateCompositeSuccess() {
+        // Given - Create composite scenario
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+
+        // Build recordIds JSON
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        // Set mock callout
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        String downloadUrl = DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify return value
+        Assert.isNotNull(downloadUrl, 'Download URL should be returned');
+        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Download URL should be Salesforce file URL');
+        Assert.isTrue(downloadUrl.contains('068YYYYYYYYYYYYYY'), 'Download URL should contain ContentVersionId');
+
+        // Then - Verify Generated_Document__c record created
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c, Composite_Document__c, Template__c, Account__c,
+                   RequestHash__c, OutputFileId__c, CorrelationId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :scenario.testRecordId
+        ];
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created');
+
+        Generated_Document__c doc = docs[0];
+        Assert.areEqual('SUCCEEDED', doc.Status__c, 'Status should be SUCCEEDED');
+        Assert.areEqual(scenario.compositeDoc.Id, doc.Composite_Document__c, 'Composite_Document__c should be set');
+        Assert.isNull(doc.Template__c, 'Template__c should be null for composite');
+        Assert.areEqual(scenario.testRecordId, doc.Account__c, 'Account__c lookup should be set');
+        Assert.areEqual('068YYYYYYYYYYYYYY', doc.OutputFileId__c, 'OutputFileId should be set');
+        Assert.isNotNull(doc.RequestHash__c, 'RequestHash should be set');
+        Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be set');
+    }
+
+    /**
+     * Test 18: Composite Document Generation - Idempotency
+     * Given: Same composite request made twice within 24 hours
+     * When: generateComposite() called twice
+     * Then: Second call returns cached URL without creating new record or making callout
+     */
+    @isTest
+    static void testGenerateCompositeIdempotency() {
+        // Given - Create composite scenario
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        // Set mock callout
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        // When - First call
+        Test.startTest();
+        String downloadUrl1 = DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+
+        // Second call with same parameters (should hit cache)
+        String downloadUrl2 = DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+        Test.stopTest();
+
+        // Then - Both calls return same URL
+        Assert.areEqual(downloadUrl1, downloadUrl2, 'Both calls should return same download URL');
+
+        // Only one Generated_Document__c record should exist
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c
+            FROM Generated_Document__c
+            WHERE Account__c = :scenario.testRecordId
+        ];
+        Assert.areEqual(1, docs.size(), 'Only one Generated_Document__c should be created (idempotency)');
+        Assert.areEqual('SUCCEEDED', docs[0].Status__c, 'Status should be SUCCEEDED');
+    }
+
+    /**
+     * Test 19: Composite Document Generation - HTTP Callout Structure Verification
+     * Given: Valid composite request
+     * When: generateComposite() makes HTTP callout
+     * Then: Request envelope contains compositeDocumentId, templateStrategy, and namespace data
+     */
+    @isTest
+    static void testGenerateCompositeHttpCalloutStructure() {
+        // Given - Create composite with "Own Template" strategy
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Own Template');
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        // Mock validates envelope structure
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+        Test.stopTest();
+
+        // Then - Mock HttpCalloutMock assertions validate structure
+        // (Assertions happen inside MockCompositeDocgenSuccessCallout.respond())
+    }
+
+    /**
+     * Test 20: Composite Document Generation - Composite Not Found Error
+     * Given: Invalid compositeDocId
+     * When: generateComposite() is called
+     * Then: AuraHandledException thrown, no Generated_Document__c created
+     */
+    @isTest
+    static void testGenerateCompositeNotFound() {
+        // Given - Non-existent composite ID (valid format but doesn't exist)
+        Id fakeCompositeId = '001000000000000AAA'; // Valid Id format but doesn't exist
+        String recordIds = '{"accountId":"001000000000001AAA"}';
+
+        // When/Then - Expect exception
+        Test.startTest();
+        try {
+            DocgenController.generateComposite(fakeCompositeId, recordIds, 'PDF');
+            Assert.fail('Should have thrown AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isNotNull(e.getMessage(), 'Error message should be present');
+        } catch (QueryException e) {
+            // Also acceptable - SOQL may throw QueryException for invalid ID
+            Assert.isNotNull(e.getMessage(), 'Error message should be present');
+        }
+        Test.stopTest();
+
+        // Then - No Generated_Document__c records should be created
+        List<Generated_Document__c> docs = [
+            SELECT Id
+            FROM Generated_Document__c
+        ];
+        Assert.areEqual(0, docs.size(), 'No Generated_Document__c should be created on error');
+    }
+
+    /**
+     * Test 21: Composite Document Generation - Node API Failure (500)
+     * Given: Valid composite request but Node API returns 500 error
+     * When: generateComposite() is called
+     * Then: Generated_Document__c created with FAILED status, AuraHandledException thrown
+     */
+    @isTest
+    static void testGenerateCompositeNodeApiFailure() {
+        // Given - Create composite scenario
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        // Set mock to return 500 error
+        Test.setMock(HttpCalloutMock.class, new MockDocgenServerErrorCallout());
+
+        // When/Then - Expect exception
+        Test.startTest();
+        try {
+            DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+            Assert.fail('Should have thrown AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('500'), 'Error message should mention status code');
+        }
+        Test.stopTest();
+
+        // Then - Verify Generated_Document__c record marked as FAILED
+        List<Generated_Document__c> docs = [
+            SELECT Id, Status__c, Error__c, Composite_Document__c, OutputFileId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :scenario.testRecordId
+        ];
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created');
+
+        Generated_Document__c doc = docs[0];
+        Assert.areEqual('FAILED', doc.Status__c, 'Status should be FAILED');
+        Assert.areEqual(scenario.compositeDoc.Id, doc.Composite_Document__c, 'Composite_Document__c should be set');
+        Assert.isNotNull(doc.Error__c, 'Error__c should be populated');
+        Assert.isTrue(doc.Error__c.contains('500'), 'Error message should include status code');
+        Assert.isNull(doc.OutputFileId__c, 'OutputFileId should be null on failure');
+    }
+
+    /**
+     * Test 22: Composite Document Generation - Record Creation Fields
+     * Given: Composite with PrimaryParent = Account
+     * When: generateComposite() is called
+     * Then: Generated_Document__c has Composite_Document__c lookup and Account__c parent lookup set
+     */
+    @isTest
+    static void testGenerateCompositeRecordCreation() {
+        // Given - Create composite with Account as primary parent
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Own Template');
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify record fields
+        List<Generated_Document__c> docs = [
+            SELECT Id, Composite_Document__c, Template__c, Account__c, Contact__c, Lead__c,
+                   Status__c, RequestHash__c, OutputFormat__c, RequestedBy__c
+            FROM Generated_Document__c
+            WHERE Account__c = :scenario.testRecordId
+        ];
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created');
+
+        Generated_Document__c doc = docs[0];
+
+        // Composite-specific fields
+        Assert.areEqual(scenario.compositeDoc.Id, doc.Composite_Document__c,
+            'Composite_Document__c lookup should be populated');
+        Assert.isNull(doc.Template__c,
+            'Template__c should be null (composite uses Composite_Document__c instead)');
+
+        // Parent lookup (dynamic assignment based on PrimaryParent)
+        Assert.areEqual(scenario.testRecordId, doc.Account__c,
+            'Account__c parent lookup should be set based on PrimaryParent');
+        Assert.isNull(doc.Contact__c, 'Contact__c should be null');
+        Assert.isNull(doc.Lead__c, 'Lead__c should be null');
+
+        // Standard fields
+        Assert.isNotNull(doc.RequestHash__c, 'RequestHash should be computed');
+        Assert.areEqual('PDF', doc.OutputFormat__c, 'OutputFormat should match request');
+        Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'RequestedBy should be current user');
+    }
+
+    /**
+     * Test 23: Composite Document Generation - Correlation ID Format
+     * Given: Valid composite request
+     * When: generateComposite() is called
+     * Then: CorrelationId follows UUID v4 format and is included in HTTP request
+     */
+    @isTest
+    static void testGenerateCompositeCorrelationId() {
+        // Given - Create composite scenario
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'PDF');
+        Test.stopTest();
+
+        // Then - Verify correlation ID format
+        List<Generated_Document__c> docs = [
+            SELECT Id, CorrelationId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :scenario.testRecordId
+        ];
+        Assert.areEqual(1, docs.size(), 'One Generated_Document__c should be created');
+
+        String correlationId = docs[0].CorrelationId__c;
+        Assert.isNotNull(correlationId, 'CorrelationId should be set');
+
+        // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (36 chars with hyphens)
+        Assert.areEqual(36, correlationId.length(), 'CorrelationId should be 36 characters (UUID v4)');
+        Assert.isTrue(correlationId.contains('-'), 'CorrelationId should contain hyphens (UUID format)');
+
+        // Check for hyphen positions (8-4-4-4-12 pattern)
+        Assert.areEqual('-', correlationId.substring(8, 9), 'Hyphen at position 8');
+        Assert.areEqual('-', correlationId.substring(13, 14), 'Hyphen at position 13');
+        Assert.areEqual('-', correlationId.substring(18, 19), 'Hyphen at position 18');
+        Assert.areEqual('-', correlationId.substring(23, 24), 'Hyphen at position 23');
+    }
 }
