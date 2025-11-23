@@ -20,6 +20,8 @@ export interface DocumentStatus {
   OutputFileId__c: string | null;
   LockedUntil__c: string | null;
   ScheduledRetryTime__c: string | null;
+  Template__c?: string | null;
+  Composite_Document__c?: string | null;
 }
 
 export interface WorkerStats {
@@ -83,7 +85,7 @@ export class WorkerHelper {
   async getDocumentStatus(documentId: string): Promise<DocumentStatus> {
     const query = `
       SELECT Id, Status__c, Attempts__c, Error__c, OutputFileId__c,
-             LockedUntil__c, ScheduledRetryTime__c
+             LockedUntil__c, ScheduledRetryTime__c, Template__c, Composite_Document__c
       FROM Generated_Document__c
       WHERE Id = '${documentId}'
     `;
@@ -165,7 +167,7 @@ export class WorkerHelper {
     const idList = documentIds.map(id => `'${id}'`).join(',');
     const query = `
       SELECT Id, Status__c, Attempts__c, Error__c, OutputFileId__c,
-             LockedUntil__c, ScheduledRetryTime__c
+             LockedUntil__c, ScheduledRetryTime__c, Template__c, Composite_Document__c
       FROM Generated_Document__c
       WHERE Id IN (${idList})
       ORDER BY CreatedDate ASC

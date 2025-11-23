@@ -54,9 +54,34 @@ export class BatchHelper {
     const batchSize = config.batchSize || 200;
 
     // Build anonymous Apex to execute batch
-    // Note: BatchDocgenEnqueue constructor takes 3 parameters: templateId, recordIds, outputFormat
-    // The parentField is determined automatically from the record IDs
-    const apexCode = `
+    // Support both single-template and composite document generation
+    let apexCode: string;
+
+    if (config.compositeDocId) {
+      // Composite document batch
+      // Need to determine recordIdFieldName from parentField (e.g., Account__c -> accountId)
+      const recordIdFieldName = config.parentField
+        ? config.parentField.replace('__c', '').replace('_', '').toLowerCase() + 'Id'
+        : 'recordId';
+
+      apexCode = `
+// Create batch instance for composite document
+BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+  '${config.compositeDocId}',
+  new List<Id>{ ${recordIdsApex} },
+  '${config.outputFormat}',
+  '${recordIdFieldName}'
+);
+
+// Execute batch with specified chunk size
+Id jobId = Database.executeBatch(batch, ${batchSize});
+
+// Return job ID for monitoring
+System.debug('Batch Job ID: ' + jobId);
+      `.trim();
+    } else {
+      // Single-template batch (original behavior)
+      apexCode = `
 // Create batch instance with configuration
 BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
   '${config.templateId}',
@@ -69,7 +94,8 @@ Id jobId = Database.executeBatch(batch, ${batchSize});
 
 // Return job ID for monitoring
 System.debug('Batch Job ID: ' + jobId);
-    `.trim();
+      `.trim();
+    }
 
     // Execute via Salesforce CLI
     const result = await this.orgHelper.executeAnonymousApex(apexCode);

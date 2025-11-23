@@ -158,6 +158,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Docgen_Template__c.ReturnMultipleRecords__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Docgen_Template__c.PrimaryParent__c</field>
         <readable>true</readable>
     </fieldPermissions>

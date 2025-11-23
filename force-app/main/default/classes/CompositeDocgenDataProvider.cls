@@ -88,8 +88,13 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                 timezone
             );
 
+            // Unwrap single-object data to avoid double nesting
+            // E.g., if namespaceData = {"Account": {...}}, extract the inner object
+            // This allows templates to use {{Account.Name}} instead of {{Account.Account.Name}}
+            Object unwrappedData = unwrapSingleObjectData(namespaceData);
+
             // Store in namespace key
-            compositeData.put(junction.Namespace__c, namespaceData);
+            compositeData.put(junction.Namespace__c, unwrappedData);
 
             // Extract new variables for subsequent templates
             extractVariablesFromData(namespaceData, variablePool);
@@ -110,7 +115,8 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                    Document_Template__r.TemplateContentVersionId__c,
                    Document_Template__r.DataSource__c,
                    Document_Template__r.SOQL__c,
-                   Document_Template__r.ClassName__c
+                   Document_Template__r.ClassName__c,
+                   Document_Template__r.ReturnMultipleRecords__c
             FROM Composite_Document_Template__c
             WHERE Composite_Document__c = :compositeDocId
               AND IsActive__c = true
@@ -266,5 +272,40 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                 }
             }
         }
+    }
+
+    /**
+     * Unwrap single-object data to avoid double nesting in composite templates
+     *
+     * SOQL providers return data like: {"Account": {...}}
+     * When stored in namespace "Account", this would create: {"Account": {"Account": {...}}}
+     * This method extracts the inner object for cleaner template syntax
+     *
+     * EXCEPTION: Does not unwrap {"records": [...]} structure used by MultiRecordSOQLProvider
+     * Templates need access to the "records" key for FOR loop iteration
+     *
+     * @param namespaceData Data returned from provider.buildData()
+     * @return Unwrapped data (the inner object if single-key map, otherwise original map)
+     */
+    private static Object unwrapSingleObjectData(Map<String, Object> namespaceData) {
+        // If the map has exactly one key, check if it should be unwrapped
+        if (namespaceData.size() == 1) {
+            // Get the first (and only) key
+            String singleKey = new List<String>(namespaceData.keySet())[0];
+
+            // DO NOT unwrap if key is "records" - this is a special structure for array iteration
+            // MultiRecordSOQLProvider uses {"records": [...]} and templates expect {{FOR x IN records}}
+            if (singleKey == 'records') {
+                return namespaceData;
+            }
+
+            // Get the first (and only) value
+            for (Object value : namespaceData.values()) {
+                return value;
+            }
+        }
+
+        // Otherwise, return the map as-is (multiple keys, or empty map)
+        return namespaceData;
     }
 }

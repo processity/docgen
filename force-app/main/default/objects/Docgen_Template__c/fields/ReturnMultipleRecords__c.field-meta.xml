@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ReturnMultipleRecords__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>When enabled, the SOQL provider returns ALL query results in a records array instead of just the first record. Templates must use {{FOR x IN records}} syntax to iterate over results. Recommended for composite documents to ensure consistent data structure regardless of query cardinality.</description>
+    <externalId>false</externalId>
+    <label>Return Multiple Records</label>
+    <trackTrending>false</trackTrending>
+    <type>Checkbox</type>
+</CustomField>
