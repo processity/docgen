@@ -415,7 +415,7 @@ export interface QueuedDocument {
   Status__c: 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
   RequestJSON__c: string;
   CorrelationId__c: string;
-  Template__c: string;
+  Template__c: string | null; // Nullable for composite documents
   Attempts__c: number;
   CreatedDate: string;
   Account__c?: string | null;
