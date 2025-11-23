@@ -498,8 +498,8 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         compositeDocumentId: 'a00composite001', // Mock composite doc ID
         templateStrategy: 'Concatenate Templates',
         templates: [
-          { templateId: testTemplateId, namespace: 'Account', sequence: 1 },
-          { templateId: secondTemplateId, namespace: 'Terms', sequence: 2 },
+          { templateId: testTemplateId!, namespace: 'Account', sequence: 1 },
+          { templateId: secondTemplateId!, namespace: 'Terms', sequence: 2 },
         ],
         outputFileName: 'Composite_Integration_Test.pdf',
         outputFormat: 'PDF',
@@ -523,7 +523,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
           AccountId: null,
         },
         requestHash: tempRequest.requestHash,
-        generatedDocumentId: compositeDocId,
+        generatedDocumentId: compositeDocId!,
       };
 
       // Update with complete RequestJSON
