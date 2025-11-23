@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>60.0</apiVersion>
+    <description>Interactive composite document generation button for PDF/DOCX generation from multiple data sources</description>
+    <isExposed>true</isExposed>
+    <masterLabel>Composite Document Generation Button</masterLabel>
+    <targets>
+        <target>lightning__RecordPage</target>
+        <target>lightning__AppPage</target>
+        <target>lightning__HomePage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage,lightning__AppPage,lightning__HomePage">
+            <property name="compositeDocumentId" type="String" label="Composite Document ID" description="ID of the Composite_Document__c record" required="true" />
+            <property name="recordIdField" type="String" label="Record ID Field Name" description="Variable name for the primary record ID (e.g., 'accountId', 'opportunityId'). Used when component is on a record page." />
+            <property name="additionalRecordIds" type="String" label="Additional Record IDs (JSON)" description="JSON string of additional record IDs. Example: {&quot;contactId&quot;:&quot;003xxx&quot;,&quot;opportunityId&quot;:&quot;006xxx&quot;}" />
+            <property name="outputFormat" type="String" label="Output Format" description="Document output format (PDF or DOCX)" datasource="PDF,DOCX" default="PDF" required="true" />
+            <property name="buttonLabel" type="String" label="Button Label" description="Custom label for the generation button" default="Generate Composite Document" />
+            <property name="successMessage" type="String" label="Success Message" description="Custom message shown in success toast" default="Composite document generated successfully!" />
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>
