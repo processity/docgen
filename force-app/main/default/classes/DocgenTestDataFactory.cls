@@ -235,6 +235,141 @@ public class DocgenTestDataFactory {
     }
 
     /**
+     * Container for composite document test scenario
+     */
+    public class CompositeScenario {
+        public Composite_Document__c compositeDoc { get; set; }
+        public List<Docgen_Template__c> templates { get; set; }
+        public List<Composite_Document_Template__c> junctions { get; set; }
+        public SObject testRecord { get; set; }
+        public Id testRecordId { get; set; }
+        public String objectApiName { get; set; }
+
+        public CompositeScenario() {
+            this.templates = new List<Docgen_Template__c>();
+            this.junctions = new List<Composite_Document_Template__c>();
+        }
+    }
+
+    /**
+     * Create a Composite_Document__c record for testing
+     *
+     * @param templateStrategy - 'Own Template' or 'Concatenate Templates'
+     * @param templateContentVersionId - Required if strategy is 'Own Template'
+     * @param primaryParent - Primary object type (e.g., 'Account', 'Contact')
+     * @return Composite_Document__c (inserted)
+     */
+    public static Composite_Document__c createCompositeDocument(
+        String templateStrategy,
+        String templateContentVersionId,
+        String primaryParent
+    ) {
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Test composite document for automated testing',
+            Template_Strategy__c = templateStrategy,
+            TemplateContentVersionId__c = templateContentVersionId,
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true,
+            PrimaryParent__c = primaryParent,
+            IsActive__c = true
+        );
+
+        insert composite;
+        return composite;
+    }
+
+    /**
+     * Create a Composite_Document_Template__c junction record
+     *
+     * @param compositeDocId - Composite_Document__c ID
+     * @param templateId - Docgen_Template__c ID
+     * @param namespace - Namespace key for data (e.g., 'Account', 'Terms')
+     * @param sequence - Execution order
+     * @return Composite_Document_Template__c (inserted)
+     */
+    public static Composite_Document_Template__c createCompositeDocumentTemplate(
+        Id compositeDocId,
+        Id templateId,
+        String namespace,
+        Integer sequence
+    ) {
+        Composite_Document_Template__c junction = new Composite_Document_Template__c(
+            Composite_Document__c = compositeDocId,
+            Document_Template__c = templateId,
+            Namespace__c = namespace,
+            Sequence__c = sequence,
+            IsActive__c = true
+        );
+
+        insert junction;
+        return junction;
+    }
+
+    /**
+     * Create a complete composite document test scenario with templates and junctions
+     *
+     * @param objectApiName - Primary object type (e.g., 'Account')
+     * @param templateCount - Number of templates/namespaces (default 2)
+     * @param templateStrategy - 'Own Template' or 'Concatenate Templates'
+     * @return CompositeScenario with all test data
+     */
+    public static CompositeScenario createCompositeScenario(
+        String objectApiName,
+        Integer templateCount,
+        String templateStrategy
+    ) {
+        CompositeScenario scenario = new CompositeScenario();
+        scenario.objectApiName = objectApiName;
+
+        // Create test record
+        scenario.testRecord = createTestRecord(objectApiName);
+        insert scenario.testRecord;
+        scenario.testRecordId = scenario.testRecord.Id;
+
+        // Create composite document
+        String templateContentVersionId = null;
+        if (templateStrategy == 'Own Template') {
+            templateContentVersionId = '068000000000001AAA'; // Mock ContentVersionId for composite template
+        }
+
+        scenario.compositeDoc = createCompositeDocument(
+            templateStrategy,
+            templateContentVersionId,
+            objectApiName
+        );
+
+        // Create templates and junction records
+        for (Integer i = 0; i < templateCount; i++) {
+            // Create template
+            String namespace = (i == 0) ? objectApiName : ('Section' + i);
+            String soql = (i == 0) ? buildSOQLForObject(objectApiName) : 'SELECT Id FROM ' + objectApiName + ' WHERE Id = :recordId';
+
+            Docgen_Template__c template = new Docgen_Template__c(
+                Name = namespace + ' Template',
+                PrimaryParent__c = objectApiName,
+                DataSource__c = 'SOQL',
+                SOQL__c = soql,
+                TemplateContentVersionId__c = '068' + String.valueOf(i).leftPad(12, '0') + 'AAA',
+                StoreMergedDocx__c = false,
+                ReturnDocxToBrowser__c = true
+            );
+            insert template;
+            scenario.templates.add(template);
+
+            // Create junction record
+            Composite_Document_Template__c junction = createCompositeDocumentTemplate(
+                scenario.compositeDoc.Id,
+                template.Id,
+                namespace,
+                (i + 1) * 10  // Sequence: 10, 20, 30, etc.
+            );
+            scenario.junctions.add(junction);
+        }
+
+        return scenario;
+    }
+
+    /**
      * Custom exception for unsupported object types
      */
     public class UnsupportedObjectException extends Exception {}

@@ -75,7 +75,8 @@ private class DocgenEnvelopeServiceTest {
             SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = true,
             ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -125,7 +126,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000002AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -165,7 +167,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000003AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -238,7 +241,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Custom Provider Template',
             TemplateContentVersionId__c = '068000000000004AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider'
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -270,7 +274,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Invalid Source',
             TemplateContentVersionId__c = '068000000000005AAA',
             DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId'
+            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -304,7 +309,8 @@ private class DocgenEnvelopeServiceTest {
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
             StoreMergedDocx__c = true,
-            ReturnDocxToBrowser__c = true
+            ReturnDocxToBrowser__c = true,
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -342,7 +348,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000007AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -384,7 +391,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000008AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -419,7 +427,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000009AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -461,7 +470,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000010AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -512,7 +522,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000011AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -570,7 +581,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000012AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case'
+            PrimaryParent__c = 'Case',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -606,7 +618,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Failing Provider Template',
             TemplateContentVersionId__c = '068000000000013AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'FailingCustomProvider'
+            ClassName__c = 'FailingCustomProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -641,7 +654,8 @@ private class DocgenEnvelopeServiceTest {
             Name = 'Non-Existent Provider Template',
             TemplateContentVersionId__c = '068000000000014AAA',
             DataSource__c = 'Custom',
-            ClassName__c = 'NonExistentProvider'
+            ClassName__c = 'NonExistentProvider',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -690,7 +704,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000015AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName, Email, Description FROM Contacts) FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -741,7 +756,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000016AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -796,7 +812,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000017AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -839,7 +856,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000018AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, Company, Email FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead'
+            PrimaryParent__c = 'Lead',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -884,7 +902,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000019AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, FirstName, LastName, AccountId, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -930,7 +949,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000020AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account'
+            PrimaryParent__c = 'Account',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c contactTemplate = new Docgen_Template__c(
@@ -938,7 +958,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000021AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, LastName, AccountId FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact'
+            PrimaryParent__c = 'Contact',
+            ReturnMultipleRecords__c = false
         );
 
         Docgen_Template__c leadTemplate = new Docgen_Template__c(
@@ -946,7 +967,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000022AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, LastName, Company FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead'
+            PrimaryParent__c = 'Lead',
+            ReturnMultipleRecords__c = false
         );
 
         insert new List<Docgen_Template__c>{ accTemplate, contactTemplate, leadTemplate };
@@ -993,7 +1015,8 @@ private class DocgenEnvelopeServiceTest {
             TemplateContentVersionId__c = '068000000000023AAA',
             DataSource__c = 'SOQL',
             SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity'
+            PrimaryParent__c = 'Opportunity',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 
@@ -1022,5 +1045,529 @@ private class DocgenEnvelopeServiceTest {
             }
         }
         Assert.areEqual(2, parentCount, 'Should have exactly 2 non-null parents (Opportunity and Account)');
+    }
+
+    // ========== T-20: Composite Document Support Tests ==========
+
+    @isTest
+    static void testBuildForCompositeWithTwoNamespaces() {
+        // Given: Composite document with 2 templates (Account, Terms)
+        Account acc = new Account(
+            Name = 'Composite Test Account',
+            AnnualRevenue = 5000000
+        );
+        insert acc;
+
+        // Create templates for each namespace
+        Docgen_Template__c accountTemplate = new Docgen_Template__c(
+            Name = 'Account Summary',
+            TemplateContentVersionId__c = '068000000000024AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+
+        Docgen_Template__c termsTemplate = new Docgen_Template__c(
+            Name = 'Terms and Conditions',
+            TemplateContentVersionId__c = '068000000000025AAA',
+            DataSource__c = 'Custom',
+            ClassName__c = 'MockCustomProvider',
+            ReturnMultipleRecords__c = false
+        );
+        insert new List<Docgen_Template__c>{ accountTemplate, termsTemplate };
+
+        // Create composite document
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Concatenate Templates',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        // Create junction records
+        Composite_Document_Template__c junction1 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = accountTemplate.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        Composite_Document_Template__c junction2 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = termsTemplate.Id,
+            Namespace__c = 'Terms',
+            Sequence__c = 20,
+            IsActive__c = true
+        );
+        insert new List<Composite_Document_Template__c>{ junction1, junction2 };
+
+        // When: Building composite envelope
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Envelope should contain both namespaces
+        Assert.isNotNull(env, 'Envelope should not be null');
+        Assert.isNotNull(env.data, 'Data should not be null');
+        Assert.areEqual('PDF', env.outputFormat, 'Output format should be PDF');
+        Assert.areEqual('en-GB', env.locale, 'Locale should match');
+        Assert.areEqual('Europe/London', env.timezone, 'Timezone should match');
+
+        // Verify both namespaces present in data
+        Assert.isTrue(env.data.containsKey('Account'), 'Data should contain Account namespace');
+        Assert.isTrue(env.data.containsKey('Terms'), 'Data should contain Terms namespace');
+
+        // Verify composite-specific fields
+        Assert.areEqual(composite.Id, env.compositeDocumentId, 'Composite document ID should be set');
+        Assert.isNotNull(env.requestHash, 'RequestHash should be computed');
+        Assert.isTrue(env.requestHash.startsWith('sha256:'), 'Hash should have sha256 prefix');
+    }
+
+    @isTest
+    static void testBuildForCompositeOwnTemplateStrategy() {
+        // Given: Composite with "Own Template" strategy
+        Account acc = new Account(Name = 'Own Template Account');
+        insert acc;
+
+        Docgen_Template__c accountTemplate = new Docgen_Template__c(
+            Name = 'Account Data Provider',
+            TemplateContentVersionId__c = '068000000000026AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert accountTemplate;
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000027AAA',
+            StoreMergedDocx__c = true,
+            ReturnDocxToBrowser__c = false,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        // Create junction for data provider (template strategy uses composite's template)
+        Composite_Document_Template__c junction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = accountTemplate.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+        insert junction;
+
+        // When: Building envelope with Own Template strategy
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-US',
+            'America/New_York'
+        );
+        Test.stopTest();
+
+        // Then: templateId should be set, templates should be null
+        Assert.areEqual('068000000000027AAA', env.templateId, 'Template ID should match composite template');
+        Assert.isNull(env.templates, 'Templates array should be null for Own Template strategy');
+        Assert.areEqual('Own Template', env.templateStrategy, 'Template strategy should be Own Template');
+    }
+
+    @isTest
+    static void testBuildForCompositeConcatenateStrategy() {
+        // Given: Composite with "Concatenate Templates" strategy
+        Account acc = new Account(Name = 'Concat Account');
+        insert acc;
+
+        Docgen_Template__c template1 = new Docgen_Template__c(
+            Name = 'Section 1',
+            TemplateContentVersionId__c = '068000000000028AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+
+        Docgen_Template__c template2 = new Docgen_Template__c(
+            Name = 'Section 2',
+            TemplateContentVersionId__c = '068000000000029AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+
+        Docgen_Template__c template3 = new Docgen_Template__c(
+            Name = 'Section 3',
+            TemplateContentVersionId__c = '068000000000030AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert new List<Docgen_Template__c>{ template1, template2, template3 };
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Concatenate Templates',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        // Create junctions with different sequence orders
+        Composite_Document_Template__c junction1 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template2.Id,
+            Namespace__c = 'Section2',
+            Sequence__c = 20,
+            IsActive__c = true
+        );
+
+        Composite_Document_Template__c junction2 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template1.Id,
+            Namespace__c = 'Section1',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        Composite_Document_Template__c junction3 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template3.Id,
+            Namespace__c = 'Section3',
+            Sequence__c = 30,
+            IsActive__c = true
+        );
+        insert new List<Composite_Document_Template__c>{ junction1, junction2, junction3 };
+
+        // When: Building envelope with Concatenate Templates strategy
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: templates array should be populated and ordered by sequence
+        Assert.isNull(env.templateId, 'Template ID should be null for Concatenate Templates strategy');
+        Assert.isNotNull(env.templates, 'Templates array should not be null');
+        Assert.areEqual(3, env.templates.size(), 'Should have 3 templates');
+        Assert.areEqual('Concatenate Templates', env.templateStrategy, 'Template strategy should be Concatenate Templates');
+
+        // Verify ordering by sequence (10, 20, 30)
+        Assert.areEqual('068000000000028AAA', env.templates[0].templateId, 'First template should be sequence 10');
+        Assert.areEqual('Section1', env.templates[0].namespace, 'First namespace should be Section1');
+        Assert.areEqual(10, env.templates[0].sequence, 'First sequence should be 10');
+
+        Assert.areEqual('068000000000029AAA', env.templates[1].templateId, 'Second template should be sequence 20');
+        Assert.areEqual('Section2', env.templates[1].namespace, 'Second namespace should be Section2');
+        Assert.areEqual(20, env.templates[1].sequence, 'Second sequence should be 20');
+
+        Assert.areEqual('068000000000030AAA', env.templates[2].templateId, 'Third template should be sequence 30');
+        Assert.areEqual('Section3', env.templates[2].namespace, 'Third namespace should be Section3');
+        Assert.areEqual(30, env.templates[2].sequence, 'Third sequence should be 30');
+    }
+
+    @isTest
+    static void testExtractParentIdsFromCompositeData() {
+        // Given: Composite data with Account and Contact namespaces
+        Account acc = new Account(Name = 'Parent Account');
+        insert acc;
+
+        Contact contact = new Contact(
+            FirstName = 'Test',
+            LastName = 'Contact',
+            AccountId = acc.Id
+        );
+        insert contact;
+
+        Docgen_Template__c accountTemplate = new Docgen_Template__c(
+            Name = 'Account Template',
+            TemplateContentVersionId__c = '068000000000031AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+
+        Docgen_Template__c contactTemplate = new Docgen_Template__c(
+            Name = 'Contact Template',
+            TemplateContentVersionId__c = '068000000000032AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId FROM Contact WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert new List<Docgen_Template__c>{ accountTemplate, contactTemplate };
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Concatenate Templates',
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        // Create junctions - Account first (sequence 10), Contact second (sequence 20)
+        Composite_Document_Template__c junction1 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = accountTemplate.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        Composite_Document_Template__c junction2 = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = contactTemplate.Id,
+            Namespace__c = 'Contact',
+            Sequence__c = 20,
+            IsActive__c = true
+        );
+        insert new List<Composite_Document_Template__c>{ junction1, junction2 };
+
+        // When: Building composite envelope
+        Map<String, Id> recordIds = new Map<String, Id>{
+            'accountId' => acc.Id,
+            'contactId' => contact.Id
+        };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Parents map should contain both AccountId and ContactId
+        Assert.isNotNull(env.parents, 'Parents map should not be null');
+        Assert.areEqual(acc.Id, env.parents.get('AccountId'), 'AccountId should be in parents');
+        Assert.areEqual(contact.Id, env.parents.get('ContactId'), 'ContactId should be in parents');
+
+        // Verify first namespace wins if duplicate (Account namespace comes first by sequence)
+        // Since both namespaces have Account data, the first one (sequence 10) should win
+    }
+
+    @isTest
+    static void testCompositeHashComputation() {
+        // Given: Two different composites with same data
+        Account acc = new Account(Name = 'Hash Test Account');
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Hash Template',
+            TemplateContentVersionId__c = '068000000000033AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert template;
+
+        Composite_Document__c composite1 = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000034AAA',
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+
+        Composite_Document__c composite2 = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000035AAA',
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert new List<Composite_Document__c>{ composite1, composite2 };
+
+        Composite_Document_Template__c junction1 = new Composite_Document_Template__c(
+            Composite_Document__c = composite1.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        Composite_Document_Template__c junction2 = new Composite_Document_Template__c(
+            Composite_Document__c = composite2.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+        insert new List<Composite_Document_Template__c>{ junction1, junction2 };
+
+        // When: Building envelopes for both composites with same recordIds
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env1 = DocgenEnvelopeService.buildForComposite(
+            composite1.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+
+        DocgenEnvelopeService.Envelope env2 = DocgenEnvelopeService.buildForComposite(
+            composite2.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+
+        // Building same composite twice with same recordIds
+        DocgenEnvelopeService.Envelope env3 = DocgenEnvelopeService.buildForComposite(
+            composite1.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Different compositeDocIds should produce different hashes
+        Assert.areNotEqual(env1.requestHash, env2.requestHash,
+            'Different composite document IDs should produce different hashes');
+
+        // Then: Same composite with same recordIds should produce same hash (idempotency)
+        Assert.areEqual(env1.requestHash, env3.requestHash,
+            'Same composite with same recordIds should produce identical hash');
+
+        // Verify hash format
+        Assert.isTrue(env1.requestHash.startsWith('sha256:'), 'Hash should have sha256 prefix');
+        Assert.areEqual(71, env1.requestHash.length(), 'Hash should be 71 chars (sha256: + 64 hex chars)');
+    }
+
+    @isTest
+    static void testCompositeOptionsMapping() {
+        // Given: Composite with specific option settings
+        Account acc = new Account(Name = 'Options Test Account');
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Options Template',
+            TemplateContentVersionId__c = '068000000000036AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert template;
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000037AAA',
+            StoreMergedDocx__c = true,
+            ReturnDocxToBrowser__c = false,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        Composite_Document_Template__c junction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+        insert junction;
+
+        // When: Building composite envelope
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'DOCX',
+            'en-US',
+            'America/Los_Angeles'
+        );
+        Test.stopTest();
+
+        // Then: Options should match composite settings
+        Assert.isNotNull(env.options, 'Options should not be null');
+        Assert.isTrue((Boolean) env.options.get('storeMergedDocx'), 'StoreMergedDocx should be true');
+        Assert.isFalse((Boolean) env.options.get('returnDocxToBrowser'), 'ReturnDocxToBrowser should be false');
+        Assert.areEqual('DOCX', env.outputFormat, 'Output format should be DOCX');
+    }
+
+    @isTest
+    static void testCompositeOutputFileName() {
+        // Given: Composite document for filename generation
+        Account acc = new Account(Name = 'Filename Test Account');
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Filename Template',
+            TemplateContentVersionId__c = '068000000000038AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            ReturnMultipleRecords__c = false
+        );
+        insert template;
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000039AAA',
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        Composite_Document_Template__c junction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+        insert junction;
+
+        // When: Building composite envelope
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Output filename should follow format: Composite_{Name}_{timestamp}.{ext}
+        Assert.isNotNull(env.outputFileName, 'Output filename should not be null');
+        Assert.isTrue(env.outputFileName.startsWith('Composite_'), 'Filename should start with Composite_');
+        Assert.isTrue(env.outputFileName.contains('CD') || env.outputFileName.contains('_00'),
+            'Filename should contain composite auto-number');
+        Assert.isTrue(env.outputFileName.endsWith('.pdf'), 'Filename should end with .pdf');
+
+        // Should contain timestamp pattern (contains underscore and 8 digits for date)
+        // Pattern check: Composite_CD*_yyyyMMdd_HHmmss.pdf
+        Assert.isTrue(
+            env.outputFileName.length() > 30,
+            'Filename should be long enough to contain Composite_ + name + timestamp + .pdf'
+        );
     }
 }

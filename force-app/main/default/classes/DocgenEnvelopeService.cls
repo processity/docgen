@@ -18,6 +18,20 @@ public with sharing class DocgenEnvelopeService {
         public Map<String, String> parents;
         public String requestHash;
         public String generatedDocumentId; // T-12: For status tracking
+
+        // T-20: Composite document fields
+        public String compositeDocumentId;
+        public String templateStrategy; // "Own Template" or "Concatenate Templates"
+        public List<TemplateRef> templates; // For concatenation strategy
+    }
+
+    /**
+     * T-20: Template reference for concatenation strategy
+     */
+    public class TemplateRef {
+        public String templateId; // ContentVersionId
+        public String namespace; // Data key
+        public Integer sequence; // Ordering
     }
 
     /**
@@ -90,12 +104,48 @@ public with sharing class DocgenEnvelopeService {
 
     /**
      * Convert envelope to JSON string for storage
+     * Excludes null composite fields to maintain backward compatibility with backend schema
      *
      * @param env Envelope to serialize
      * @return JSON string
      */
     public static String toJSON(Envelope env) {
-        return JSON.serialize(env);
+        Map<String, Object> jsonMap = new Map<String, Object>();
+
+        // Always include these fields (even if null for some)
+        jsonMap.put('outputFileName', env.outputFileName);
+        jsonMap.put('outputFormat', env.outputFormat);
+        jsonMap.put('locale', env.locale);
+        jsonMap.put('timezone', env.timezone);
+        jsonMap.put('options', env.options);
+        jsonMap.put('data', env.data);
+
+        // Include optional fields only if they have values
+        if (env.templateId != null) {
+            jsonMap.put('templateId', env.templateId);
+        }
+        if (env.parents != null && !env.parents.isEmpty()) {
+            jsonMap.put('parents', env.parents);
+        }
+        if (env.requestHash != null) {
+            jsonMap.put('requestHash', env.requestHash);
+        }
+        if (env.generatedDocumentId != null) {
+            jsonMap.put('generatedDocumentId', env.generatedDocumentId);
+        }
+
+        // Include composite fields only if they have values (avoid null in JSON for enum validation)
+        if (env.compositeDocumentId != null) {
+            jsonMap.put('compositeDocumentId', env.compositeDocumentId);
+        }
+        if (env.templateStrategy != null) {
+            jsonMap.put('templateStrategy', env.templateStrategy);
+        }
+        if (env.templates != null && !env.templates.isEmpty()) {
+            jsonMap.put('templates', env.templates);
+        }
+
+        return JSON.serialize(jsonMap);
     }
 
     /**
@@ -196,5 +246,238 @@ public with sharing class DocgenEnvelopeService {
         String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
 
         return objectType + '_' + template.Name.replaceAll('[^a-zA-Z0-9]', '_') + '_' + timestamp + '.' + extension;
+    }
+
+    // ========== T-20: Composite Document Support ==========
+
+    /**
+     * Build complete envelope for composite document generation
+     *
+     * @param compositeDocId Composite document ID
+     * @param recordIds Map of variable names to record IDs (e.g., {"accountId": "001xxx", "contactId": "003xxx"})
+     * @param outputFormat PDF or DOCX
+     * @param locale Locale for formatting (e.g., 'en-GB')
+     * @param timezone Timezone for datetime formatting
+     * @return Complete envelope ready for Node API
+     */
+    public static Envelope buildForComposite(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String locale,
+        String timezone
+    ) {
+        Envelope env = new Envelope();
+
+        // Load composite configuration
+        Composite_Document__c composite = loadCompositeConfig(compositeDocId);
+
+        // Set basic fields
+        env.compositeDocumentId = compositeDocId;
+        env.outputFormat = outputFormat;
+        env.locale = locale;
+        env.timezone = timezone;
+        env.templateStrategy = composite.Template_Strategy__c;
+
+        // Build options from composite settings
+        env.options = new Map<String, Object>{
+            'storeMergedDocx' => composite.StoreMergedDocx__c != null ? composite.StoreMergedDocx__c : false,
+            'returnDocxToBrowser' => composite.ReturnDocxToBrowser__c != null ? composite.ReturnDocxToBrowser__c : true
+        };
+
+        // Get composite data from CompositeDocgenDataProvider
+        env.data = CompositeDocgenDataProvider.buildCompositeData(
+            compositeDocId,
+            recordIds,
+            locale,
+            timezone
+        );
+
+        // Handle template strategy
+        if (composite.Template_Strategy__c == 'Own Template') {
+            // Single template that merges with full composite data
+            env.templateId = composite.TemplateContentVersionId__c;
+            env.templates = null;
+        } else if (composite.Template_Strategy__c == 'Concatenate Templates') {
+            // Multiple templates to be merged individually then concatenated
+            env.templateId = null;
+            env.templates = loadTemplateSequence(compositeDocId);
+        }
+
+        // Extract parent IDs from all namespaces
+        env.parents = extractParentIdsFromCompositeData(env.data);
+
+        // Generate output filename
+        env.outputFileName = generateCompositeFileName(composite, outputFormat);
+
+        // Compute request hash for idempotency
+        String dataJson = JSON.serialize(env.data);
+        String recordIdsJson = JSON.serialize(recordIds);
+        env.requestHash = computeCompositeHash(compositeDocId, outputFormat, recordIdsJson, dataJson);
+
+        return env;
+    }
+
+    /**
+     * Load composite document configuration
+     */
+    @TestVisible
+    private static Composite_Document__c loadCompositeConfig(Id compositeDocId) {
+        List<Composite_Document__c> composites = [
+            SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
+                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+            FROM Composite_Document__c
+            WHERE Id = :compositeDocId
+            LIMIT 1
+        ];
+
+        if (composites.isEmpty()) {
+            throw new IllegalArgumentException('Composite document not found: ' + compositeDocId);
+        }
+
+        return composites[0];
+    }
+
+    /**
+     * Load template sequence for concatenation strategy
+     */
+    @TestVisible
+    private static List<TemplateRef> loadTemplateSequence(Id compositeDocId) {
+        List<Composite_Document_Template__c> junctions = [
+            SELECT Id, Namespace__c, Sequence__c,
+                   Document_Template__r.TemplateContentVersionId__c
+            FROM Composite_Document_Template__c
+            WHERE Composite_Document__c = :compositeDocId
+              AND IsActive__c = true
+            ORDER BY Sequence__c ASC
+        ];
+
+        List<TemplateRef> templates = new List<TemplateRef>();
+        for (Composite_Document_Template__c junction : junctions) {
+            TemplateRef ref = new TemplateRef();
+            ref.templateId = junction.Document_Template__r.TemplateContentVersionId__c;
+            ref.namespace = junction.Namespace__c;
+            ref.sequence = Integer.valueOf(junction.Sequence__c);
+            templates.add(ref);
+        }
+
+        return templates;
+    }
+
+    /**
+     * Extract parent IDs from all namespaces in composite data
+     * First namespace wins for duplicate parent types
+     */
+    @TestVisible
+    private static Map<String, String> extractParentIdsFromCompositeData(Map<String, Object> compositeData) {
+        Map<String, String> parents = new Map<String, String>();
+
+        // Define potential parent fields to look for
+        Set<String> potentialParentFields = new Set<String>{
+            'AccountId',
+            'ContactId',
+            'OpportunityId',
+            'CaseId',
+            'LeadId'
+        };
+
+        // Iterate through all namespaces
+        for (String namespace : compositeData.keySet()) {
+            Object namespaceValue = compositeData.get(namespace);
+
+            // Each namespace should contain an object map
+            if (namespaceValue instanceof Map<String, Object>) {
+                Map<String, Object> namespaceMap = (Map<String, Object>) namespaceValue;
+
+                // Check if this is already unwrapped (has Id directly) or needs unwrapping
+                if (namespaceMap.containsKey('Id')) {
+                    // Already unwrapped - process directly
+                    String objectId = (String) namespaceMap.get('Id');
+                    if (objectId != null && objectId != '') {
+                        String parentKey = namespace + 'Id';
+                        if (!parents.containsKey(parentKey)) {
+                            parents.put(parentKey, objectId);
+                        }
+                    }
+
+                    // Extract parent relationship fields
+                    for (String parentField : potentialParentFields) {
+                        if (namespaceMap.containsKey(parentField)) {
+                            String parentId = (String) namespaceMap.get(parentField);
+                            if (parentId != null && parentId != '' && !parents.containsKey(parentField)) {
+                                parents.put(parentField, parentId);
+                            }
+                        }
+                    }
+                } else {
+                    // Not unwrapped - look for nested object data (legacy format)
+                    for (String key : namespaceMap.keySet()) {
+                        Object dataValue = namespaceMap.get(key);
+
+                        if (dataValue instanceof Map<String, Object>) {
+                            Map<String, Object> objectData = (Map<String, Object>) dataValue;
+
+                            // Extract object ID (use object type as key)
+                            String objectId = (String) objectData.get('Id');
+                            if (objectId != null && objectId != '') {
+                                String parentKey = key + 'Id';
+                                if (!parents.containsKey(parentKey)) {
+                                    parents.put(parentKey, objectId);
+                                }
+                            }
+
+                            // Extract parent relationship fields
+                            for (String parentField : potentialParentFields) {
+                                if (objectData.containsKey(parentField)) {
+                                    String parentId = (String) objectData.get(parentField);
+                                    if (parentId != null && parentId != '' && !parents.containsKey(parentField)) {
+                                        parents.put(parentField, parentId);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return parents;
+    }
+
+    /**
+     * Compute SHA-256 hash for composite document idempotency
+     * Format: sha256:{compositeDocId}|{outputFormat}|{recordIdsJson}|{dataChecksum}
+     */
+    @TestVisible
+    private static String computeCompositeHash(
+        String compositeDocId,
+        String outputFormat,
+        String recordIdsJson,
+        String dataJson
+    ) {
+        // Create deterministic input string including recordIds for uniqueness
+        String input = compositeDocId + '|' + outputFormat + '|' + recordIdsJson + '|' + dataJson;
+
+        // Generate SHA-256 hash
+        Blob hash = Crypto.generateDigest('SHA-256', Blob.valueOf(input));
+
+        // Convert to hex and prepend prefix
+        return 'sha256:' + EncodingUtil.convertToHex(hash);
+    }
+
+    /**
+     * Generate output filename for composite document
+     * Format: Composite_{Name}_{timestamp}.{ext}
+     */
+    @TestVisible
+    private static String generateCompositeFileName(
+        Composite_Document__c composite,
+        String outputFormat
+    ) {
+        String extension = outputFormat.toLowerCase();
+        String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
+        String sanitizedName = composite.Name.replaceAll('[^a-zA-Z0-9]', '_');
+
+        return 'Composite_' + sanitizedName + '_' + timestamp + '.' + extension;
     }
 }

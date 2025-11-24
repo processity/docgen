@@ -1,11 +1,20 @@
 /**
  * Default SOQL-based data provider
  * Executes template.SOQL__c with :recordId binding (when present) and preformats all fields
+ *
+ * When ReturnMultipleRecords__c is enabled, returns ALL query results in a records array.
+ * Otherwise, returns only the first record in object wrapper format (legacy behavior).
  */
 public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
     /**
      * Builds data map by executing SOQL query and adding formatted fields
+     *
+     * @param recordId Record ID to bind to :recordId in SOQL
+     * @param template Template containing SOQL__c query and ReturnMultipleRecords__c flag
+     * @param locale User locale for formatting (e.g., "en-GB", "de-DE")
+     * @param timezone User timezone for datetime conversion (e.g., "Europe/London")
+     * @return Map with either single object or records array based on ReturnMultipleRecords__c
      */
     public Map<String, Object> buildData(
         Id recordId,
@@ -30,6 +39,28 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             throw new IllegalArgumentException('Invalid SOQL on template: ' + e.getMessage());
         }
 
+        // Check if template wants multiple records returned
+        Boolean returnMultiple = template.ReturnMultipleRecords__c != null && template.ReturnMultipleRecords__c;
+
+        if (returnMultiple) {
+            // Return ALL records in a records array (for composite documents)
+            return buildMultiRecordData(results, locale, timezone);
+        } else {
+            // Legacy behavior: return only first record
+            return buildSingleRecordData(results, recordId, locale, timezone);
+        }
+    }
+
+    /**
+     * Build data for single record (legacy behavior)
+     * Throws exception if no records found
+     */
+    private Map<String, Object> buildSingleRecordData(
+        List<SObject> results,
+        Id recordId,
+        String locale,
+        String timezone
+    ) {
         if (results.isEmpty()) {
             throw new IllegalArgumentException('No records found for recordId: ' + recordId);
         }
@@ -46,6 +77,28 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         Map<String, Object> processedRecord = processRecord(record, locale, timezone);
 
         data.put(objectType, processedRecord);
+        return data;
+    }
+
+    /**
+     * Build data for multiple records
+     * Returns {"records": [...]} structure for template iteration
+     */
+    private Map<String, Object> buildMultiRecordData(
+        List<SObject> results,
+        String locale,
+        String timezone
+    ) {
+        // Process ALL records (not just the first one)
+        List<Object> processedRecords = new List<Object>();
+        for (SObject record : results) {
+            Map<String, Object> processedRecord = processRecord(record, locale, timezone);
+            processedRecords.add(processedRecord);
+        }
+
+        // Return array structure for template iteration
+        Map<String, Object> data = new Map<String, Object>();
+        data.put('records', processedRecords);
         return data;
     }
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Template_Required_For_Own_Strategy</fullName>
+    <active>true</active>
+    <description>When Template Strategy is 'Own Template' and IsActive is true, the TemplateContentVersionId field must be populated.</description>
+    <errorConditionFormula>AND(
+    IsActive__c = true,
+    ISPICKVAL(Template_Strategy__c, &quot;Own Template&quot;),
+    ISBLANK(TemplateContentVersionId__c)
+)</errorConditionFormula>
+    <errorDisplayField>TemplateContentVersionId__c</errorDisplayField>
+    <errorMessage>Template ContentVersion ID is required when strategy is 'Own Template'.</errorMessage>
+</ValidationRule>

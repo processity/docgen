@@ -5,6 +5,7 @@ import { build } from '../src/server';
 import type { DocgenRequest, DocgenResponse } from '../src/types';
 import { getSalesforceAuth } from '../src/sf/auth';
 import { SalesforceApi } from '../src/sf/api';
+import { createTestDocxBuffer, createTestDocxWithContent } from './helpers/test-docx';
 
 // Load environment variables from .env file
 config();
@@ -543,6 +544,158 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       // Just verify both succeeded
       expect(response1.statusCode).toBe(200);
       expect(response2.statusCode).toBe(200);
+    });
+  });
+
+  describe('Composite Documents (T-24)', () => {
+    it('should generate composite document with Concatenate Templates strategy', async () => {
+      // This test will use real Salesforce - upload 2 templates, create composite, generate
+      // Upload first template
+      const docxTemplate1 = await createTestDocxWithContent('Account Summary Section');
+      const uploadResponse1 = await sfApi.post(
+        '/services/data/v59.0/sobjects/ContentVersion',
+        {
+          Title: 'Composite Test Template 1 - Account',
+          PathOnClient: 'template1-account.docx',
+          VersionData: docxTemplate1.toString('base64'),
+          FirstPublishLocationId: null,
+        }
+      );
+      const testTemplateId1 = uploadResponse1.id;
+
+      // Upload second template
+      const docxTemplate2 = await createTestDocxWithContent('Terms and Conditions Section');
+      const uploadResponse2 = await sfApi.post(
+        '/services/data/v59.0/sobjects/ContentVersion',
+        {
+          Title: 'Composite Test Template 2 - Terms',
+          PathOnClient: 'template2-terms.docx',
+          VersionData: docxTemplate2.toString('base64'),
+          FirstPublishLocationId: null,
+        }
+      );
+      const testTemplateId2 = uploadResponse2.id;
+
+      try {
+        const request: any = {
+          compositeDocumentId: 'a00INT000000001AAA',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            { templateId: testTemplateId1, namespace: 'Account', sequence: 1 },
+            { templateId: testTemplateId2, namespace: 'Terms', sequence: 2 },
+          ],
+          outputFileName: 'composite-integration-test.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-US',
+          timezone: 'America/New_York',
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: false,
+          },
+          data: {
+            Account: { Name: 'Integration Test Account' },
+            Terms: { Text: 'Standard Terms and Conditions' },
+          },
+        };
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/generate',
+          payload: request,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body: DocgenResponse = JSON.parse(response.body);
+        expect(body).toHaveProperty('downloadUrl');
+        expect(body).toHaveProperty('contentVersionId');
+
+        console.log('Composite document generated:', body.downloadUrl);
+
+        // Clean up generated document
+        const contentDocQuery = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${body.contentVersionId}' LIMIT 1`;
+        const contentDocResult = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(contentDocQuery)}`);
+        if (contentDocResult.records && contentDocResult.records.length > 0) {
+          await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${contentDocResult.records[0].ContentDocumentId}`);
+        }
+      } finally {
+        // Clean up test templates
+        const query1 = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${testTemplateId1}' LIMIT 1`;
+        const result1 = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(query1)}`);
+        if (result1.records && result1.records.length > 0) {
+          await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${result1.records[0].ContentDocumentId}`);
+        }
+
+        const query2 = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${testTemplateId2}' LIMIT 1`;
+        const result2 = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(query2)}`);
+        if (result2.records && result2.records.length > 0) {
+          await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${result2.records[0].ContentDocumentId}`);
+        }
+      }
+    });
+
+    it('should generate composite document with Own Template strategy', async () => {
+      // Upload single template for Own Template strategy
+      const docxTemplate = await createTestDocxBuffer();
+      const uploadResponse = await sfApi.post(
+        '/services/data/v59.0/sobjects/ContentVersion',
+        {
+          Title: 'Composite Test Template - Own Template',
+          PathOnClient: 'composite-own-template.docx',
+          VersionData: docxTemplate.toString('base64'),
+          FirstPublishLocationId: null,
+        }
+      );
+      const testTemplateId = uploadResponse.id;
+
+      try {
+        const request: any = {
+          compositeDocumentId: 'a00INT000000002AAA',
+          templateId: testTemplateId,
+          templateStrategy: 'Own Template',
+          outputFileName: 'composite-own-template-integration.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: false,
+          },
+          data: {
+            Account: { Name: 'UK Account Ltd' },
+            Contact: { FirstName: 'John', LastName: 'Smith' },
+            GeneratedDate__formatted: '23 Nov 2025',
+          },
+        };
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/generate',
+          payload: request,
+        });
+
+        expect(response.statusCode).toBe(200);
+
+        const body: DocgenResponse = JSON.parse(response.body);
+        expect(body).toHaveProperty('downloadUrl');
+        expect(body).toHaveProperty('contentVersionId');
+
+        console.log('Composite document (Own Template) generated:', body.downloadUrl);
+
+        // Clean up generated document
+        const contentDocQuery = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${body.contentVersionId}' LIMIT 1`;
+        const contentDocResult = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(contentDocQuery)}`);
+        if (contentDocResult.records && contentDocResult.records.length > 0) {
+          await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${contentDocResult.records[0].ContentDocumentId}`);
+        }
+      } finally {
+        // Clean up test template
+        const query = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${testTemplateId}' LIMIT 1`;
+        const result = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(query)}`);
+        if (result.records && result.records.length > 0) {
+          await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${result.records[0].ContentDocumentId}`);
+        }
+      }
     });
   });
 });

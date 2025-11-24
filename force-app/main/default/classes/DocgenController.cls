@@ -76,6 +76,66 @@ public with sharing class DocgenController {
     }
 
     /**
+     * Generate a composite document interactively
+     *
+     * @param compositeDocId ID of the Composite_Document__c record
+     * @param recordIds JSON string of record IDs (e.g., '{"accountId":"001xxx","contactId":"003xxx"}')
+     * @param outputFormat Output format (PDF or DOCX)
+     * @return Download URL for the generated document
+     * @throws AuraHandledException on validation or generation failures
+     */
+    @AuraEnabled
+    public static String generateComposite(Id compositeDocId, String recordIds, String outputFormat) {
+        Generated_Document__c doc;
+        String correlationId = generateCorrelationId();
+
+        try {
+            // Step 1: Parse recordIds JSON to Map
+            Map<String, Id> recordIdsMap = parseRecordIds(recordIds);
+
+            // Step 2: Build envelope via DocgenEnvelopeService.buildForComposite()
+            DocgenEnvelopeService.Envelope envelope = buildCompositeEnvelope(
+                compositeDocId,
+                recordIdsMap,
+                outputFormat,
+                correlationId
+            );
+
+            // Step 3: Check for existing successful document (idempotency short-circuit)
+            Generated_Document__c existingDoc = checkExistingDocument(envelope.requestHash);
+            if (existingDoc != null) {
+                // Cache hit - return existing download URL without making callout
+                return buildDownloadUrl(existingDoc.OutputFileId__c);
+            }
+
+            // Step 4: Make HTTP callout to Node API (must happen before DML)
+            HTTPResponse response = callNodeApi(envelope);
+
+            // Step 5: Create Generated_Document__c record AFTER successful callout
+            doc = createGeneratedDocumentForComposite(
+                envelope,
+                compositeDocId,
+                recordIdsMap,
+                correlationId
+            );
+
+            // Step 6: Handle response and update the record status
+            return handleResponse(response, doc, correlationId);
+
+        } catch (Exception e) {
+            // Ensure record is marked as FAILED if it was created
+            if (doc != null && doc.Id != null) {
+                markAsFailed(doc.Id, e.getMessage(), correlationId);
+            }
+
+            // Re-throw as AuraHandledException for LWC
+            AuraHandledException auraEx = new AuraHandledException(formatErrorMessage(e));
+            auraEx.setMessage(formatErrorMessage(e));
+            throw auraEx;
+        }
+    }
+
+    /**
      * Get template ID by name
      * Used by LWC component to resolve template name to ID
      * Cacheable to avoid repeated queries for the same template
@@ -145,7 +205,8 @@ public with sharing class DocgenController {
     private static Docgen_Template__c queryTemplate(Id templateId) {
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
-                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
+                   ReturnMultipleRecords__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
@@ -185,6 +246,153 @@ public with sharing class DocgenController {
     }
 
     /**
+     * Parse recordIds JSON string to Map<String, Id>
+     * Handles LWC limitation where @AuraEnabled doesn't support Map<String, Id> parameters
+     *
+     * @param recordIds JSON string (e.g., '{"accountId":"001xxx","contactId":"003xxx"}')
+     * @return Map of variable names to record IDs
+     * @throws IllegalArgumentException if JSON is invalid or blank
+     */
+    @TestVisible
+    private static Map<String, Id> parseRecordIds(String recordIds) {
+        if (String.isBlank(recordIds)) {
+            throw new IllegalArgumentException('recordIds parameter is required');
+        }
+
+        try {
+            // Deserialize JSON to Map<String, Object> first
+            Map<String, Object> rawMap = (Map<String, Object>) JSON.deserializeUntyped(recordIds);
+
+            // Convert to Map<String, Id>
+            Map<String, Id> recordIdsMap = new Map<String, Id>();
+            for (String key : rawMap.keySet()) {
+                String value = (String) rawMap.get(key);
+                recordIdsMap.put(key, (Id) value);
+            }
+
+            return recordIdsMap;
+
+        } catch (Exception e) {
+            throw new IllegalArgumentException('Invalid recordIds JSON format: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Build JSON envelope for composite document generation
+     *
+     * @param compositeDocId Composite_Document__c ID
+     * @param recordIds Map of variable names to record IDs
+     * @param outputFormat Output format (PDF or DOCX)
+     * @param correlationId Correlation ID for tracking
+     * @return Envelope for Node API request
+     */
+    @TestVisible
+    private static DocgenEnvelopeService.Envelope buildCompositeEnvelope(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String correlationId
+    ) {
+        // Use en-GB locale and Europe/London timezone per spec
+        String locale = 'en-GB';
+        String timezone = 'Europe/London';
+
+        DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.buildForComposite(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            locale,
+            timezone
+        );
+
+        return envelope;
+    }
+
+    /**
+     * Create Generated_Document__c record for composite document
+     *
+     * @param envelope Envelope with request data
+     * @param compositeDocId Composite_Document__c ID
+     * @param recordIds Map of record IDs used in generation
+     * @param correlationId Correlation ID for tracking
+     * @return Inserted Generated_Document__c record
+     */
+    @TestVisible
+    private static Generated_Document__c createGeneratedDocumentForComposite(
+        DocgenEnvelopeService.Envelope envelope,
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String correlationId
+    ) {
+        Generated_Document__c doc = new Generated_Document__c();
+        doc.Composite_Document__c = compositeDocId;
+        doc.RequestHash__c = envelope.requestHash;
+        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
+        doc.Status__c = 'PROCESSING';
+        doc.OutputFormat__c = envelope.outputFormat;
+        doc.Attempts__c = 0;
+        doc.RequestedBy__c = UserInfo.getUserId();
+        doc.CorrelationId__c = correlationId;
+
+        // Set parent lookup dynamically based on composite's PrimaryParent
+        // Load composite to get PrimaryParent__c
+        List<Composite_Document__c> composites = [
+            SELECT PrimaryParent__c
+            FROM Composite_Document__c
+            WHERE Id = :compositeDocId
+            LIMIT 1
+        ];
+
+        if (!composites.isEmpty()) {
+            Composite_Document__c composite = composites[0];
+
+            // Get the primary record ID from recordIds map
+            Id primaryRecordId = determinePrimaryRecordId(composite.PrimaryParent__c, recordIds);
+
+            if (primaryRecordId != null) {
+                String objectApiName = primaryRecordId.getSObjectType().getDescribe().getName();
+
+                // Validate object is supported and get configuration
+                DocgenObjectConfigService.validateObjectSupported(objectApiName);
+                Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+
+                // Dynamically set the parent lookup field using reflection
+                doc.put(config.Lookup_Field_API_Name__c, primaryRecordId);
+            }
+        }
+
+        insert doc;
+        return doc;
+    }
+
+    /**
+     * Determine primary record ID from recordIds map based on PrimaryParent configuration
+     *
+     * @param primaryParent Object type from Composite_Document__c.PrimaryParent__c (e.g., 'Account')
+     * @param recordIds Map of variable names to record IDs
+     * @return Primary record ID, or null if not found
+     */
+    @TestVisible
+    private static Id determinePrimaryRecordId(String primaryParent, Map<String, Id> recordIds) {
+        if (String.isBlank(primaryParent) || recordIds.isEmpty()) {
+            return null;
+        }
+
+        // Try to find matching key in recordIds map
+        // Convention: {objectName}Id in lowercase (e.g., accountId, contactId)
+        String expectedKey = primaryParent.toLowerCase() + 'Id';
+
+        for (String key : recordIds.keySet()) {
+            if (key.toLowerCase() == expectedKey) {
+                return recordIds.get(key);
+            }
+        }
+
+        // Fallback: return first ID in map
+        return recordIds.values()[0];
+    }
+
+    /**
      * Create Generated_Document__c record with PROCESSING status
      */
     private static Generated_Document__c createGeneratedDocument(
@@ -196,7 +404,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Template__c = templateId;
         doc.RequestHash__c = envelope.requestHash;
-        doc.RequestJSON__c = JSON.serialize(envelope);
+        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
         doc.Status__c = 'PROCESSING';
         doc.OutputFormat__c = envelope.outputFormat;
         doc.Attempts__c = 0;
@@ -226,7 +434,7 @@ public with sharing class DocgenController {
         req.setMethod('POST');
         req.setHeader('Content-Type', 'application/json');
         req.setHeader('Accept', 'application/json');
-        req.setBody(JSON.serialize(envelope));
+        req.setBody(DocgenEnvelopeService.toJSON(envelope));
         req.setTimeout(120000); // 2 minutes timeout
 
         Http http = new Http();

@@ -13,6 +13,21 @@
 private class GeneratedDocumentTest {
 
     /**
+     * Create a test template for use in tests
+     * Required because validation rule requires either Template__c or Composite_Document__c
+     */
+    private static Id createTestTemplate() {
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Test Template',
+            TemplateContentVersionId__c = '0681e000000000AAA',
+            DataSource__c = 'SOQL',
+            ReturnMultipleRecords__c = false
+        );
+        insert template;
+        return template.Id;
+    }
+
+    /**
      * Test: Insert minimal valid Generated_Document__c record
      * Given: Generated_Document__c object definition
      * When: Insert minimal valid record
@@ -21,9 +36,11 @@ private class GeneratedDocumentTest {
     @isTest
     static void testInsertMinimalDocument() {
         // Given: Generated_Document__c object definition
+        Id templateId = createTestTemplate();
 
         // When: Insert minimal record
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:abc123',
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -58,8 +75,10 @@ private class GeneratedDocumentTest {
     @isTest
     static void testRequestHashUniqueness() {
         // Given: Existing record
+        Id templateId = createTestTemplate();
         String hash = 'sha256:unique123';
         Generated_Document__c doc1 = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = hash,
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -69,6 +88,7 @@ private class GeneratedDocumentTest {
 
         // When: Upsert with same RequestHash
         Generated_Document__c doc2 = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = hash,
             Status__c = 'SUCCEEDED',
             OutputFileId__c = '0681e000000000AAA'
@@ -102,6 +122,7 @@ private class GeneratedDocumentTest {
     @isTest
     static void testParentLookups() {
         // Given: Parent records
+        Id templateId = createTestTemplate();
         Account acc = new Account(Name = 'Test Account');
         insert acc;
 
@@ -121,6 +142,7 @@ private class GeneratedDocumentTest {
 
         // When: Insert document with all parents
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:parents123',
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -155,7 +177,9 @@ private class GeneratedDocumentTest {
     @isTest
     static void testStatusWorkflow() {
         // Given: Document in QUEUED status
+        Id templateId = createTestTemplate();
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:workflow123',
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -202,7 +226,9 @@ private class GeneratedDocumentTest {
     @isTest
     static void testRetryAttempts() {
         // Given: Failed document
+        Id templateId = createTestTemplate();
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:retry123',
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -250,8 +276,10 @@ private class GeneratedDocumentTest {
     @isTest
     static void testCorrelationId() {
         // Given: Document with CorrelationId (UUID format, 36 chars)
+        Id templateId = createTestTemplate();
         String corrId = '123e4567-e89b-12d3-a456-426614174000';
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:corr123',
             Status__c = 'PROCESSING',
             OutputFormat__c = 'PDF',
@@ -283,7 +311,9 @@ private class GeneratedDocumentTest {
     @isTest
     static void testLockSemantics() {
         // Given: Document to be locked
+        Id templateId = createTestTemplate();
         Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
             RequestHash__c = 'sha256:lock123',
             Status__c = 'QUEUED',
             OutputFormat__c = 'PDF',
@@ -322,11 +352,13 @@ private class GeneratedDocumentTest {
     @isTest
     static void testQueryByStatus() {
         // Given: Documents with different statuses
+        Id templateId = createTestTemplate();
         List<Generated_Document__c> docs = new List<Generated_Document__c>();
 
         for (Integer i = 0; i < 10; i++) {
             String status = (i < 5) ? 'QUEUED' : 'PROCESSING';
             docs.add(new Generated_Document__c(
+                Template__c = templateId,
                 RequestHash__c = 'sha256:status' + i,
                 Status__c = status,
                 OutputFormat__c = 'PDF',
@@ -364,7 +396,8 @@ private class GeneratedDocumentTest {
         Docgen_Template__c template = new Docgen_Template__c(
             Name = 'Test Template',
             TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL'
+            DataSource__c = 'SOQL',
+            ReturnMultipleRecords__c = false
         );
         insert template;
 

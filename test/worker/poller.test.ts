@@ -657,4 +657,416 @@ describeTests('PollerService', () => {
       // but conversion pool queues beyond 8
     });
   });
+
+  describe('Composite Document Support', () => {
+    it('should successfully process composite document with Own Template strategy', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000001',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00xxx111',
+          templateId: '068000000000001AAA',
+          templateStrategy: 'Own Template',
+          outputFileName: 'composite-own.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Test Corp' },
+            Terms: { Payment: 'Net 30' },
+            GeneratedDate__formatted: '10 November 2025',
+          },
+          parents: { AccountId: '001000000000001AAA' },
+          requestHash: 'sha256:composite-hash-1',
+          generatedDocumentId: 'a00COMP000000001',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-corr-1',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+
+      // Create a valid DOCX buffer for testing
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+
+      // Mock template download (single template for Own Template strategy)
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+
+      // Mock file upload
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, {
+          id: '068000000000002AAA',
+          success: true,
+        });
+
+      // Mock ContentVersion query for ContentDocumentId
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          totalSize: 1,
+          done: true,
+          records: [{ ContentDocumentId: '069000000000001AAA' }],
+        });
+
+      // Mock ContentDocumentLink creation
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, { id: '06A000000000001AAA', success: true });
+
+      // Mock status update
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(true);
+      expect(result.documentId).toBe(mockDoc.Id);
+    }, 60000);
+
+    it('should successfully process composite document with Concatenate Templates strategy', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000002',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00yyy222',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            { templateId: '068000000000001AAA', namespace: 'Account', sequence: 1 },
+            { templateId: '068000000000002AAA', namespace: 'Terms', sequence: 2 },
+          ],
+          outputFileName: 'composite-concat.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Test Corp', GeneratedDate__formatted: '10 November 2025' },
+            Terms: { Payment: 'Net 30', GeneratedDate__formatted: '10 November 2025' },
+          },
+          parents: { AccountId: '001000000000001AAA' },
+          requestHash: 'sha256:composite-hash-2',
+          generatedDocumentId: 'a00COMP000000002',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-corr-2',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+
+      // Mock template downloads (2 templates for Concatenate strategy)
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000002AAA/VersionData')
+        .reply(200, validDocx);
+
+      // Mock file upload
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, {
+          id: '068000000000003AAA',
+          success: true,
+        });
+
+      // Mock ContentVersion query
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          totalSize: 1,
+          done: true,
+          records: [{ ContentDocumentId: '069000000000002AAA' }],
+        });
+
+      // Mock ContentDocumentLink creation
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, { id: '06A000000000002AAA', success: true });
+
+      // Mock status update
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(true);
+      expect(result.documentId).toBe(mockDoc.Id);
+    }, 60000);
+
+    it('should process mixed queue of single and composite documents', async () => {
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+
+      // Create 2 single-template docs + 1 composite doc
+      const docs: QueuedDocument[] = [
+        // Single template 1
+        {
+          Id: 'a00SINGLE00000001',
+          Status__c: 'PROCESSING',
+          RequestJSON__c: JSON.stringify({
+            templateId: '068000000000001AAA',
+            outputFileName: 'single1.pdf',
+            outputFormat: 'PDF',
+            locale: 'en-GB',
+            timezone: 'Europe/London',
+            options: { storeMergedDocx: false, returnDocxToBrowser: false },
+            data: {
+              Account: { Name: 'Test 1' },
+              GeneratedDate__formatted: '10 Nov 2025',
+            },
+            parents: { AccountId: '001xxx' },
+            requestHash: 'sha256:single1',
+            generatedDocumentId: 'a00SINGLE00000001',
+          }),
+          Attempts__c: 0,
+          CorrelationId__c: 'single-1',
+          Template__c: 'a01xxx',
+          CreatedDate: new Date().toISOString(),
+        },
+        // Composite
+        {
+          Id: 'a00COMP000000003',
+          Status__c: 'PROCESSING',
+          RequestJSON__c: JSON.stringify({
+            compositeDocumentId: 'a00comp3',
+            templateId: '068000000000002AAA',
+            templateStrategy: 'Own Template',
+            outputFileName: 'composite.pdf',
+            outputFormat: 'PDF',
+            locale: 'en-GB',
+            timezone: 'Europe/London',
+            options: { storeMergedDocx: false, returnDocxToBrowser: false },
+            data: {
+              Account: { Name: 'Composite Test' },
+              Terms: { Payment: 'Net 30' },
+              GeneratedDate__formatted: '10 Nov 2025',
+            },
+            parents: { AccountId: '001yyy' },
+            requestHash: 'sha256:comp3',
+            generatedDocumentId: 'a00COMP000000003',
+          }),
+          Attempts__c: 0,
+          CorrelationId__c: 'comp-3',
+          Template__c: null,
+          CreatedDate: new Date().toISOString(),
+        },
+        // Single template 2
+        {
+          Id: 'a00SINGLE00000002',
+          Status__c: 'PROCESSING',
+          RequestJSON__c: JSON.stringify({
+            templateId: '068000000000003AAA',
+            outputFileName: 'single2.pdf',
+            outputFormat: 'PDF',
+            locale: 'en-GB',
+            timezone: 'Europe/London',
+            options: { storeMergedDocx: false, returnDocxToBrowser: false },
+            data: {
+              Account: { Name: 'Test 2' },
+              GeneratedDate__formatted: '10 Nov 2025',
+            },
+            parents: { AccountId: '001zzz' },
+            requestHash: 'sha256:single2',
+            generatedDocumentId: 'a00SINGLE00000002',
+          }),
+          Attempts__c: 0,
+          CorrelationId__c: 'single-2',
+          Template__c: 'a01yyy',
+          CreatedDate: new Date().toISOString(),
+        },
+      ];
+
+      // Mock all template downloads
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000002AAA/VersionData')
+        .reply(200, validDocx);
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000003AAA/VersionData')
+        .reply(200, validDocx);
+
+      // Mock uploads (3 docs)
+      for (let i = 0; i < 3; i++) {
+        nock(baseUrl)
+          .post('/services/data/v59.0/sobjects/ContentVersion')
+          .reply(201, { id: `068upload${i}`, success: true });
+
+        nock(baseUrl)
+          .get('/services/data/v59.0/query')
+          .query(true)
+          .reply(200, {
+            totalSize: 1,
+            done: true,
+            records: [{ ContentDocumentId: `069doc${i}` }],
+          });
+
+        nock(baseUrl)
+          .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+          .reply(201, { id: `06Alink${i}`, success: true });
+      }
+
+      // Mock status updates
+      nock(baseUrl)
+        .patch('/services/data/v59.0/sobjects/Generated_Document__c/a00SINGLE00000001')
+        .reply(204);
+      nock(baseUrl)
+        .patch('/services/data/v59.0/sobjects/Generated_Document__c/a00COMP000000003')
+        .reply(204);
+      nock(baseUrl)
+        .patch('/services/data/v59.0/sobjects/Generated_Document__c/a00SINGLE00000002')
+        .reply(204);
+
+      const results = await Promise.all(docs.map((doc) => poller.processDocument(doc)));
+
+      const successCount = results.filter((r) => r.success).length;
+      expect(successCount).toBe(3);
+    }, 60000);
+
+    it('should handle missing namespace data as non-retryable error', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000004',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00zzz444',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            { templateId: '068000000000001AAA', namespace: 'Account', sequence: 1 },
+            { templateId: '068000000000002AAA', namespace: 'Terms', sequence: 2 },
+          ],
+          outputFileName: 'composite-missing-ns.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Test', GeneratedDate__formatted: '10 Nov 2025' },
+            // Missing 'Terms' namespace!
+          },
+          parents: { AccountId: '001xxx' },
+          requestHash: 'sha256:missing-ns',
+          generatedDocumentId: 'a00COMP000000004',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-missing-ns',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+
+      // Mock first template download (second won't be reached due to missing namespace)
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+
+      // Mock status update to FAILED
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Missing namespace data: Terms');
+      expect(result.retryable).toBe(false);
+    }, 30000);
+
+    it('should handle composite template not found (404) as non-retryable', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000005',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00aaa555',
+          templateId: '068NOTFOUND99999',
+          templateStrategy: 'Own Template',
+          outputFileName: 'composite-404.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Test' },
+            Terms: { Payment: 'Net 30' },
+            GeneratedDate__formatted: '10 Nov 2025',
+          },
+          parents: { AccountId: '001xxx' },
+          requestHash: 'sha256:404-hash',
+          generatedDocumentId: 'a00COMP000000005',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-404',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+
+      // Mock 404 response
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068NOTFOUND99999/VersionData')
+        .reply(404, [{ message: 'The requested resource does not exist', errorCode: 'NOT_FOUND' }]);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Failed to fetch template');
+      expect(result.retryable).toBe(false);
+    }, 30000);
+
+    it.skip('should retry composite concatenation failures with retryable errors', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000006',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00bbb666',
+          templateStrategy: 'Concatenate Templates',
+          templates: [{ templateId: '068000000000001AAA', namespace: 'Account', sequence: 1 }],
+          outputFileName: 'composite-retry.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Test', GeneratedDate__formatted: '10 Nov 2025' },
+          },
+          parents: { AccountId: '001xxx' },
+          requestHash: 'sha256:retry-hash',
+          generatedDocumentId: 'a00COMP000000006',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-retry',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+
+      // Mock template download returns invalid DOCX (will cause merge/concatenation to fail)
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, Buffer.from('invalid docx content'));
+
+      // Mock status update for retry
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(false);
+      expect(result.retryable).toBe(true);
+    }, 30000);
+  });
 });

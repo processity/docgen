@@ -3,7 +3,7 @@ import { loadConfig } from '../config';
 import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
-import { mergeTemplate } from '../templates/merge';
+import { mergeTemplate, concatenateDocx } from '../templates';
 import { convertDocxToPdf } from '../convert/soffice';
 import {
   uploadContentVersion,
@@ -17,6 +17,7 @@ import type {
   ProcessingResult,
   DocgenRequest,
   AppConfig,
+  TemplateSection,
 } from '../types';
 
 const logger = pino();
@@ -341,20 +342,98 @@ export class PollerService {
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
       const templateService = new TemplateService(sfApi);
 
-      // Fetch template
-      log.debug({ templateId: request.templateId }, 'Fetching template');
-      const templateBuffer = await templateService.getTemplate(
-        request.templateId,
-        doc.CorrelationId__c
-      );
+      // Detect composite vs single-template document
+      const isComposite = !!request.compositeDocumentId;
 
-      // Merge template with data
-      log.debug('Merging template');
-      const mergedDocx = await mergeTemplate(templateBuffer, request.data, {
-        locale: request.locale,
-        timezone: request.timezone,
-        imageAllowlist: getConfig().imageAllowlist,
-      });
+      let mergedDocx: Buffer;
+
+      if (isComposite) {
+        // COMPOSITE DOCUMENT PROCESSING
+        log.info({
+          compositeDocumentId: request.compositeDocumentId,
+          templateStrategy: request.templateStrategy,
+        }, 'Processing composite document');
+
+        if (request.templateStrategy === 'Own Template') {
+          // Strategy 1: Single template with full composite data (all namespaces)
+          log.debug({ templateId: request.templateId }, 'Fetching composite template');
+          const templateBuffer = await templateService.getTemplate(
+            request.templateId!,
+            doc.CorrelationId__c
+          );
+
+          log.debug('Merging composite template with full data');
+          mergedDocx = await mergeTemplate(templateBuffer, request.data, {
+            locale: request.locale,
+            timezone: request.timezone,
+            imageAllowlist: getConfig().imageAllowlist,
+          });
+        } else {
+          // Strategy 2: Concatenate Templates
+          log.debug({ templateCount: request.templates?.length }, 'Processing concatenate templates strategy');
+
+          const sections: TemplateSection[] = [];
+
+          for (const templateRef of request.templates!) {
+            log.debug({
+              templateId: templateRef.templateId,
+              namespace: templateRef.namespace,
+              sequence: templateRef.sequence,
+            }, 'Processing template section');
+
+            // Fetch template buffer
+            const templateBuffer = await templateService.getTemplate(
+              templateRef.templateId,
+              doc.CorrelationId__c
+            );
+
+            // Extract namespace data
+            const namespaceData = request.data[templateRef.namespace];
+            if (namespaceData === undefined) {
+              throw new Error(`Missing namespace data: ${templateRef.namespace}`);
+            }
+
+            // Merge template with its namespace data
+            const mergedSection = await mergeTemplate(
+              templateBuffer,
+              namespaceData,
+              {
+                locale: request.locale,
+                timezone: request.timezone,
+                imageAllowlist: getConfig().imageAllowlist,
+              }
+            );
+
+            sections.push({
+              buffer: mergedSection,
+              sequence: templateRef.sequence,
+              namespace: templateRef.namespace,
+            });
+          }
+
+          // Concatenate all sections
+          log.debug({ sectionCount: sections.length }, 'Concatenating document sections');
+          mergedDocx = await concatenateDocx(sections, doc.CorrelationId__c);
+        }
+      } else {
+        // SINGLE-TEMPLATE DOCUMENT PROCESSING (existing logic)
+        if (!request.templateId) {
+          throw new Error('templateId is required for single-template documents');
+        }
+
+        log.debug({ templateId: request.templateId }, 'Fetching template');
+        const templateBuffer = await templateService.getTemplate(
+          request.templateId,
+          doc.CorrelationId__c
+        );
+
+        log.debug('Merging template');
+        mergedDocx = await mergeTemplate(templateBuffer, request.data, {
+          locale: request.locale,
+          timezone: request.timezone,
+          imageAllowlist: getConfig().imageAllowlist,
+        });
+      }
 
       // Convert to PDF if needed
       let outputBuffer: Buffer;
@@ -411,12 +490,17 @@ export class PollerService {
 
       // Track success metrics
       const duration = Date.now() - startTime;
-      trackMetric('docgen_duration_ms', duration, {
-        templateId: request.templateId,
+      const successMetrics: Record<string, string | number> = {
+        templateId: request.templateId || request.compositeDocumentId || 'unknown',
         outputFormat: request.outputFormat,
         mode: 'batch',
+        documentType: isComposite ? 'composite' : 'single',
         correlationId: doc.CorrelationId__c,
-      });
+      };
+      if (isComposite && request.templateStrategy) {
+        successMetrics.templateStrategy = request.templateStrategy;
+      }
+      trackMetric('docgen_duration_ms', duration, successMetrics);
 
       log.info({ contentVersionId: uploadResult.contentVersionId }, 'Document processed successfully');
 
@@ -428,10 +512,15 @@ export class PollerService {
     } catch (error: any) {
       log.error({ error }, 'Failed to process document');
 
+      // Detect composite flag for error metrics
+      const isCompositeDoc = !!request.compositeDocumentId;
+
       // Determine failure reason for metrics
       let failureReason = 'unknown';
       if (error instanceof Error) {
-        if (error.message.includes('404') || error.message.includes('not found')) {
+        if (error.message.includes('Missing namespace data')) {
+          failureReason = 'validation_error'; // Treat missing namespace as validation error (non-retryable)
+        } else if (error.message.includes('404') || error.message.includes('not found')) {
           failureReason = 'template_not_found';
         } else if (error.message.includes('validation') || error.message.includes('invalid')) {
           failureReason = 'validation_error';
@@ -447,7 +536,8 @@ export class PollerService {
       // Track failure metrics
       trackMetric('docgen_failures_total', 1, {
         reason: failureReason,
-        templateId: request.templateId,
+        templateId: request.templateId || request.compositeDocumentId || 'unknown',
+        documentType: isCompositeDoc ? 'composite' : 'single',
         outputFormat: request.outputFormat,
         mode: 'batch',
         correlationId: doc.CorrelationId__c,
@@ -590,9 +680,10 @@ export class PollerService {
 
     // Non-retryable errors
     if (
+      message.includes('missing namespace data') || // Composite document validation error
       message.includes('template not found') ||
       message.includes('not found') ||
-      message.includes('invalid') ||
+      message.includes('invalid request') || // More specific than just "invalid"
       message.includes('bad request') ||
       message.includes(' 404') || // Match ": 404" or " 404 "
       message.includes(' 400') || // Match ": 400" or " 400 "
@@ -602,7 +693,7 @@ export class PollerService {
       return false;
     }
 
-    // Retryable errors (timeouts, network issues, 5xx errors)
+    // Retryable errors (timeouts, network issues, 5xx errors, template parsing errors)
     return true;
   }
 }

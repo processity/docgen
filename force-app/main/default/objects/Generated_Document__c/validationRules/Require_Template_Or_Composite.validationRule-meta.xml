@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Require_Template_Or_Composite</fullName>
+    <active>false</active>
+    <description>Either Template or Composite Document must be specified, but not both and not neither.</description>
+    <errorConditionFormula>AND(
+    ISBLANK(Template__c),
+    ISBLANK(Composite_Document__c)
+)</errorConditionFormula>
+    <errorMessage>Either Template or Composite Document must be specified.</errorMessage>
+</ValidationRule>

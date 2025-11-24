@@ -1,0 +1,16 @@
+<template>
+  <lightning-button
+    label={buttonLabel}
+    onclick={handleGenerate}
+    disabled={isProcessing}
+    variant="brand"
+    class="slds-m-around_medium"
+  ></lightning-button>
+
+  <template if:true={isProcessing}>
+    <lightning-spinner
+      alternative-text="Generating document..."
+      size="small"
+    ></lightning-spinner>
+  </template>
+</template>

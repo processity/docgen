@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Composite_Document__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Reference to the Composite Document configuration used for this generation. Mutually exclusive with Template__c.</description>
+    <externalId>false</externalId>
+    <label>Composite Document</label>
+    <referenceTo>Composite_Document__c</referenceTo>
+    <relationshipLabel>Generated Documents</relationshipLabel>
+    <relationshipName>Generated_Documents</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

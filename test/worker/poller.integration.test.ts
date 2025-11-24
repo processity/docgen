@@ -33,6 +33,7 @@ For CI/CD, set SFDX_AUTH_URL as an environment variable or secret.
 describeIntegration('Poller Service - Integration Tests with Real Salesforce', () => {
   let sfApi: SalesforceApi;
   let testTemplateId: string;
+  let testTemplateRecordId: string; // Docgen_Template__c record ID
   let generatedDocumentId: string;
 
   beforeAll(async () => {
@@ -61,6 +62,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
     const docxTemplate = await createTestDocxBuffer();
 
     try {
+      // Upload ContentVersion first
       const uploadResponse = await sfApi.post(
         '/services/data/v59.0/sobjects/ContentVersion',
         {
@@ -71,6 +73,22 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
       );
       testTemplateId = uploadResponse.id;
       console.log(`Test template uploaded with ID: ${testTemplateId}`);
+
+      // Create Docgen_Template__c record that references the ContentVersion
+      const templateRecordResponse = await sfApi.post(
+        '/services/data/v59.0/sobjects/Docgen_Template__c',
+        {
+          Name: 'Test Template for Poller',
+          PrimaryParent__c: 'Account',
+          DataSource__c: 'SOQL',
+          SOQL__c: 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+          TemplateContentVersionId__c: testTemplateId,
+          StoreMergedDocx__c: false,
+          ReturnDocxToBrowser__c: true,
+        }
+      );
+      testTemplateRecordId = templateRecordResponse.id;
+      console.log(`Test Docgen_Template__c created with ID: ${testTemplateRecordId}`);
     } catch (error) {
       console.error('Failed to upload test template:', error);
       throw error;
@@ -87,6 +105,18 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         console.log(`Cleaned up Generated_Document__c: ${generatedDocumentId}`);
       } catch (error) {
         console.warn('Failed to clean up Generated_Document__c:', error);
+      }
+    }
+
+    // Delete Docgen_Template__c record first (before ContentDocument, due to reference)
+    if (testTemplateRecordId) {
+      try {
+        await sfApi.delete(
+          `/services/data/v59.0/sobjects/Docgen_Template__c/${testTemplateRecordId}`
+        );
+        console.log(`Cleaned up Docgen_Template__c: ${testTemplateRecordId}`);
+      } catch (error) {
+        console.warn('Failed to clean up Docgen_Template__c:', error);
       }
     }
 
@@ -130,6 +160,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
@@ -225,6 +256,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-inv-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
@@ -322,6 +354,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
         RequestHash__c: tempRequest.requestHash,
         CorrelationId__c: 'test-lock-' + Date.now().toString().slice(-10), // Keep under 36 chars
         Attempts__c: 0,
+        Template__c: testTemplateRecordId, // Required by validation rule
       }
     );
 
@@ -401,4 +434,172 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
       }
     }
   }, 30000); // 30 second timeout
+
+  it('should process composite document end-to-end with Concatenate Templates strategy', async () => {
+    // Upload a second template for concatenation
+    const { createTestDocxBuffer } = await import('../helpers/test-docx');
+    const docxTemplate2 = await createTestDocxBuffer();
+
+    let secondTemplateId: string | null = null;
+    let secondTemplateRecordId: string | null = null;
+    let compositeDocId: string | null = null;
+
+    try {
+      // Upload second ContentVersion
+      const uploadResponse2 = await sfApi.post(
+        '/services/data/v59.0/sobjects/ContentVersion',
+        {
+          Title: 'Second Test Template for Composite',
+          PathOnClient: 'test-composite-template2.docx',
+          VersionData: docxTemplate2.toString('base64'),
+        }
+      );
+      secondTemplateId = uploadResponse2.id;
+      console.log(`Second template uploaded with ID: ${secondTemplateId}`);
+
+      // Create second Docgen_Template__c record
+      const templateRecordResponse2 = await sfApi.post(
+        '/services/data/v59.0/sobjects/Docgen_Template__c',
+        {
+          Name: 'Second Test Template for Composite',
+          PrimaryParent__c: 'Account',
+          DataSource__c: 'SOQL',
+          SOQL__c: 'SELECT Id, Name FROM Account WHERE Id = :recordId',
+          TemplateContentVersionId__c: secondTemplateId,
+          StoreMergedDocx__c: false,
+          ReturnDocxToBrowser__c: false,
+        }
+      );
+      secondTemplateRecordId = templateRecordResponse2.id;
+      console.log(`Second Docgen_Template__c created with ID: ${secondTemplateRecordId}`);
+
+      // Create a composite document request
+      const tempRequest = {
+        requestHash: 'sha256:integration-composite-' + Date.now(),
+      };
+
+      const createResponse = await sfApi.post(
+        '/services/data/v59.0/sobjects/Generated_Document__c',
+        {
+          Status__c: 'QUEUED',
+          RequestJSON__c: '{}', // Temporary, will update
+          RequestHash__c: tempRequest.requestHash,
+          CorrelationId__c: 'comp-' + Date.now().toString().slice(-10),
+          Attempts__c: 0,
+          // No Template__c since this is a composite document
+        }
+      );
+
+      compositeDocId = createResponse.id;
+      console.log(`Created composite Generated_Document__c with ID: ${compositeDocId}`);
+
+      // Prepare composite request envelope
+      const requestEnvelope: DocgenRequest = {
+        compositeDocumentId: 'a00composite001', // Mock composite doc ID
+        templateStrategy: 'Concatenate Templates',
+        templates: [
+          { templateId: testTemplateId!, namespace: 'Account', sequence: 1 },
+          { templateId: secondTemplateId!, namespace: 'Terms', sequence: 2 },
+        ],
+        outputFileName: 'Composite_Integration_Test.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: false,
+        },
+        data: {
+          Account: {
+            Name: 'Composite Test Account',
+            GeneratedDate__formatted: new Date().toLocaleDateString('en-GB'),
+          },
+          Terms: {
+            Payment: 'Net 30',
+            GeneratedDate__formatted: new Date().toLocaleDateString('en-GB'),
+          },
+        },
+        parents: {
+          AccountId: null,
+        },
+        requestHash: tempRequest.requestHash,
+        generatedDocumentId: compositeDocId!,
+      };
+
+      // Update with complete RequestJSON
+      await sfApi.patch(
+        `/services/data/v59.0/sobjects/Generated_Document__c/${compositeDocId}`,
+        {
+          RequestJSON__c: JSON.stringify(requestEnvelope),
+        }
+      );
+
+      // Start poller, process batch, then stop
+      await pollerService.start();
+      await pollerService.processBatch();
+      await pollerService.stop();
+
+      // Wait for processing (composite might take longer due to concatenation)
+      await new Promise(resolve => setTimeout(resolve, 8000));
+
+      // Query the document to check its status
+      const query = `SELECT Id, Status__c, OutputFileId__c, Error__c FROM Generated_Document__c WHERE Id = '${compositeDocId}'`;
+      const queryResponse = await sfApi.get<{ records: Array<{
+        Id: string;
+        Status__c: string;
+        OutputFileId__c: string | null;
+        Error__c: string | null;
+      }> }>(
+        `/services/data/v59.0/query?q=${encodeURIComponent(query)}`
+      );
+
+      expect(queryResponse.records).toHaveLength(1);
+      const document = queryResponse.records[0];
+
+      console.log('Composite document status:', document.Status__c);
+      console.log('Composite output file ID:', document.OutputFileId__c);
+      console.log('Composite error:', document.Error__c);
+
+      // Verify the composite document was processed successfully
+      expect(document.Status__c).toBe('SUCCEEDED');
+      expect(document.OutputFileId__c).toBeTruthy();
+      expect(document.Error__c).toBeFalsy();
+    } finally {
+      // Clean up: Delete test records in correct order
+      if (compositeDocId) {
+        try {
+          await sfApi.delete(`/services/data/v59.0/sobjects/Generated_Document__c/${compositeDocId}`);
+          console.log(`Cleaned up composite Generated_Document__c: ${compositeDocId}`);
+        } catch (error) {
+          console.warn('Failed to clean up composite Generated_Document__c:', error);
+        }
+      }
+
+      if (secondTemplateRecordId) {
+        try {
+          await sfApi.delete(`/services/data/v59.0/sobjects/Docgen_Template__c/${secondTemplateRecordId}`);
+          console.log(`Cleaned up second Docgen_Template__c: ${secondTemplateRecordId}`);
+        } catch (error) {
+          console.warn('Failed to clean up second Docgen_Template__c:', error);
+        }
+      }
+
+      if (secondTemplateId) {
+        try {
+          // Query for ContentDocumentId
+          const query = `SELECT ContentDocumentId FROM ContentVersion WHERE Id = '${secondTemplateId}'`;
+          const queryResponse = await sfApi.get<{ records: Array<{ ContentDocumentId: string }> }>(
+            `/services/data/v59.0/query?q=${encodeURIComponent(query)}`
+          );
+          if (queryResponse.records && queryResponse.records.length > 0) {
+            const contentDocumentId = queryResponse.records[0].ContentDocumentId;
+            await sfApi.delete(`/services/data/v59.0/sobjects/ContentDocument/${contentDocumentId}`);
+            console.log(`Cleaned up second ContentDocument: ${contentDocumentId}`);
+          }
+        } catch (error) {
+          console.warn('Failed to clean up second ContentDocument:', error);
+        }
+      }
+    }
+  }, 90000); // 90 second timeout for composite processing (concatenation + conversion)
 });

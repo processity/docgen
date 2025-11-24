@@ -1,0 +1,84 @@
+<template>
+  <lightning-card title="Add Template to Composite Document" icon-name="custom:custom88">
+    <div class="slds-m-around_medium">
+      <template if:false={isLoading}>
+        <!-- Template Selection -->
+        <lightning-combobox
+          name="template"
+          label="Docgen Template"
+          value={selectedTemplateId}
+          placeholder="Select a template"
+          options={templateOptions}
+          onchange={handleTemplateChange}
+          required
+        ></lightning-combobox>
+
+        <!-- Namespace -->
+        <lightning-input
+          label="Namespace"
+          value={namespace}
+          onchange={handleNamespaceChange}
+          placeholder="e.g., Account, Terms, Contact"
+          required
+          pattern="[A-Za-z][A-Za-z0-9_]*"
+          message-when-pattern-mismatch="Namespace must start with a letter and contain only letters, numbers, and underscores"
+          class="slds-m-top_small"
+        ></lightning-input>
+
+        <!-- Sequence -->
+        <lightning-input
+          type="number"
+          label="Sequence"
+          value={sequence}
+          onchange={handleSequenceChange}
+          placeholder="e.g., 10, 20, 30"
+          min="1"
+          step="1"
+          required
+          class="slds-m-top_small"
+        ></lightning-input>
+
+        <!-- Active Checkbox -->
+        <lightning-input
+          type="checkbox"
+          label="Active"
+          checked={isActive}
+          onchange={handleActiveChange}
+          class="slds-m-top_small"
+        ></lightning-input>
+
+        <!-- Help Text -->
+        <div class="slds-m-top_medium slds-text-body_small slds-text-color_weak">
+          <p><strong>Namespace:</strong> Unique key for this template's data in the merged document (e.g., "Account", "Terms")</p>
+          <p><strong>Sequence:</strong> Order in which templates are processed (lower numbers first)</p>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="slds-m-top_medium">
+          <lightning-button
+            variant="brand"
+            label="Add Template"
+            title="Add Template"
+            onclick={handleAddTemplate}
+            disabled={isAddDisabled}
+          ></lightning-button>
+          <lightning-button
+            variant="neutral"
+            label="Cancel"
+            title="Cancel"
+            onclick={handleCancel}
+            class="slds-m-left_small"
+          ></lightning-button>
+        </div>
+      </template>
+
+      <!-- Loading Spinner -->
+      <template if:true={isLoading}>
+        <lightning-spinner
+          alternative-text="Loading templates..."
+          size="medium"
+        ></lightning-spinner>
+      </template>
+    </div>
+  </lightning-card>
+</template>
