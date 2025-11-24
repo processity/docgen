@@ -75,20 +75,15 @@ jobs:
           AAD_CLIENT_ID: ${{ secrets.AAD_CLIENT_ID }}
           AAD_CLIENT_SECRET: ${{ secrets.AAD_CLIENT_SECRET }}
         run: |
-          echo "Configuring External Credential with AAD client credentials via Apex..."
+          echo "Configuring External Credential with AAD client credentials..."
 
-          # Replace placeholders in template and create temporary Apex script
-          sed -e "s|{{CLIENT_ID}}|$AAD_CLIENT_ID|g" \
-              -e "s|{{CLIENT_SECRET}}|$AAD_CLIENT_SECRET|g" \
-              scripts/ConfigureExternalCredential.apex > /tmp/configure-cred.apex
-
-          # Execute Apex script
-          sf apex run --file /tmp/configure-cred.apex
+          # Use the configure-external-credential.sh script with CI environment
+          ./scripts/configure-external-credential.sh docgen-dev CI "$AAD_CLIENT_ID" "$AAD_CLIENT_SECRET"
 
           if [ $? -eq 0 ]; then
-            echo "✅ External Credential configured successfully via Apex ConnectApi"
+            echo "✅ External Credential configured successfully"
           else
-            echo "⚠️  Apex configuration failed to set credentials"
+            echo "⚠️  External Credential configuration failed"
             exit 1
           fi
 
