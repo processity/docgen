@@ -381,4 +381,4 @@ MIT - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Built with** ❤️ **by the Docgen team**
+**Built with** ❤️ **by the Processity team**
