@@ -204,9 +204,9 @@ private class DocgenControllerTest {
         Test.stopTest();
 
         // Then - Verify return value
-        Assert.isNotNull(downloadUrl, 'Download URL should be returned');
-        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Download URL should be Salesforce file URL path');
-        Assert.isTrue(downloadUrl.contains('068XXXXXXXXXXXXXXX'), 'Download URL should contain ContentVersionId');
+        Assert.isNotNull(downloadUrl, 'Document URL should be returned');
+        Assert.isTrue(downloadUrl.contains('/lightning/r/ContentDocument/'), 'URL should be Lightning document view URL');
+        Assert.isTrue(downloadUrl.endsWith('/view'), 'URL should end with /view');
 
         // Then - Verify Generated_Document__c record created and updated
         List<Generated_Document__c> docs = [
@@ -705,9 +705,9 @@ private class DocgenControllerTest {
         String downloadUrl = DocgenController.generate(contactTemplate.Id, con.Id, 'PDF');
         Test.stopTest();
 
-        // Then - Verify download URL returned
-        Assert.isNotNull(downloadUrl, 'Download URL should be returned for Contact');
-        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Should be valid Salesforce file URL');
+        // Then - Verify document URL returned
+        Assert.isNotNull(downloadUrl, 'Document URL should be returned for Contact');
+        Assert.isTrue(downloadUrl.contains('/lightning/r/ContentDocument/'), 'Should be Lightning document view URL');
 
         // Then - Verify Generated_Document__c created with Contact__c lookup set
         List<Generated_Document__c> docs = [
@@ -753,9 +753,9 @@ private class DocgenControllerTest {
         String downloadUrl = DocgenController.generate(leadTemplate.Id, led.Id, 'PDF');
         Test.stopTest();
 
-        // Then - Verify download URL returned
-        Assert.isNotNull(downloadUrl, 'Download URL should be returned for Lead');
-        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Should be valid Salesforce file URL');
+        // Then - Verify document URL returned
+        Assert.isNotNull(downloadUrl, 'Document URL should be returned for Lead');
+        Assert.isTrue(downloadUrl.contains('/lightning/r/ContentDocument/'), 'Should be Lightning document view URL');
 
         // Then - Verify Generated_Document__c created with Lead__c lookup set
         List<Generated_Document__c> docs = [
@@ -956,9 +956,9 @@ private class DocgenControllerTest {
         Test.stopTest();
 
         // Then - Verify return value
-        Assert.isNotNull(downloadUrl, 'Download URL should be returned');
-        Assert.isTrue(downloadUrl.contains('/sfc/servlet.shepherd/version/download/'), 'Download URL should be Salesforce file URL');
-        Assert.isTrue(downloadUrl.contains('068YYYYYYYYYYYYYY'), 'Download URL should contain ContentVersionId');
+        Assert.isNotNull(downloadUrl, 'Document URL should be returned');
+        Assert.isTrue(downloadUrl.contains('/lightning/r/ContentDocument/'), 'URL should be Lightning document view URL');
+        Assert.isTrue(downloadUrl.endsWith('/view'), 'URL should end with /view');
 
         // Then - Verify Generated_Document__c record created
         List<Generated_Document__c> docs = [
