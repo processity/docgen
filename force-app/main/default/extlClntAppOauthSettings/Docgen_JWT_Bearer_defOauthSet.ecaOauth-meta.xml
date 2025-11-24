@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ExtlClntAppOauthSettings xmlns="http://soap.sforce.com/2006/04/metadata">
-    <commaSeparatedOauthScopes>Api, Web, RefreshToken, OpenID</commaSeparatedOauthScopes>
-    <externalClientApplication>Docgen_JWT_Bearer</externalClientApplication>
-    <label>Docgen_JWT_Bearer_defOauthSet</label>
-    <oauthLink>00D8d000003Sxjw:888Pz000000bUqL</oauthLink>
-</ExtlClntAppOauthSettings>
