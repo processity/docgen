@@ -127,6 +127,9 @@ public with sharing class DocgenTemplateFileController {
                 throw new AuraHandledException('Unsupported object type: ' + objectType);
             }
 
+        } catch (AuraHandledException e) {
+            // Re-throw AuraHandledException as-is to preserve the original message
+            throw e;
         } catch (Exception e) {
             throw new AuraHandledException('Failed to update template reference: ' + e.getMessage());
         }

@@ -9,9 +9,10 @@
         <targetConfig targets="lightning__RecordPage">
             <objects>
                 <object>Docgen_Template__c</object>
+                <object>Composite_Document__c</object>
             </objects>
         </targetConfig>
     </targetConfigs>
-    <masterLabel>Docgen Template File Manager</masterLabel>
-    <description>Manage template DOCX files with version history</description>
+    <masterLabel>Template File Manager</masterLabel>
+    <description>Manage template DOCX files with version history for Document Templates and Composite Documents</description>
 </LightningComponentBundle>

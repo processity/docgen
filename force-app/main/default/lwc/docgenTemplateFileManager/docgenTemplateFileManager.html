@@ -1,120 +1,148 @@
 <template>
-    <lightning-card title="Template File" icon-name="doctype:word">
+    <lightning-card title={componentTitle} icon-name="doctype:word">
         <div class="slds-p-around_medium">
-            <!-- File Upload -->
-            <div class="slds-m-bottom_medium">
-                <lightning-file-upload
-                    label="Upload New Template File (DOCX only)"
-                    name="templateFile"
-                    accept={acceptedFormats}
-                    record-id={recordId}
-                    onuploadfinished={handleUploadFinished}
-                    disabled={isUploading}>
-                </lightning-file-upload>
-                <template if:true={isUploading}>
-                    <div class="slds-m-top_small">
-                        <lightning-spinner alternative-text="Updating template..." size="small"></lightning-spinner>
-                        <span class="slds-m-left_small">Processing upload...</span>
-                    </div>
-                </template>
-            </div>
-
-            <!-- Current File Info -->
-            <template if:true={hasFiles}>
-                <div class="slds-m-top_large">
-                    <h3 class="slds-text-heading_small slds-m-bottom_small">File Versions</h3>
-                    <p class="slds-text-body_small slds-m-bottom_medium slds-text-color_weak">
-                        All DOCX files attached to this template. Click "Use This Version" to set the active template.
-                    </p>
-
-                    <table class="slds-table slds-table_bordered slds-table_cell-buffer">
-                        <thead>
-                            <tr class="slds-line-height_reset">
-                                <th scope="col">
-                                    <div class="slds-truncate" title="File Name">File Name</div>
-                                </th>
-                                <th scope="col">
-                                    <div class="slds-truncate" title="Modified Date">Modified Date</div>
-                                </th>
-                                <th scope="col">
-                                    <div class="slds-truncate" title="Version">Version</div>
-                                </th>
-                                <th scope="col">
-                                    <div class="slds-truncate" title="Status">Status</div>
-                                </th>
-                                <th scope="col">
-                                    <div class="slds-truncate" title="Actions">Actions</div>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template for:each={files} for:item="file">
-                                <tr key={file.Id} class="slds-hint-parent">
-                                    <td data-label="File Name">
-                                        <div class="slds-truncate">
-                                            <a href={file.viewUrl} target="_blank">{file.Title}</a>
-                                        </div>
-                                    </td>
-                                    <td data-label="Modified Date">
-                                        <lightning-formatted-date-time
-                                            value={file.LastModifiedDate}
-                                            year="numeric"
-                                            month="short"
-                                            day="2-digit"
-                                            hour="2-digit"
-                                            minute="2-digit">
-                                        </lightning-formatted-date-time>
-                                    </td>
-                                    <td data-label="Version">
-                                        <div class="slds-truncate">v{file.VersionNumber}</div>
-                                    </td>
-                                    <td data-label="Status">
-                                        <template if:true={file.isCurrent}>
-                                            <lightning-badge label="Current" variant="success"></lightning-badge>
-                                        </template>
-                                    </td>
-                                    <td data-label="Actions">
-                                        <template if:false={file.isCurrent}>
-                                            <lightning-button
-                                                label="Use This Version"
-                                                variant="brand"
-                                                data-version-id={file.Id}
-                                                onclick={handleUseVersion}>
-                                            </lightning-button>
-                                        </template>
-                                        <a href={file.downloadUrl} download>
-                                            <lightning-button-icon
-                                                icon-name="utility:download"
-                                                alternative-text="Download"
-                                                title="Download"
-                                                class="slds-m-left_x-small">
-                                            </lightning-button-icon>
-                                        </a>
-                                        <lightning-button-icon
-                                            icon-name="utility:delete"
-                                            alternative-text="Delete"
-                                            title="Delete this file"
-                                            variant="border-filled"
-                                            class="slds-m-left_x-small"
-                                            data-document-id={file.ContentDocumentId}
-                                            onclick={handleDeleteFile}>
-                                        </lightning-button-icon>
-                                    </td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
+            <!-- Loading spinner -->
+            <template if:true={isLoading}>
+                <div class="slds-text-align_center">
+                    <lightning-spinner alternative-text="Loading..." size="small"></lightning-spinner>
                 </div>
             </template>
 
-            <!-- No Files Message -->
-            <template if:false={hasFiles}>
-                <div class="slds-text-align_center slds-m-top_large">
-                    <lightning-icon icon-name="doctype:word" size="large"></lightning-icon>
-                    <p class="slds-m-top_small slds-text-color_weak">
-                        No template files uploaded yet. Use the upload button above to add a DOCX template.
-                    </p>
-                </div>
+            <!-- Content when not loading -->
+            <template if:false={isLoading}>
+                <!-- Message for Composite Documents with Concatenate Templates strategy -->
+                <template if:true={concatenateMessage}>
+                    <div class="slds-box slds-box_x-small slds-theme_shade">
+                        <div class="slds-text-align_center">
+                            <lightning-icon icon-name="utility:info" size="small" variant="warning"></lightning-icon>
+                            <p class="slds-m-top_small">
+                                This Composite Document uses concatenated templates from its component documents.
+                            </p>
+                            <p class="slds-m-top_x-small">
+                                No separate template file is needed.
+                            </p>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- File Manager UI (shown when shouldShowFileManager is true) -->
+                <template if:true={shouldShowFileManager}>
+                    <!-- File Upload -->
+                    <div class="slds-m-bottom_medium">
+                        <lightning-file-upload
+                            label="Upload New Template File (DOCX only)"
+                            name="templateFile"
+                            accept={acceptedFormats}
+                            record-id={recordId}
+                            onuploadfinished={handleUploadFinished}
+                            disabled={isUploading}>
+                        </lightning-file-upload>
+                        <template if:true={isUploading}>
+                            <div class="slds-m-top_small">
+                                <lightning-spinner alternative-text="Updating template..." size="small"></lightning-spinner>
+                                <span class="slds-m-left_small">Processing upload...</span>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Current File Info -->
+                    <template if:true={hasFiles}>
+                        <div class="slds-m-top_large">
+                            <h3 class="slds-text-heading_small slds-m-bottom_small">File Versions</h3>
+                            <p class="slds-text-body_small slds-m-bottom_medium slds-text-color_weak">
+                                All DOCX files attached to this record. Click "Use This Version" to set the active template.
+                            </p>
+
+                            <table class="slds-table slds-table_bordered slds-table_cell-buffer">
+                                <thead>
+                                    <tr class="slds-line-height_reset">
+                                        <th scope="col">
+                                            <div class="slds-truncate" title="File Name">File Name</div>
+                                        </th>
+                                        <th scope="col">
+                                            <div class="slds-truncate" title="Modified Date">Modified Date</div>
+                                        </th>
+                                        <th scope="col">
+                                            <div class="slds-truncate" title="Version">Version</div>
+                                        </th>
+                                        <th scope="col">
+                                            <div class="slds-truncate" title="Status">Status</div>
+                                        </th>
+                                        <th scope="col">
+                                            <div class="slds-truncate" title="Actions">Actions</div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template for:each={files} for:item="file">
+                                        <tr key={file.Id} class="slds-hint-parent">
+                                            <td data-label="File Name">
+                                                <div class="slds-truncate">
+                                                    <a href={file.viewUrl} target="_blank">{file.Title}</a>
+                                                </div>
+                                            </td>
+                                            <td data-label="Modified Date">
+                                                <lightning-formatted-date-time
+                                                    value={file.LastModifiedDate}
+                                                    year="numeric"
+                                                    month="short"
+                                                    day="2-digit"
+                                                    hour="2-digit"
+                                                    minute="2-digit">
+                                                </lightning-formatted-date-time>
+                                            </td>
+                                            <td data-label="Version">
+                                                <div class="slds-truncate">v{file.VersionNumber}</div>
+                                            </td>
+                                            <td data-label="Status">
+                                                <template if:true={file.isCurrent}>
+                                                    <lightning-badge label="Current" variant="success"></lightning-badge>
+                                                </template>
+                                            </td>
+                                            <td data-label="Actions">
+                                                <template if:false={file.isCurrent}>
+                                                    <lightning-button
+                                                        label="Use This Version"
+                                                        variant="brand"
+                                                        data-version-id={file.Id}
+                                                        onclick={handleUseVersion}>
+                                                    </lightning-button>
+                                                </template>
+                                                <a href={file.downloadUrl} download>
+                                                    <lightning-button-icon
+                                                        icon-name="utility:download"
+                                                        alternative-text="Download"
+                                                        title="Download"
+                                                        class="slds-m-left_x-small">
+                                                    </lightning-button-icon>
+                                                </a>
+                                                <lightning-button-icon
+                                                    icon-name="utility:delete"
+                                                    alternative-text="Delete"
+                                                    title="Delete this file"
+                                                    variant="border-filled"
+                                                    class="slds-m-left_x-small"
+                                                    data-document-id={file.ContentDocumentId}
+                                                    onclick={handleDeleteFile}>
+                                                </lightning-button-icon>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+
+                    <!-- No Files Message -->
+                    <template if:false={hasFiles}>
+                        <div class="slds-text-align_center slds-m-top_large">
+                            <lightning-icon icon-name="doctype:word" size="large"></lightning-icon>
+                            <p class="slds-m-top_small slds-text-color_weak">
+                                No template files uploaded yet. Use the upload button above to add a DOCX template.
+                            </p>
+                        </div>
+                    </template>
+                </template>
             </template>
         </div>
     </lightning-card>

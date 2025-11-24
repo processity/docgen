@@ -283,8 +283,8 @@ export default class DocgenTemplateFileManager extends LightningElement {
 
     get componentTitle() {
         if (this.recordMetadata.objectType === 'Composite_Document__c') {
-            return 'Composite Document Template Files';
+            return 'Combined DOCX File';
         }
-        return 'Template Files';
+        return 'Template DOCX Files';
     }
 }
