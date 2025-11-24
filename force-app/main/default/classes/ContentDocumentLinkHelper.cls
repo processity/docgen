@@ -21,10 +21,24 @@ public with sharing class ContentDocumentLinkHelper {
 
         for (Generated_Document__c doc : generatedDocs) {
             if (String.isNotBlank(doc.OutputFileId__c)) {
-                contentVersionIds.add(doc.OutputFileId__c);
+                try {
+                    // Validate it's a valid ID before adding to set
+                    Id validId = (Id) doc.OutputFileId__c;
+                    contentVersionIds.add(validId);
+                } catch (Exception e) {
+                    System.debug(LoggingLevel.WARN, 'Invalid OutputFileId for Generated_Document__c ' + doc.Id +
+                               ': ' + doc.OutputFileId__c + ' - ' + e.getMessage());
+                }
             }
             if (String.isNotBlank(doc.MergedDocxFileId__c)) {
-                contentVersionIds.add(doc.MergedDocxFileId__c);
+                try {
+                    // Validate it's a valid ID before adding to set
+                    Id validId = (Id) doc.MergedDocxFileId__c;
+                    contentVersionIds.add(validId);
+                } catch (Exception e) {
+                    System.debug(LoggingLevel.WARN, 'Invalid MergedDocxFileId for Generated_Document__c ' + doc.Id +
+                               ': ' + doc.MergedDocxFileId__c + ' - ' + e.getMessage());
+                }
             }
         }
 
