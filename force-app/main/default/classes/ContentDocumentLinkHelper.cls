@@ -124,16 +124,21 @@ public with sharing class ContentDocumentLinkHelper {
 
             // Only process non-null, non-empty parent IDs
             if (String.isNotBlank(parentId)) {
-                // Validate it looks like a Salesforce ID (15 or 18 characters)
-                if (parentId.length() == 15 || parentId.length() == 18) {
+                // Validate it's a valid Salesforce ID
+                try {
+                    // Attempt to cast to ID - will throw exception if invalid format
+                    Id validatedId = (Id) parentId;
+
                     ContentDocumentLink cdl = new ContentDocumentLink();
                     cdl.ContentDocumentId = contentDocumentId;
-                    cdl.LinkedEntityId = parentId;
+                    cdl.LinkedEntityId = validatedId;
                     cdl.ShareType = 'V'; // Viewer permission
                     cdl.Visibility = 'AllUsers';
                     links.add(cdl);
-                } else {
-                    System.debug(LoggingLevel.WARN, 'Invalid parent ID format: ' + key + ' = ' + parentId);
+                } catch (Exception e) {
+                    // Invalid ID format - log and skip
+                    System.debug(LoggingLevel.WARN, 'Invalid parent ID format: ' + key + ' = ' + parentId +
+                               ' Error: ' + e.getMessage());
                 }
             }
         }

@@ -479,11 +479,13 @@ private class ContentDocumentLinkHelperTest {
 
         ContentVersion cv = createTestContentVersion('Invalid ID Document');
 
-        // Mix of valid and invalid IDs
+        // Mix of valid and invalid IDs (including the 068xxx pattern used in integration tests)
         String requestJSON = '{"parents": {' +
             '"AccountId": "' + acc.Id + '",' +
             '"OpportunityId": "not-a-valid-id",' +
-            '"ContactId": "123"' +
+            '"ContactId": "123",' +
+            '"LeadId": "068xxx",' +
+            '"CaseId": "068xxxxxxxxxxxxx"' +
             '}}';
 
         Generated_Document__c doc = new Generated_Document__c(
