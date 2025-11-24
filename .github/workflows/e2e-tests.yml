@@ -74,11 +74,13 @@ jobs:
         env:
           AAD_CLIENT_ID: ${{ secrets.AAD_CLIENT_ID }}
           AAD_CLIENT_SECRET: ${{ secrets.AAD_CLIENT_SECRET }}
+          ORG_ALIAS: ${{ steps.create-org.outputs.org_alias }}
         run: |
           echo "Configuring External Credential with AAD client credentials..."
+          echo "Using org alias: ${ORG_ALIAS}"
 
           # Use the configure-external-credential.sh script with CI environment
-          ./scripts/configure-external-credential.sh docgen-dev CI "$AAD_CLIENT_ID" "$AAD_CLIENT_SECRET"
+          ./scripts/configure-external-credential.sh "${ORG_ALIAS}" CI "$AAD_CLIENT_ID" "$AAD_CLIENT_SECRET"
 
           if [ $? -eq 0 ]; then
             echo "✅ External Credential configured successfully"
