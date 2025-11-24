@@ -4,12 +4,10 @@ import { SalesforceAuth, resetSalesforceAuth } from '../src/sf/auth';
 import { SalesforceApi } from '../src/sf/api';
 import {
   uploadContentVersion,
-  createContentDocumentLink,
-  createContentDocumentLinks,
   updateGeneratedDocument,
   uploadAndLinkFiles,
 } from '../src/sf/files';
-import type { DocgenRequest, DocgenParents } from '../src/types';
+import type { DocgenRequest } from '../src/types';
 
 // Generate test RSA key pair
 const { privateKey } = generateKeyPairSync('rsa', {
@@ -219,203 +217,6 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
     });
   });
 
-  describe('createContentDocumentLink', () => {
-    const contentDocumentId = '069xx000000cdocXXX';
-    const linkedEntityId = '001xx000000acctXXX'; // Account ID
-
-    it('should create ContentDocumentLink with ShareType=V and Visibility=AllUsers', async () => {
-      const linkScope = nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          expect(body.ContentDocumentId).toBe(contentDocumentId);
-          expect(body.LinkedEntityId).toBe(linkedEntityId);
-          expect(body.ShareType).toBe('V'); // Viewer
-          expect(body.Visibility).toBe('AllUsers');
-          return true;
-        })
-        .matchHeader('Authorization', 'Bearer test-access-token')
-        .reply(201, {
-          id: '06Axx000000linkXXX',
-          success: true,
-          errors: [],
-        });
-
-      const linkId = await createContentDocumentLink(
-        contentDocumentId,
-        linkedEntityId,
-        api
-      );
-
-      expect(linkId).toBe('06Axx000000linkXXX');
-      expect(linkScope.isDone()).toBe(true);
-    });
-
-    it('should retry on 5xx errors', async () => {
-      // First attempt fails
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .reply(500, { message: 'Internal Server Error' });
-
-      // Second attempt succeeds
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .reply(201, {
-          id: '06Axx000000linkXXX',
-          success: true,
-          errors: [],
-        });
-
-      const linkId = await createContentDocumentLink(
-        contentDocumentId,
-        linkedEntityId,
-        api
-      );
-
-      expect(linkId).toBe('06Axx000000linkXXX');
-    });
-
-    it('should throw on 4xx errors (no retry)', async () => {
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .reply(404, {
-          message: 'ContentDocument not found',
-          errorCode: 'NOT_FOUND',
-        });
-
-      await expect(
-        createContentDocumentLink(contentDocumentId, linkedEntityId, api)
-      ).rejects.toThrow();
-    });
-  });
-
-  describe('createContentDocumentLinks', () => {
-    const contentDocumentId = '069xx000000cdocXXX';
-
-    it('should create links for all non-null parent IDs', async () => {
-      const parents: DocgenParents = {
-        AccountId: '001xx000000acctXXX',
-        OpportunityId: '006xx000000opptyXXX',
-        CaseId: '500xx000000caseXXX',
-      };
-
-      // Mock three separate ContentDocumentLink creations
-      const accountLinkScope = nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.AccountId;
-        })
-        .reply(201, { id: '06Axx000001linkAAA', success: true, errors: [] });
-
-      const opptyLinkScope = nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.OpportunityId;
-        })
-        .reply(201, { id: '06Axx000001linkBBB', success: true, errors: [] });
-
-      const caseLinkScope = nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.CaseId;
-        })
-        .reply(201, { id: '06Axx000001linkCCC', success: true, errors: [] });
-
-      const result = await createContentDocumentLinks(
-        contentDocumentId,
-        parents,
-        api
-      );
-
-      expect(result.created).toBe(3);
-      expect(result.errors).toHaveLength(0);
-      expect(accountLinkScope.isDone()).toBe(true);
-      expect(opptyLinkScope.isDone()).toBe(true);
-      expect(caseLinkScope.isDone()).toBe(true);
-    });
-
-    it('should create link for only non-null parent (single parent)', async () => {
-      const parents: DocgenParents = {
-        AccountId: '001xx000000acctXXX',
-        OpportunityId: null,
-        CaseId: null,
-      };
-
-      const accountLinkScope = nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.AccountId;
-        })
-        .reply(201, { id: '06Axx000001linkAAA', success: true, errors: [] });
-
-      const result = await createContentDocumentLinks(
-        contentDocumentId,
-        parents,
-        api
-      );
-
-      expect(result.created).toBe(1);
-      expect(result.errors).toHaveLength(0);
-      expect(accountLinkScope.isDone()).toBe(true);
-    });
-
-    it('should skip linking when all parents are null', async () => {
-      const parents: DocgenParents = {
-        AccountId: null,
-        OpportunityId: null,
-        CaseId: null,
-      };
-
-      const result = await createContentDocumentLinks(
-        contentDocumentId,
-        parents,
-        api
-      );
-
-      expect(result.created).toBe(0);
-      expect(result.errors).toHaveLength(0);
-    });
-
-    it('should skip linking when parents object is empty', async () => {
-      const parents: DocgenParents = {};
-
-      const result = await createContentDocumentLinks(
-        contentDocumentId,
-        parents,
-        api
-      );
-
-      expect(result.created).toBe(0);
-      expect(result.errors).toHaveLength(0);
-    });
-
-    it('should collect errors but continue on link failure (non-fatal)', async () => {
-      const parents: DocgenParents = {
-        AccountId: '001xx000000acctXXX',
-        OpportunityId: '006xx000000opptyXXX',
-        CaseId: null,
-      };
-
-      // Account link succeeds
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.AccountId;
-        })
-        .reply(201, { id: '06Axx000001linkAAA', success: true, errors: [] });
-
-      // Opportunity link fails (but we continue)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink', (body) => {
-          return body.LinkedEntityId === parents.OpportunityId;
-        })
-        .reply(404, { message: 'Opportunity not found', errorCode: 'NOT_FOUND' });
-
-      const result = await createContentDocumentLinks(
-        contentDocumentId,
-        parents,
-        api
-      );
-
-      expect(result.created).toBe(1); // Only Account link succeeded
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]).toContain('006xx000000opptyXXX');
-    });
-  });
-
   describe('updateGeneratedDocument', () => {
     const generatedDocumentId = 'a00xx000000gdocXXX';
 
@@ -558,7 +359,7 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
       generatedDocumentId: 'a00xx000000gdocXXX',
     };
 
-    it('should upload PDF, create links, and update Generated_Document__c', async () => {
+    it('should upload PDF and update Generated_Document__c', async () => {
       const pdfContentVersionId = '068xx000000pdfXXX';
       const pdfContentDocumentId = '069xx000000cdocXXX';
 
@@ -585,15 +386,16 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
           totalSize: 1,
         });
 
-      // Mock ContentDocumentLink creation (Account only)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .reply(201, { id: '06Axx000001linkAAA', success: true, errors: [] });
-
-      // Mock Generated_Document__c update
+      // Mock Generated_Document__c update (links created by trigger now)
       nock('https://test.salesforce.com')
         .patch(
-          `/services/data/v59.0/sobjects/Generated_Document__c/${mockRequest.generatedDocumentId}`
+          `/services/data/v59.0/sobjects/Generated_Document__c/${mockRequest.generatedDocumentId}`,
+          (body) => {
+            expect(body.Status__c).toBe('SUCCEEDED');
+            expect(body.OutputFileId__c).toBe(pdfContentVersionId);
+            expect(body.Account__c).toBe('001xx000000acctXXX');
+            return true;
+          }
         )
         .reply(204);
 
@@ -607,7 +409,7 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
       expect(result.pdfContentVersionId).toBe(pdfContentVersionId);
       expect(result.pdfContentDocumentId).toBe(pdfContentDocumentId);
       expect(result.docxContentVersionId).toBeUndefined();
-      expect(result.linkCount).toBe(1);
+      expect(result.linkCount).toBe(0); // Links handled by trigger now
       expect(result.linkErrors).toHaveLength(0);
     });
 
@@ -671,17 +473,12 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
           totalSize: 1,
         });
 
-      // Mock links (Account only, for both PDF and DOCX)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .times(2)
-        .reply(201, { id: '06Axx000001linkXXX', success: true, errors: [] });
-
-      // Mock Generated_Document__c update with both file IDs
+      // Mock Generated_Document__c update with both file IDs (links created by trigger)
       nock('https://test.salesforce.com')
         .patch(
           `/services/data/v59.0/sobjects/Generated_Document__c/${requestWithDocx.generatedDocumentId}`,
           (body) => {
+            expect(body.Status__c).toBe('SUCCEEDED');
             expect(body.OutputFileId__c).toBe(pdfContentVersionId);
             expect(body.MergedDocxFileId__c).toBe(docxContentVersionId);
             return true;
@@ -698,67 +495,12 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
 
       expect(result.pdfContentVersionId).toBe(pdfContentVersionId);
       expect(result.docxContentVersionId).toBe(docxContentVersionId);
-      expect(result.linkCount).toBe(2); // PDF + DOCX links to Account
+      expect(result.linkCount).toBe(0); // Links handled by trigger now
     });
 
-    it('should handle link failures gracefully (file orphaned, status FAILED)', async () => {
-      const pdfContentVersionId = '068xx000000pdfXXX';
-      const pdfContentDocumentId = '069xx000000cdocXXX';
+    // Removed test for link failures - links are now handled by trigger
 
-      // Mock PDF upload (succeeds)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentVersion')
-        .reply(201, {
-          id: pdfContentVersionId,
-          success: true,
-          errors: [],
-        });
-
-      nock('https://test.salesforce.com')
-        .get('/services/data/v59.0/query')
-        .query(true)
-        .reply(200, {
-          records: [
-            {
-              Id: pdfContentVersionId,
-              ContentDocumentId: pdfContentDocumentId,
-            },
-          ],
-          totalSize: 1,
-        });
-
-      // Mock link creation (fails)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .reply(404, { message: 'Parent record not found' });
-
-      // Mock update with FAILED status
-      nock('https://test.salesforce.com')
-        .patch(
-          `/services/data/v59.0/sobjects/Generated_Document__c/${mockRequest.generatedDocumentId}`,
-          (body) => {
-            expect(body.Status__c).toBe('FAILED');
-            expect(body.Error__c).toContain('Link creation failed');
-            return true;
-          }
-        )
-        .reply(204);
-
-      const result = await uploadAndLinkFiles(
-        pdfBuffer,
-        null,
-        mockRequest,
-        api
-      );
-
-      // File uploaded successfully
-      expect(result.pdfContentVersionId).toBe(pdfContentVersionId);
-      // But links failed
-      expect(result.linkCount).toBe(0);
-      expect(result.linkErrors.length).toBeGreaterThan(0);
-    });
-
-    it('should create links for multiple parents', async () => {
+    it('should update parent lookup fields for multiple parents', async () => {
       const requestMultiParent: DocgenRequest = {
         ...mockRequest,
         parents: {
@@ -793,16 +535,17 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
           totalSize: 1,
         });
 
-      // Mock 3 ContentDocumentLink creations (Account, Opportunity, Case)
-      nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
-        .times(3)
-        .reply(201, { id: '06Axx000001linkXXX', success: true, errors: [] });
-
-      // Mock update
+      // Mock update with parent lookups
       nock('https://test.salesforce.com')
         .patch(
-          `/services/data/v59.0/sobjects/Generated_Document__c/${requestMultiParent.generatedDocumentId}`
+          `/services/data/v59.0/sobjects/Generated_Document__c/${requestMultiParent.generatedDocumentId}`,
+          (body) => {
+            expect(body.Status__c).toBe('SUCCEEDED');
+            expect(body.Account__c).toBe('001xx000000acctXXX');
+            expect(body.Opportunity__c).toBe('006xx000000opptyXXX');
+            expect(body.Case__c).toBe('500xx000000caseXXX');
+            return true;
+          }
         )
         .reply(204);
 
@@ -813,10 +556,10 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
         api
       );
 
-      expect(result.linkCount).toBe(3); // Account + Opportunity + Case
+      expect(result.linkCount).toBe(0); // Links handled by trigger now
     });
 
-    it('should skip links when no parents provided', async () => {
+    it('should handle requests with no parents', async () => {
       const requestNoParents: DocgenRequest = {
         ...mockRequest,
         parents: undefined,
@@ -847,10 +590,18 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
           totalSize: 1,
         });
 
-      // Mock update (no links)
+      // Mock update (no parent lookups)
       nock('https://test.salesforce.com')
         .patch(
-          `/services/data/v59.0/sobjects/Generated_Document__c/${requestNoParents.generatedDocumentId}`
+          `/services/data/v59.0/sobjects/Generated_Document__c/${requestNoParents.generatedDocumentId}`,
+          (body) => {
+            expect(body.Status__c).toBe('SUCCEEDED');
+            expect(body.OutputFileId__c).toBe(pdfContentVersionId);
+            // No parent lookups expected
+            expect(body.Account__c).toBeUndefined();
+            expect(body.Opportunity__c).toBeUndefined();
+            return true;
+          }
         )
         .reply(204);
 
@@ -861,7 +612,7 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
         api
       );
 
-      expect(result.linkCount).toBe(0);
+      expect(result.linkCount).toBe(0); // No links created
     });
   });
 });

@@ -2,28 +2,84 @@ import { LightningElement, api, wire, track } from 'lwc';
 import { getRecord, updateRecord, deleteRecord } from 'lightning/uiRecordApi';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getTemplateFiles from '@salesforce/apex/DocgenTemplateFileController.getTemplateFiles';
+import getRecordMetadata from '@salesforce/apex/DocgenTemplateFileController.getRecordMetadata';
+import updateTemplateContentVersionId from '@salesforce/apex/DocgenTemplateFileController.updateTemplateContentVersionId';
+
+// Import schemas for both objects
 import TEMPLATE_ID_FIELD from '@salesforce/schema/Docgen_Template__c.Id';
-import CONTENT_VERSION_ID_FIELD from '@salesforce/schema/Docgen_Template__c.TemplateContentVersionId__c';
+import TEMPLATE_CONTENT_VERSION_FIELD from '@salesforce/schema/Docgen_Template__c.TemplateContentVersionId__c';
+import COMPOSITE_ID_FIELD from '@salesforce/schema/Composite_Document__c.Id';
+import COMPOSITE_CONTENT_VERSION_FIELD from '@salesforce/schema/Composite_Document__c.TemplateContentVersionId__c';
+import COMPOSITE_STRATEGY_FIELD from '@salesforce/schema/Composite_Document__c.Template_Strategy__c';
 
 export default class DocgenTemplateFileManager extends LightningElement {
-    @api recordId; // Docgen_Template__c Id
+    @api recordId; // Can be either Docgen_Template__c or Composite_Document__c Id
     @track files = [];
     @track currentFileId;
     @track isUploading = false;
+    @track recordMetadata = {};
+    @track isLoading = true;
 
-    // Load files when component initializes or recordId changes
-    @wire(getRecord, { recordId: '$recordId', fields: [CONTENT_VERSION_ID_FIELD] })
-    wiredRecord({ error, data }) {
-        if (data) {
-            this.currentFileId = data.fields.TemplateContentVersionId__c.value;
-            this.loadFiles();
+    // Component lifecycle - load metadata when initialized
+    async connectedCallback() {
+        await this.loadRecordMetadata();
+    }
+
+    // Load record metadata to determine object type and settings
+    async loadRecordMetadata() {
+        try {
+            this.isLoading = true;
+            this.recordMetadata = await getRecordMetadata({ recordId: this.recordId });
+            this.currentFileId = this.recordMetadata.templateContentVersionId;
+
+            // Only load files if we should show the file manager
+            if (this.shouldShowFileManager) {
+                await this.loadFiles();
+            }
+        } catch (error) {
+            this.showToast('Error', 'Failed to load record metadata', 'error');
+            console.error('Error loading metadata:', error);
+        } finally {
+            this.isLoading = false;
         }
     }
 
-    // Load all files linked to this template
+    // Determine if file manager should be shown based on object type and template strategy
+    get shouldShowFileManager() {
+        // For Docgen_Template__c, always show
+        if (this.recordMetadata.objectType === 'Docgen_Template__c') {
+            return true;
+        }
+        // For Composite_Document__c, only show if Template_Strategy__c = 'Own Template'
+        if (this.recordMetadata.objectType === 'Composite_Document__c') {
+            return this.recordMetadata.templateStrategy === 'Own Template';
+        }
+        return false;
+    }
+
+    // Get message for when Composite Document uses concatenated templates
+    get concatenateMessage() {
+        return this.recordMetadata.objectType === 'Composite_Document__c' &&
+               this.recordMetadata.templateStrategy === 'Concatenate Templates';
+    }
+
+    // Get the appropriate field references based on object type
+    get idField() {
+        return this.recordMetadata.objectType === 'Composite_Document__c'
+            ? COMPOSITE_ID_FIELD
+            : TEMPLATE_ID_FIELD;
+    }
+
+    get contentVersionField() {
+        return this.recordMetadata.objectType === 'Composite_Document__c'
+            ? COMPOSITE_CONTENT_VERSION_FIELD
+            : TEMPLATE_CONTENT_VERSION_FIELD;
+    }
+
+    // Load all files linked to this record
     async loadFiles() {
         try {
-            const result = await getTemplateFiles({ templateId: this.recordId });
+            const result = await getTemplateFiles({ recordId: this.recordId });
             this.files = result.map(file => ({
                 ...file,
                 isCurrent: file.Id === this.currentFileId,
@@ -63,15 +119,15 @@ export default class DocgenTemplateFileManager extends LightningElement {
         }
     }
 
-    // Update template record with ContentVersionId
+    // Update record with ContentVersionId
     async updateTemplateWithFile(contentDocumentId) {
         const maxRetries = 5;
         let retryCount = 0;
 
         while (retryCount < maxRetries) {
             try {
-                // Query for all files linked to this template
-                const result = await getTemplateFiles({ templateId: this.recordId });
+                // Query for all files linked to this record
+                const result = await getTemplateFiles({ recordId: this.recordId });
 
                 console.log('Attempt ' + (retryCount + 1) + ': Found ' + result.length + ' files');
                 console.log('Looking for ContentDocumentId: ' + contentDocumentId);
@@ -94,15 +150,14 @@ export default class DocgenTemplateFileManager extends LightningElement {
                     throw new Error('Could not find uploaded file after ' + maxRetries + ' attempts. Please refresh the page and set the template file manually using "Use This Version" button.');
                 }
 
-                // Update the template record
-                const fields = {};
-                fields[TEMPLATE_ID_FIELD.fieldApiName] = this.recordId;
-                fields[CONTENT_VERSION_ID_FIELD.fieldApiName] = uploadedVersion.Id;
-
-                const recordInput = { fields };
-                await updateRecord(recordInput);
+                // Update the record using the new Apex method
+                await updateTemplateContentVersionId({
+                    recordId: this.recordId,
+                    contentVersionId: uploadedVersion.Id
+                });
 
                 this.currentFileId = uploadedVersion.Id;
+                this.recordMetadata.templateContentVersionId = uploadedVersion.Id;
                 this.showToast(
                     'Success',
                     'Template file updated successfully',
@@ -133,14 +188,14 @@ export default class DocgenTemplateFileManager extends LightningElement {
         const versionId = event.target.dataset.versionId;
 
         try {
-            const fields = {};
-            fields[TEMPLATE_ID_FIELD.fieldApiName] = this.recordId;
-            fields[CONTENT_VERSION_ID_FIELD.fieldApiName] = versionId;
-
-            const recordInput = { fields };
-            await updateRecord(recordInput);
+            // Update using the new Apex method
+            await updateTemplateContentVersionId({
+                recordId: this.recordId,
+                contentVersionId: versionId
+            });
 
             this.currentFileId = versionId;
+            this.recordMetadata.templateContentVersionId = versionId;
             this.showToast(
                 'Success',
                 'Template version updated successfully',
@@ -224,5 +279,12 @@ export default class DocgenTemplateFileManager extends LightningElement {
 
     get hasFiles() {
         return this.files && this.files.length > 0;
+    }
+
+    get componentTitle() {
+        if (this.recordMetadata.objectType === 'Composite_Document__c') {
+            return 'Composite Document Template Files';
+        }
+        return 'Template Files';
     }
 }

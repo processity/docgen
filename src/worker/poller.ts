@@ -7,7 +7,6 @@ import { mergeTemplate, concatenateDocx } from '../templates';
 import { convertDocxToPdf } from '../convert/soffice';
 import {
   uploadContentVersion,
-  createContentDocumentLinks,
   updateGeneratedDocument,
 } from '../sf/files';
 import { trackMetric, trackGauge } from '../obs';
@@ -457,13 +456,8 @@ export class PollerService {
         { correlationId: doc.CorrelationId__c }
       );
 
-      // Create ContentDocumentLinks
-      if (request.parents) {
-        log.debug({ parents: request.parents }, 'Creating ContentDocumentLinks');
-        await createContentDocumentLinks(uploadResult.contentDocumentId, request.parents, sfApi, {
-          correlationId: doc.CorrelationId__c,
-        });
-      }
+      // ContentDocumentLinks will be created by trigger when Status__c = 'SUCCEEDED'
+      // The trigger reads parent IDs from RequestJSON__c
 
       // Handle merged DOCX storage if requested
       let mergedDocxFileId: string | undefined;
@@ -478,11 +472,7 @@ export class PollerService {
         );
         mergedDocxFileId = docxUpload.contentVersionId;
 
-        if (request.parents) {
-          await createContentDocumentLinks(docxUpload.contentDocumentId, request.parents, sfApi, {
-            correlationId: doc.CorrelationId__c,
-          });
-        }
+        // ContentDocumentLinks for DOCX will also be created by trigger
       }
 
       // Update document status to SUCCEEDED
