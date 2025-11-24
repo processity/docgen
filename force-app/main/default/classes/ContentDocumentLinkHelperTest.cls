@@ -343,16 +343,39 @@ private class ContentDocumentLinkHelperTest {
         ContentDocumentLinkHelper.createLinksFromGeneratedDocuments(docs);
         Test.stopTest();
 
-        // Verify: All links created - query all at once to avoid governor limits
+        // Verify: All links created - need to query by ContentDocumentId due to restrictions
+        // First get all ContentDocumentIds - bulk query to avoid governor limits
+        Set<Id> cvIds = new Set<Id>();
+        for (Generated_Document__c doc : docs) {
+            cvIds.add(doc.OutputFileId__c);
+        }
+
+        Map<Id, ContentVersion> cvMap = new Map<Id, ContentVersion>(
+            [SELECT Id, ContentDocumentId FROM ContentVersion WHERE Id IN :cvIds]
+        );
+
+        Set<Id> contentDocIds = new Set<Id>();
+        for (ContentVersion cv : cvMap.values()) {
+            contentDocIds.add(cv.ContentDocumentId);
+        }
+
+        // Now query links filtered by ContentDocumentIds
         List<ContentDocumentLink> allLinks = [
-            SELECT Id, LinkedEntityId FROM ContentDocumentLink
-            WHERE LinkedEntityId IN :accounts
+            SELECT Id, LinkedEntityId, ContentDocumentId FROM ContentDocumentLink
+            WHERE ContentDocumentId IN :contentDocIds
         ];
 
-        // Count unique accounts that have links
+        // Count unique accounts that have links (filter to only our test accounts)
         Set<Id> accountsWithLinks = new Set<Id>();
+        Set<Id> accountIdSet = new Set<Id>();
+        for (Account acc : accounts) {
+            accountIdSet.add(acc.Id);
+        }
+
         for (ContentDocumentLink link : allLinks) {
-            accountsWithLinks.add(link.LinkedEntityId);
+            if (accountIdSet.contains(link.LinkedEntityId)) {
+                accountsWithLinks.add(link.LinkedEntityId);
+            }
         }
 
         Assert.areEqual(50, accountsWithLinks.size(), 'Should create links for all 50 documents');

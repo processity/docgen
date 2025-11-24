@@ -195,16 +195,30 @@ private class GeneratedDocumentTriggerHandlerTest {
         update docs;
         Test.stopTest();
 
-        // Verify: All links created - query all at once to avoid governor limits
+        // Verify: All links created - need to query by ContentDocumentId due to restrictions
+        // First get all ContentDocumentIds
+        Set<Id> contentDocIds = new Set<Id>();
+        for (ContentVersion cv : cvs) {
+            contentDocIds.add(cv.ContentDocumentId);
+        }
+
+        // Now query links filtered by ContentDocumentIds
         List<ContentDocumentLink> allLinks = [
-            SELECT Id, LinkedEntityId FROM ContentDocumentLink
-            WHERE LinkedEntityId IN :accounts
+            SELECT Id, LinkedEntityId, ContentDocumentId FROM ContentDocumentLink
+            WHERE ContentDocumentId IN :contentDocIds
         ];
 
-        // Count unique accounts that have links
+        // Count unique accounts that have links (filter to only our test accounts)
         Set<Id> accountsWithLinks = new Set<Id>();
+        Set<Id> accountIdSet = new Set<Id>();
+        for (Account acc : accounts) {
+            accountIdSet.add(acc.Id);
+        }
+
         for (ContentDocumentLink link : allLinks) {
-            accountsWithLinks.add(link.LinkedEntityId);
+            if (accountIdSet.contains(link.LinkedEntityId)) {
+                accountsWithLinks.add(link.LinkedEntityId);
+            }
         }
 
         Assert.areEqual(50, accountsWithLinks.size(), 'Trigger should handle bulk updates');
