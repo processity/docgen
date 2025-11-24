@@ -373,6 +373,21 @@ For more troubleshooting, see [docs/troubleshooting-index.md](./troubleshooting-
 - **Documentation**: [docs/](../docs/)
 - **Architecture Decision Records**: [docs/adr/](./adr/)
 
+## Quick Start: Composite Documents
+
+Combine multiple data sources into one PDF. Requires: 2+ templates created, basic namespace understanding.
+
+**Steps**:
+1. Create `Composite_Document__c` record with `Template_Strategy__c` = "Concatenate Templates" or "Own Template"
+2. Create `Composite_Document_Template__c` junction records linking templates with unique `Namespace__c` values and `Sequence__c` ordering
+3. Call `DocgenController.generateComposite(compositeId, JSON.serialize(recordIds), 'PDF')`
+
+**Template Syntax**: Concatenate uses `{{Field}}` (no prefix), Own Template uses `{{Namespace.Field}}`.
+
+**Common Errors**: Duplicate namespaces, wrong syntax for strategy. See [Template Authoring](./template-authoring.md#composite-documents) for details.
+
+---
+
 ## Related Documentation
 
 - [Architecture Guide](./architecture.md) - Technical implementation details
