@@ -253,25 +253,12 @@ Use JavaScript expressions:
 {{END-IF}}
 ```
 
-Or pre-compute in Apex for cleaner templates:
-
-**Apex:**
-```apex
-data.put('ShouldShowDiscount', account.IsPartner || account.IsVIP);
-```
-
-**Template:**
-```
-{{IF ShouldShowDiscount}}
-  Special discount available
-{{END-IF}}
-```
 
 ---
 
 ## JavaScript Expressions
 
-Templates support JavaScript for dynamic calculations and data manipulation. However, **prefer Apex for complex logic** to keep templates deterministic.
+Templates support JavaScript for dynamic calculations and data manipulation.
 
 ### Basic JavaScript Syntax
 
@@ -421,29 +408,15 @@ const percentage = total > 0 ? ((withEmail / total) * 100).toFixed(1) : 0;
    - **Bad:** `{{= (() => { return value; })() }}`
    - **Good:** `{{= value }}`
 
-4. **Keep it simple:** Complex logic should be in Apex
-   - Templates are for presentation, not business logic
-
-### When to Use JavaScript vs Apex
-
-**Use JavaScript in templates for:**
-- ✅ Simple calculations (length, counts)
-- ✅ Array filtering and sorting
-- ✅ Conditional text/formatting
-- ✅ Grouping data for display
-
-**Use Apex for:**
-- ✅ Complex business logic
-- ✅ Data fetching (SOQL)
-- ✅ Currency/date formatting (locale-aware)
-- ✅ Security/validation
-- ✅ Calculations that need testing
+4. **Keep it simple:** Templates handle presentation logic well
+   - Use JavaScript for calculations, filtering, and conditional text
+   - Use template syntax for formatting and data display
 
 ---
 
 ## Formatted Values
 
-All formatting is done by Apex to ensure consistency and locale correctness.
+The system provides pre-formatted values for currency, dates, numbers, and percentages. Use the `__formatted` suffix to access these values.
 
 ### Currency
 
@@ -971,15 +944,15 @@ For more information about composite documents:
 
 ## Best Practices
 
-### 1. Pre-format Everything in Apex
+### 1. Use Pre-formatted Fields
 
 **Good:**
-```apex
-data.put('Amount__formatted', String.format('{0,number,currency}', amount));
+```
+Total: {{Opportunity.Amount__formatted}}
+Date: {{Opportunity.CloseDate__formatted}}
 ```
 
-**Avoid:**
-Template-level formatting is limited. Let Apex handle it.
+The system automatically provides `__formatted` versions of currency, date, number, and percentage fields.
 
 ### 2. Use Meaningful Field Names
 
@@ -1010,19 +983,17 @@ Ensure templates don't break when:
 - Optional fields are null
 - Related objects don't exist
 
-### 5. Keep Logic Simple
+### 5. Use JavaScript for Calculations
 
-Complex calculations should be in Apex:
+Templates support JavaScript expressions for calculations and logic:
 
-**Good (Apex):**
-```apex
-Decimal discount = isPartner ? amount * 0.15 : 0;
-data.put('Discount__formatted', formatCurrency(discount));
+**Examples:**
 ```
+Total Contacts: {{= Account.Contacts.length }}
 
-**Avoid (Template):**
-```
-Discount: {{Amount * 0.15}}  // Don't do math in templates
+Revenue per Employee: {{= (Account.AnnualRevenue / Account.NumberOfEmployees).toFixed(2) }}
+
+Discount: {{= (Amount * 0.15).toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
 ```
 
 ### 6. Document Custom Fields
