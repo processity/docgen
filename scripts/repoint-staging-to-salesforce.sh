@@ -13,6 +13,46 @@ set -e
 # - Key Vault access permissions (Key Vault Secrets Officer role)
 # - Container App permissions (Contributor access)
 # - Private key file matching the public key in Salesforce Connected App
+#
+# Usage Examples:
+# ----------------
+# 1. Interactive mode (prompts for all values):
+#    ./scripts/repoint-staging-to-salesforce.sh
+#
+# 2. Command-line mode with all parameters:
+#    ./scripts/repoint-staging-to-salesforce.sh \
+#      -d "mycompany.my.salesforce.com" \
+#      -u "integration@mycompany.com" \
+#      -c "3MVG9..." \
+#      -k "./keys/server.key"
+#
+# 3. Auto-confirm mode (skip confirmation prompt):
+#    ./scripts/repoint-staging-to-salesforce.sh -y \
+#      -d "mycompany.my.salesforce.com" \
+#      -u "integration@mycompany.com" \
+#      -c "3MVG9..." \
+#      -k "./keys/server.key"
+#
+# 4. Dry run (preview changes without applying):
+#    ./scripts/repoint-staging-to-salesforce.sh --dry-run \
+#      -d "mycompany.my.salesforce.com" \
+#      -u "integration@mycompany.com" \
+#      -c "3MVG9..."
+#
+# 5. With backup of current values:
+#    ./scripts/repoint-staging-to-salesforce.sh -b \
+#      -d "mycompany.my.salesforce.com" \
+#      -u "integration@mycompany.com" \
+#      -c "3MVG9..." \
+#      -k "./keys/server.key"
+#
+# Required Information:
+# - Salesforce Domain: Your org's domain (e.g., company.my.salesforce.com)
+# - Username: The integration user's username
+# - Client ID: The Connected App's Consumer Key
+# - Private Key: Path to the RSA private key file (must match the certificate in Salesforce)
+#
+# Note: Consumer Secret is NOT needed for JWT Bearer Flow authentication
 #######################################
 
 # Colors for output
@@ -32,6 +72,7 @@ LOCATION="eastus"
 PRIVATE_KEY_PATH="./keys/server.key"
 DRY_RUN=false
 BACKUP_CURRENT=false
+AUTO_CONFIRM=false
 
 # Function to print colored output
 print_info() {
@@ -63,6 +104,7 @@ OPTIONS:
     -c, --client-id CLIENT_ID    Connected App Client ID (Consumer Key)
     -k, --key-file PATH          Path to private key file (default: ./keys/server.key)
     -b, --backup                 Backup current values before updating
+    -y, --yes                    Skip confirmation prompt
     --dry-run                    Show what would be done without making changes
     -h, --help                   Display this help message
 
@@ -100,6 +142,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--backup)
             BACKUP_CURRENT=true
+            shift
+            ;;
+        -y|--yes)
+            AUTO_CONFIRM=true
             shift
             ;;
         --dry-run)
@@ -219,7 +265,7 @@ EOF
 fi
 
 # Confirmation
-if [ "$DRY_RUN" = false ]; then
+if [ "$DRY_RUN" = false ] && [ "$AUTO_CONFIRM" = false ]; then
     echo ""
     print_warning "This will update the staging environment's Salesforce connection."
     read -p "Do you want to proceed? (yes/no): " CONFIRM
