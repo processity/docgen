@@ -356,7 +356,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body).toHaveProperty('error');
       expect(body).toHaveProperty('message');
       expect(body).toHaveProperty('correlationId');
-      expect(body.error).toBe('Not Found');
+      expect(body.error).toBe('TemplateNotFoundError');
     });
 
     it('should return 400 for missing required fields', async () => {
@@ -374,7 +374,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should return 400 for invalid outputFormat', async () => {
@@ -404,7 +404,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should return 502 when Salesforce upload fails', async () => {
@@ -461,7 +461,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(502);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Gateway');
+      expect(body.error).toBe('SalesforceApiError');
       expect(body.message).toContain('Salesforce API error');
     }, 30000); // Increased timeout for retry logic (4 retries with backoff: 1s + 2s + 4s + overhead, + extra buffer for test suite interference)
 
@@ -1428,7 +1428,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
       expect(body.message).toContain('templateId');
     });
 
@@ -1459,7 +1459,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
       expect(body.message).toContain('templates');
     });
 
@@ -1521,7 +1521,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(response.statusCode).toBe(404);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Not Found');
+      expect(body.error).toBe('TemplateNotFoundError');
       expect(body.message).toContain('Template not found');
     });
   });

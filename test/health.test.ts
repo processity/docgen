@@ -130,14 +130,14 @@ describe('Health Endpoints', () => {
       expect(response.headers['x-correlation-id']).toBe(response.body.correlationId);
     });
 
-    it('should normalize 400 error names to "Bad Request"', async () => {
+    it('should return ValidationError for invalid input', async () => {
       const response = await supertest(app.server)
         .post('/generate')
         .set('Content-Type', 'application/json')
         .send('not json');
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toBe('Bad Request');
+      expect(response.body.error).toBe('ValidationError');
     });
   });
 

@@ -123,7 +123,7 @@ describe('TemplateService', () => {
         .reply(404, { error: 'Not Found' });
 
       await expect(service.getTemplate(CONTENT_VERSION_ID)).rejects.toThrow(
-        /Failed to fetch template/
+        /Template not found/
       );
     });
 

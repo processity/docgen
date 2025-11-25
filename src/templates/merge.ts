@@ -2,6 +2,7 @@ import createReport from 'docx-templates';
 import type { MergeOptions } from '../types';
 // import { ImageAllowlist } from '../utils/image-allowlist'; // TODO: Use for image URL validation
 import { createLogger } from '../utils/logger';
+import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
 
 const logger = createLogger('templates:merge');
 
@@ -82,18 +83,18 @@ export async function mergeTemplate(
   } catch (error) {
     logger.error({ error, data: Object.keys(data) }, 'Template merge failed');
 
-    // Provide helpful error messages
+    // Provide helpful error messages with appropriate error types
     if (error instanceof Error) {
       if (error.message.includes('ENOENT') || error.message.includes('not found')) {
-        throw new Error('Template file not found or invalid DOCX format');
+        throw new TemplateInvalidFormatError('Template file not found or invalid DOCX format');
       }
       if (error.message.includes('Invalid field')) {
-        throw new Error(`Template merge failed: ${error.message}. Check that all field paths exist in data.`);
+        throw new TemplateMergeError(`${error.message}. Check that all field paths exist in data.`);
       }
-      throw new Error(`Template merge failed: ${error.message}`);
+      throw new TemplateMergeError(error.message);
     }
 
-    throw new Error('Template merge failed with unknown error');
+    throw new TemplateMergeError('Unknown error during template merge');
   }
 }
 

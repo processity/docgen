@@ -20,6 +20,7 @@ import type {
   FileUploadResult,
   CorrelationOptions,
 } from '../types';
+import { SalesforceUploadError, DocgenError, buildSalesforceError } from '../errors';
 
 /**
  * Upload a file (PDF or DOCX) to Salesforce as a ContentVersion
@@ -56,8 +57,9 @@ export async function uploadContentVersion(
   );
 
   if (!createResponse.success || !createResponse.id) {
-    throw new Error(
-      `ContentVersion creation failed: ${JSON.stringify(createResponse.errors)}`
+    throw new SalesforceUploadError(
+      `ContentVersion creation failed: ${JSON.stringify(createResponse.errors)}`,
+      { correlationId: options?.correlationId, fileSize: buffer.length }
     );
   }
 
@@ -72,16 +74,18 @@ export async function uploadContentVersion(
   );
 
   if (!queryResponse.records || queryResponse.records.length === 0) {
-    throw new Error(
-      `ContentVersion created but not found in query: ${contentVersionId}`
+    throw new SalesforceUploadError(
+      `ContentVersion created but not found in query: ${contentVersionId}`,
+      { correlationId: options?.correlationId }
     );
   }
 
   const contentDocumentId = queryResponse.records[0].ContentDocumentId;
 
   if (!contentDocumentId) {
-    throw new Error(
-      `ContentDocumentId not populated for ContentVersion: ${contentVersionId}`
+    throw new SalesforceUploadError(
+      `ContentDocumentId not populated for ContentVersion: ${contentVersionId}`,
+      { correlationId: options?.correlationId }
     );
   }
 
@@ -226,8 +230,10 @@ export async function uploadAndLinkFiles(
           request.generatedDocumentId,
           {
             Status__c: 'FAILED',
-            Error__c:
-              error instanceof Error ? error.message : 'Unknown error occurred',
+            Error__c: buildSalesforceError(
+              error instanceof Error ? error : new Error(String(error)),
+              { correlationId: options?.correlationId, generatedDocumentId: request.generatedDocumentId }
+            ),
           },
           api,
           options
@@ -238,7 +244,14 @@ export async function uploadAndLinkFiles(
       }
     }
 
-    // Re-throw original error
-    throw error;
+    // Re-throw DocgenError subclasses as-is, wrap others
+    if (error instanceof DocgenError) {
+      throw error;
+    }
+
+    throw new SalesforceUploadError(
+      error instanceof Error ? error.message : String(error),
+      { correlationId: options?.correlationId }
+    );
   }
 }

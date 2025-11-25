@@ -9,6 +9,14 @@ import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { loadConfig } from '../config';
 import { trackMetric } from '../obs';
+import {
+  DocgenError,
+  wrapError,
+  buildSalesforceError,
+  ValidationError,
+  MissingNamespaceError,
+  MissingConfigurationError,
+} from '../errors';
 
 // Extend FastifyInstance type to include authenticate
 declare module 'fastify' {
@@ -159,14 +167,14 @@ async function generateHandler(
   // Load config for Salesforce domain and other settings
   const config = await loadConfig();
   if (!config.sfDomain) {
-    throw new Error('Salesforce domain not configured');
+    throw new MissingConfigurationError('SF_DOMAIN', { correlationId });
   }
 
   try {
     // Initialize services
     const sfAuth = getSalesforceAuth();
     if (!sfAuth) {
-      throw new Error('Salesforce authentication not configured');
+      throw new MissingConfigurationError('Salesforce authentication', { correlationId });
     }
     const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
     const templateService = new TemplateService(sfApi);
@@ -178,24 +186,24 @@ async function generateHandler(
     if (!isComposite) {
       // Single-template document: require templateId
       if (!request.body.templateId) {
-        throw new Error('templateId is required for single-template documents');
+        throw new ValidationError('templateId is required for single-template documents', { correlationId });
       }
     } else {
       // Composite document: validate strategy-specific requirements
       if (!request.body.templateStrategy) {
-        throw new Error('templateStrategy is required for composite documents');
+        throw new ValidationError('templateStrategy is required for composite documents', { correlationId });
       }
 
       if (request.body.templateStrategy === 'Own Template') {
         if (!request.body.templateId) {
-          throw new Error('Own Template strategy requires templateId');
+          throw new ValidationError('Own Template strategy requires templateId', { correlationId });
         }
       } else if (request.body.templateStrategy === 'Concatenate Templates') {
         if (!request.body.templates || request.body.templates.length === 0) {
-          throw new Error('Concatenate Templates strategy requires templates array');
+          throw new ValidationError('Concatenate Templates strategy requires templates array', { correlationId });
         }
       } else {
-        throw new Error('Invalid templateStrategy');
+        throw new ValidationError('Invalid templateStrategy', { correlationId });
       }
     }
 
@@ -261,7 +269,7 @@ async function generateHandler(
           // Extract namespace data
           const namespaceData = request.body.data[templateRef.namespace];
           if (namespaceData === undefined) {
-            throw new Error(`Missing namespace data: ${templateRef.namespace}`);
+            throw new MissingNamespaceError(templateRef.namespace, { correlationId });
           }
 
           // Merge template with namespace data
@@ -401,25 +409,20 @@ async function generateHandler(
     // Calculate duration for metrics even on failure
     const duration = Date.now() - startTime;
 
-    // Determine failure reason for metrics
-    let failureReason = 'unknown';
-    if (error instanceof Error) {
-      if (error.message.includes('404') || error.message.includes('not found')) {
-        failureReason = 'template_not_found';
-      } else if (error.message.includes('validation') || error.message.includes('invalid')) {
-        failureReason = 'validation_error';
-      } else if (error.message.includes('timeout')) {
-        failureReason = 'conversion_timeout';
-      } else if (error.message.includes('conversion failed')) {
-        failureReason = 'conversion_failed';
-      } else if (error.message.includes('upload failed') || error.message.includes('Salesforce API')) {
-        failureReason = 'upload_failed';
-      }
-    }
+    // Wrap error in DocgenError if needed (provides code, statusCode, retryable)
+    const docgenError = error instanceof DocgenError
+      ? error
+      : wrapError(error as Error, {
+          correlationId,
+          templateId: request.body.templateId,
+          compositeDocumentId: request.body.compositeDocumentId,
+          generatedDocumentId: request.body.generatedDocumentId,
+          duration,
+        });
 
-    // Track failure metric with App Insights
+    // Track failure metric with App Insights using error code
     trackMetric('docgen_failures_total', 1, {
-      reason: failureReason,
+      reason: docgenError.code,
       templateId: request.body.templateId || request.body.compositeDocumentId || 'unknown',
       outputFormat: request.body.outputFormat,
       mode: 'interactive',
@@ -430,7 +433,7 @@ async function generateHandler(
     request.log.info(
       {
         metric: 'docgen_failures_total',
-        reason: failureReason,
+        reason: docgenError.code,
         templateId: request.body.templateId,
         outputFormat: request.body.outputFormat,
         mode: 'interactive',
@@ -440,37 +443,38 @@ async function generateHandler(
       'Document generation failure tracked'
     );
 
-    // Log the error with details
+    // Log the error with full details
     request.log.error(
       {
         correlationId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        code: docgenError.code,
+        message: docgenError.message,
+        statusCode: docgenError.statusCode,
+        retryable: docgenError.retryable,
+        stack: docgenError.stack,
         templateId: request.body.templateId,
         generatedDocumentId: request.body.generatedDocumentId,
-        failureReason,
         duration,
       },
       'Document generation failed'
     );
 
-    // If we have a generatedDocumentId, try to update its status to FAILED
+    // If we have a generatedDocumentId, try to update its status to FAILED with full error details
     if (request.body.generatedDocumentId) {
       try {
         const sfAuth = getSalesforceAuth();
-        if (!sfAuth) {
-          throw new Error('Salesforce authentication not configured');
-        }
-        const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+        if (sfAuth) {
+          const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
-        await sfApi.patch(
-          `/services/data/v59.0/sobjects/Generated_Document__c/${request.body.generatedDocumentId}`,
-          {
-            Status__c: 'FAILED',
-            Error__c: error instanceof Error ? error.message : String(error),
-          },
-          { correlationId }
-        );
+          await sfApi.patch(
+            `/services/data/v59.0/sobjects/Generated_Document__c/${request.body.generatedDocumentId}`,
+            {
+              Status__c: 'FAILED',
+              Error__c: buildSalesforceError(docgenError, { duration }),
+            },
+            { correlationId }
+          );
+        }
       } catch (updateError) {
         // Log but don't fail the request
         request.log.error(
@@ -484,37 +488,8 @@ async function generateHandler(
       }
     }
 
-    // Determine appropriate status code
-    let statusCode = 500;
-    let errorName = 'Internal Server Error';
-
-    if (error instanceof Error) {
-      // Map specific error messages to status codes
-      if (error.message.includes('404') || error.message.includes('not found')) {
-        statusCode = 404;
-        errorName = 'Not Found';
-      } else if (
-        error.message.includes('validation') ||
-        error.message.includes('invalid') ||
-        error.message.includes('required') ||
-        error.message.includes('requires')
-      ) {
-        statusCode = 400;
-        errorName = 'Bad Request';
-      } else if (error.message.includes('timeout') || error.message.includes('conversion failed')) {
-        statusCode = 502;
-        errorName = 'Bad Gateway';
-      } else if (error.message.includes('upload failed') || error.message.includes('Salesforce API')) {
-        statusCode = 502;
-        errorName = 'Bad Gateway';
-      }
-    }
-
-    // Re-throw to let Fastify's error handler format the response
-    const apiError = new Error(error instanceof Error ? error.message : String(error));
-    (apiError as any).statusCode = statusCode;
-    (apiError as any).name = errorName;
-    throw apiError;
+    // Re-throw DocgenError - global error handler will format the response
+    throw docgenError;
   }
 }
 
@@ -551,8 +526,11 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
             properties: {
               statusCode: { type: 'number' },
               error: { type: 'string' },
+              code: { type: 'string' },
               message: { type: 'string' },
               correlationId: { type: 'string' },
+              timestamp: { type: 'string' },
+              stack: { type: 'string' },
             },
           },
           404: {
@@ -560,8 +538,11 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
             properties: {
               statusCode: { type: 'number' },
               error: { type: 'string' },
+              code: { type: 'string' },
               message: { type: 'string' },
               correlationId: { type: 'string' },
+              timestamp: { type: 'string' },
+              stack: { type: 'string' },
             },
           },
           502: {
@@ -569,8 +550,11 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
             properties: {
               statusCode: { type: 'number' },
               error: { type: 'string' },
+              code: { type: 'string' },
               message: { type: 'string' },
               correlationId: { type: 'string' },
+              timestamp: { type: 'string' },
+              stack: { type: 'string' },
             },
           },
         },

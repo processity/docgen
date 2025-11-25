@@ -1,6 +1,7 @@
 import type { SalesforceApi } from '../sf/api';
 import { templateCache } from './cache';
 import { createLogger } from '../utils/logger';
+import { TemplateNotFoundError, SalesforceApiError, DocgenError } from '../errors';
 
 const logger = createLogger('templates:service');
 
@@ -70,9 +71,19 @@ export class TemplateService {
         { contentVersionId, correlationId, error },
         'Failed to download template from Salesforce'
       );
-      throw new Error(
-        `Failed to fetch template ${contentVersionId}: ${error instanceof Error ? error.message : String(error)}`
-      );
+
+      // If it's a Salesforce 404 error, throw TemplateNotFoundError
+      if (error instanceof SalesforceApiError && error.context.httpStatus === 404) {
+        throw new TemplateNotFoundError(contentVersionId, { correlationId });
+      }
+
+      // Re-throw DocgenError subclasses as-is
+      if (error instanceof DocgenError) {
+        throw error;
+      }
+
+      // Wrap other errors as TemplateNotFoundError (most common case is download failure)
+      throw new TemplateNotFoundError(contentVersionId, { correlationId });
     }
   }
 

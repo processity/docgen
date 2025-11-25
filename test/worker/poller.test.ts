@@ -3,6 +3,7 @@ import nock from 'nock';
 import { PollerService } from '../../src/worker/poller';
 import { loadConfig } from '../../src/config';
 import { createSalesforceAuth } from '../../src/sf/auth';
+import { SalesforceUploadError, TemplateNotFoundError, ConversionTimeoutError } from '../../src/errors';
 import type { QueuedDocument, PollerStats } from '../../src/types';
 
 // Load environment variables from .env file
@@ -346,12 +347,11 @@ describeTests('PollerService', () => {
       const result = await poller.processDocument(mockDoc);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Failed to fetch template');
-      // TODO: Add retryable check once implementation properly classifies 404 errors as non-retryable
-      // expect(result.retryable).toBe(false);
+      expect(result.error).toContain('Template not found');
+      expect(result.retryable).toBe(false); // 404 errors are non-retryable
     }, 15000); // Increased timeout for retry logic with backoff
 
-    it('should handle conversion failure and allow retry', async () => {
+    it('should handle invalid template and return non-retryable error', async () => {
       const mockDoc: QueuedDocument = {
         Id: 'a00000000000001AAA',
         Status__c: 'PROCESSING',
@@ -373,16 +373,17 @@ describeTests('PollerService', () => {
         CreatedDate: new Date().toISOString(),
       };
 
-      // Mock template download
+      // Mock template download with invalid content
       nock(baseUrl)
         .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
         .reply(200, Buffer.from('mock docx content'));
 
-      // This will cause merge/conversion to fail since it's not real DOCX
+      // This will cause merge to fail since it's not real DOCX (invalid format)
       const result = await poller.processDocument(mockDoc);
 
       expect(result.success).toBe(false);
-      expect(result.retryable).toBe(true);
+      // Invalid DOCX format is a validation error (non-retryable)
+      expect(result.retryable).toBe(false);
     }, 15000); // Increased timeout for retry logic with backoff
   });
 
@@ -390,26 +391,26 @@ describeTests('PollerService', () => {
     it('should increment attempts and requeue with 1 minute backoff on first failure', async () => {
       const docId = 'a00000000000001AAA';
       const attempts = 0;
-      const error = 'Conversion timeout';
+      const error = new ConversionTimeoutError(60000);
 
       nock(baseUrl)
         .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${docId}`, (body) => {
           expect(body.Attempts__c).toBe(1);
           expect(body.Status__c).toBe('QUEUED');
-          expect(body.Error__c).toContain('Conversion timeout');
+          expect(body.Error__c).toContain('CONVERSION_TIMEOUT');
           const scheduledTime = new Date(body.ScheduledRetryTime__c || '').getTime();
           expect(scheduledTime).toBeGreaterThan(Date.now());
           return true;
         })
         .reply(204);
 
-      await poller.handleFailure(docId, attempts, error, true);
+      await poller.handleFailure(docId, attempts, error);
     });
 
     it('should requeue with 5 minute backoff on second failure', async () => {
       const docId = 'a00000000000001AAA';
       const attempts = 1;
-      const error = 'Upload failed';
+      const error = new SalesforceUploadError('Upload failed');
 
       nock(baseUrl)
         .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${docId}`, (body) => {
@@ -424,13 +425,13 @@ describeTests('PollerService', () => {
         })
         .reply(204);
 
-      await poller.handleFailure(docId, attempts, error, true);
+      await poller.handleFailure(docId, attempts, error);
     });
 
     it('should requeue with 15 minute backoff on third failure', async () => {
       const docId = 'a00000000000001AAA';
       const attempts = 2;
-      const error = 'Temporary SF error';
+      const error = new SalesforceUploadError('Temporary SF error');
 
       nock(baseUrl)
         .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${docId}`, (body) => {
@@ -445,13 +446,13 @@ describeTests('PollerService', () => {
         })
         .reply(204);
 
-      await poller.handleFailure(docId, attempts, error, true);
+      await poller.handleFailure(docId, attempts, error);
     });
 
     it('should set status to FAILED after 3 attempts', async () => {
       const docId = 'a00000000000001AAA';
       const attempts = 3;
-      const error = 'Permanent failure';
+      const error = new SalesforceUploadError('Permanent failure');
 
       nock(baseUrl)
         .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${docId}`, (body) => {
@@ -463,13 +464,13 @@ describeTests('PollerService', () => {
         })
         .reply(204);
 
-      await poller.handleFailure(docId, attempts, error, true);
+      await poller.handleFailure(docId, attempts, error);
     });
 
     it('should immediately set FAILED for non-retryable errors', async () => {
       const docId = 'a00000000000001AAA';
       const attempts = 0;
-      const error = 'Template not found';
+      const error = new TemplateNotFoundError('068xxx000000001AAA');
 
       nock(baseUrl)
         .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${docId}`, (body) => {
@@ -480,7 +481,7 @@ describeTests('PollerService', () => {
         })
         .reply(204);
 
-      await poller.handleFailure(docId, attempts, error, false);
+      await poller.handleFailure(docId, attempts, error);
     });
   });
 
@@ -1023,7 +1024,7 @@ describeTests('PollerService', () => {
       const result = await poller.processDocument(mockDoc);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Failed to fetch template');
+      expect(result.error).toContain('Template not found');
       expect(result.retryable).toBe(false);
     }, 30000);
 

@@ -325,7 +325,7 @@ describeIntegration('Poller Service - Integration Tests with Real Salesforce', (
 
       // Should be marked as FAILED immediately (non-retryable)
       expect(document.Status__c).toBe('FAILED');
-      expect(document.Error__c).toContain('404'); // Check for 404 error code
+      expect(document.Error__c).toContain('TEMPLATE_NOT_FOUND'); // Check for error code
       expect(document.Attempts__c).toBe(1); // Only 1 attempt for non-retryable
     } finally {
       // Clean up

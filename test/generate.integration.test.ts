@@ -401,7 +401,7 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should return 400 when outputFormat is invalid', async () => {
@@ -431,7 +431,7 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should update Generated_Document__c status to FAILED on error', async () => {
