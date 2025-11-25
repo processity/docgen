@@ -13,9 +13,10 @@ This guide explains how to create DOCX templates for the Salesforce PDF Generati
 7. [JavaScript Expressions](#javascript-expressions)
 8. [Formatted Values](#formatted-values)
 9. [Images](#images)
-10. [Best Practices](#best-practices)
-11. [Examples](#examples)
-12. [Troubleshooting](#troubleshooting)
+10. [Composite Documents](#composite-documents)
+11. [Best Practices](#best-practices)
+12. [Examples](#examples)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -252,25 +253,12 @@ Use JavaScript expressions:
 {{END-IF}}
 ```
 
-Or pre-compute in Apex for cleaner templates:
-
-**Apex:**
-```apex
-data.put('ShouldShowDiscount', account.IsPartner || account.IsVIP);
-```
-
-**Template:**
-```
-{{IF ShouldShowDiscount}}
-  Special discount available
-{{END-IF}}
-```
 
 ---
 
 ## JavaScript Expressions
 
-Templates support JavaScript for dynamic calculations and data manipulation. However, **prefer Apex for complex logic** to keep templates deterministic.
+Templates support JavaScript for dynamic calculations and data manipulation.
 
 ### Basic JavaScript Syntax
 
@@ -420,29 +408,15 @@ const percentage = total > 0 ? ((withEmail / total) * 100).toFixed(1) : 0;
    - **Bad:** `{{= (() => { return value; })() }}`
    - **Good:** `{{= value }}`
 
-4. **Keep it simple:** Complex logic should be in Apex
-   - Templates are for presentation, not business logic
-
-### When to Use JavaScript vs Apex
-
-**Use JavaScript in templates for:**
-- ✅ Simple calculations (length, counts)
-- ✅ Array filtering and sorting
-- ✅ Conditional text/formatting
-- ✅ Grouping data for display
-
-**Use Apex for:**
-- ✅ Complex business logic
-- ✅ Data fetching (SOQL)
-- ✅ Currency/date formatting (locale-aware)
-- ✅ Security/validation
-- ✅ Calculations that need testing
+4. **Keep it simple:** Templates handle presentation logic well
+   - Use JavaScript for calculations, filtering, and conditional text
+   - Use template syntax for formatting and data display
 
 ---
 
 ## Formatted Values
 
-All formatting is done by Apex to ensure consistency and locale correctness.
+The system provides pre-formatted values for currency, dates, numbers, and percentages. Use the `__formatted` suffix to access these values.
 
 ### Currency
 
@@ -531,17 +505,454 @@ The system will respect the placeholder's dimensions.
 
 ---
 
-## Best Practices
+## Composite Documents
 
-### 1. Pre-format Everything in Apex
+Composite Documents allow you to combine data from **multiple sources** (SOQL queries or custom Apex providers) into a single PDF output. Each data source is isolated in its own **namespace** to prevent field name collisions.
 
-**Good:**
-```apex
-data.put('Amount__formatted', String.format('{0,number,currency}', amount));
+### What is a Composite Document?
+
+A Composite Document configuration consists of:
+- **Composite_Document__c**: The main configuration record
+- **Composite_Document_Template__c**: Junction records that define which templates and data sources to use
+- **Template Strategy**: How to combine the data sources
+
+There are two template strategies:
+
+1. **Own Template**: Use a single template that references all namespaces
+2. **Concatenate Templates**: Use multiple templates (one per namespace) that are merged and concatenated into a single document
+
+---
+
+### Understanding Namespaces
+
+A **namespace** is a named container for data from a specific source. It prevents field name collisions when combining data from multiple objects.
+
+**Example:** If you want to combine Account data with Terms & Conditions:
+- Namespace `Account`: Contains `{Name, Industry, AnnualRevenue__formatted, ...}`
+- Namespace `Terms`: Contains `{TermsText, EffectiveDate__formatted, ...}`
+
+Each namespace is defined in a `Composite_Document_Template__c` junction record with:
+- **Namespace__c**: The key used in templates (e.g., "Account", "Terms", "Contacts")
+- **Sequence__c**: Execution order for data providers and concatenation order
+- **Document_Template__c**: The template configuration to use for this namespace
+
+---
+
+### Strategy 1: Own Template
+
+With the **Own Template** strategy, you create a **single template** that references data from all namespaces using dot notation.
+
+#### Configuration
+- Set `Template_Strategy__c = "Own Template"`
+- Set `TemplateContentVersionId__c` to your composite template
+- Create junction records for each data source
+
+#### Template Syntax
+
+Access namespace data using `{{Namespace.FieldPath}}`:
+
+```
+ACCOUNT SUMMARY
+
+Name: {{Account.Name}}
+Industry: {{Account.Industry}}
+Annual Revenue: {{Account.AnnualRevenue__formatted}}
+
+CONTACTS
+
+{{FOR contact IN Account.Contacts}}
+  - {{$contact.Name}} ({{$contact.Email}})
+{{END-FOR contact}}
+
+TERMS AND CONDITIONS
+
+{{Terms.TermsText}}
+
+Effective Date: {{Terms.EffectiveDate__formatted}}
 ```
 
+#### Data Structure
+
+The data envelope sent to your template looks like this:
+
+```json
+{
+  "Account": {
+    "Name": "Acme Ltd",
+    "Industry": "Technology",
+    "AnnualRevenue__formatted": "£5,000,000",
+    "Contacts": [
+      {"Name": "John Smith", "Email": "john@acme.com"},
+      {"Name": "Jane Doe", "Email": "jane@acme.com"}
+    ]
+  },
+  "Terms": {
+    "TermsText": "Standard terms apply...",
+    "EffectiveDate__formatted": "01 Jan 2025"
+  }
+}
+```
+
+#### Example: Account Summary with Terms
+
+**Template:**
+```
+CUSTOMER REPORT
+
+Company: {{Account.Name}}
+Revenue: {{Account.AnnualRevenue__formatted}}
+Total Opportunities: {{= Account.Opportunities.length }}
+
+OPPORTUNITY PIPELINE
+
+{{FOR opp IN Account.Opportunities}}
+  {{$opp.Name}} - {{$opp.StageName}} - {{$opp.Amount__formatted}}
+{{END-FOR opp}}
+
+{{IF Account.Opportunities.length > 0}}
+Total Pipeline: {{= Account.Opportunities.reduce((sum, o) => sum + (o.Amount || 0), 0).toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+{{END-IF}}
+
+TERMS & CONDITIONS
+
+{{Terms.StandardTerms}}
+
+Effective: {{Terms.EffectiveDate__formatted}}
+```
+
+---
+
+### Strategy 2: Concatenate Templates
+
+With the **Concatenate Templates** strategy, you create **multiple templates** (one per namespace), and the system merges each template with its namespace data, then concatenates them into a single document with section breaks.
+
+#### Configuration
+- Set `Template_Strategy__c = "Concatenate Templates"`
+- Leave `TemplateContentVersionId__c` blank
+- Create junction records for each template, each with its own namespace and sequence
+
+#### Template Syntax
+
+Each template references **its own namespace's data directly** (no namespace prefix needed):
+
+**Template 1 (Namespace: "Account", Sequence: 10):**
+```
+ACCOUNT SUMMARY
+
+Name: {{Name}}
+Industry: {{Industry}}
+Annual Revenue: {{AnnualRevenue__formatted}}
+
+CONTACTS:
+{{FOR contact IN Contacts}}
+  - {{$contact.Name}} ({{$contact.Email}})
+{{END-FOR contact}}
+```
+
+**Template 2 (Namespace: "Terms", Sequence: 20):**
+```
+TERMS AND CONDITIONS
+
+{{TermsText}}
+
+Effective Date: {{EffectiveDate__formatted}}
+```
+
+#### Data Structure
+
+Each template receives **only its namespace's data**:
+
+**Template 1 receives:**
+```json
+{
+  "Name": "Acme Ltd",
+  "Industry": "Technology",
+  "AnnualRevenue__formatted": "£5,000,000",
+  "Contacts": [...]
+}
+```
+
+**Template 2 receives:**
+```json
+{
+  "TermsText": "Standard terms apply...",
+  "EffectiveDate__formatted": "01 Jan 2025"
+}
+```
+
+#### Section Breaks
+
+The system automatically inserts **section breaks** between concatenated templates. Each section can maintain its own headers/footers from the original template.
+
+---
+
+### When to Use Each Strategy
+
+| Use Case | Recommended Strategy |
+|----------|---------------------|
+| Reusing existing single-object templates | **Concatenate Templates** |
+| Full control over layout and cross-namespace logic | **Own Template** |
+| Need different headers/footers per section | **Concatenate Templates** |
+| Simple multi-source document | **Own Template** |
+| Combining standard templates (e.g., Terms & Conditions boilerplate) | **Concatenate Templates** |
+
+---
+
+### Composite Document Examples
+
+#### Example 1: Account Summary with Opportunities and Terms (Own Template)
+
+**Composite Configuration:**
+- Strategy: Own Template
+- Namespaces: `Account` (sequence 10), `Terms` (sequence 20)
+
+**Template:**
+```
+ACCOUNT: {{Account.Name}}
+
+Total Opportunities: {{= Account.Opportunities.length }}
+
+OPPORTUNITIES
+{{FOR opp IN Account.Opportunities}}
+{{= Account.Opportunities.indexOf($opp) + 1 }}. {{$opp.Name}}
+   Stage: {{$opp.StageName}}
+   Amount: {{$opp.Amount__formatted}}
+   Close Date: {{$opp.CloseDate__formatted}}
+{{END-FOR opp}}
+
+{{IF Account.Opportunities.length > 0}}
+---
+Total Pipeline: {{= Account.Opportunities.reduce((sum, o) => sum + (o.Amount || 0), 0).toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+{{END-IF}}
+
+---
+TERMS & CONDITIONS
+
+{{Terms.StandardTerms}}
+
+Last Updated: {{Terms.LastModifiedDate__formatted}}
+```
+
+---
+
+#### Example 2: Case Details with Account and Contact (Concatenate Templates)
+
+**Composite Configuration:**
+- Strategy: Concatenate Templates
+- Namespaces: `Case` (sequence 10), `Account` (sequence 20), `Contact` (sequence 30)
+
+**Template 1 - Case Details (Namespace: "Case"):**
+```
+SUPPORT CASE
+
+Case Number: {{CaseNumber}}
+Subject: {{Subject}}
+Status: {{Status}}
+Priority: {{Priority}}
+Created: {{CreatedDate__formatted}}
+
+DESCRIPTION:
+{{Description}}
+```
+
+**Template 2 - Account Information (Namespace: "Account"):**
+```
+ACCOUNT INFORMATION
+
+Company: {{Name}}
+Industry: {{Industry}}
+Phone: {{Phone}}
+Website: {{Website}}
+
+Address:
+{{BillingStreet}}
+{{BillingCity}}, {{BillingState}} {{BillingPostalCode}}
+{{BillingCountry}}
+```
+
+**Template 3 - Contact Details (Namespace: "Contact"):**
+```
+CONTACT INFORMATION
+
+Name: {{FirstName}} {{LastName}}
+Title: {{Title}}
+Email: {{Email}}
+Phone: {{Phone}}
+Mobile: {{MobilePhone}}
+```
+
+The final PDF will have all three sections with section breaks between them.
+
+---
+
+### Working with Cross-Namespace Data
+
+#### Accessing Related Records Across Namespaces
+
+In **Own Template** strategy, you can reference any namespace from anywhere:
+
+```
+Account Name: {{Account.Name}}
+
+Primary Contact: {{Contact.Name}}
+Contact Email: {{Contact.Email}}
+
+{{IF Account.Type === 'Partner'}}
+  Partner-specific terms apply (see {{Terms.PartnerTermsSection}})
+{{END-IF}}
+```
+
+#### Using EXEC Blocks with Multiple Namespaces
+
+You can combine data from multiple namespaces in JavaScript:
+
+```
+{{EXEC
+const account = Account || {};
+const opportunities = account.Opportunities || [];
+const terms = Terms || {};
+
+const openOpps = opportunities.filter(o =>
+  o.StageName !== 'Closed Won' && o.StageName !== 'Closed Lost'
+);
+
+const totalPipeline = openOpps.reduce((sum, o) => sum + (o.Amount || 0), 0);
+
+summary = {
+  accountName: account.Name,
+  openCount: openOpps.length,
+  totalValue: totalPipeline,
+  termsVersion: terms.Version
+};
+}}
+
+EXECUTIVE SUMMARY
+
+Customer: {{= summary.accountName }}
+Open Opportunities: {{= summary.openCount }}
+Pipeline Value: {{= summary.totalValue.toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
+Terms Version: {{= summary.termsVersion }}
+```
+
+---
+
+### Troubleshooting Composite Documents
+
+#### Issue: Namespace Not Found
+
+**Problem:** `{{Account.Name}}` shows nothing in Own Template strategy
+
+**Solutions:**
+1. Verify the junction record has `Namespace__c = "Account"`
+2. Check the sequence order - data providers execute in sequence
+3. Confirm the SOQL query or custom provider returns data
+4. Use Apex debug logs to inspect the composite envelope structure
+
+---
+
+#### Issue: Field Not Found in Concatenate Strategy
+
+**Problem:** Template shows blank where field should be
+
+**Solutions:**
+1. In Concatenate Templates, **don't** use namespace prefix - access fields directly
+2. Correct: `{{Name}}` (not `{{Account.Name}}`)
+3. Verify the field is included in the SOQL query for that template
+4. Check the namespace data in Generated_Document__c.RequestJSON__c field
+
+---
+
+#### Issue: Templates in Wrong Order
+
+**Problem:** Terms appear before Account summary
+
+**Solutions:**
+1. Check `Sequence__c` values on junction records
+2. Lower sequence numbers execute first (10, 20, 30, not 30, 20, 10)
+3. Verify junction records are active (`IsActive__c = true`)
+
+---
+
+#### Issue: Namespace Collision Error
+
+**Problem:** Error: "Duplicate namespace: Account"
+
+**Solutions:**
+1. Each junction record must have a unique `Namespace__c` value
+2. Rename one namespace (e.g., "Account" and "RelatedAccount")
+3. Update template to use the new namespace names
+
+---
+
+### Best Practices for Composite Documents
+
+#### 1. Use Descriptive Namespace Names
+
+**Good:**
+- `Account`, `PrimaryContact`, `Terms`, `LineItems`
+
 **Avoid:**
-Template-level formatting is limited. Let Apex handle it.
+- `NS1`, `Data`, `Obj`
+
+#### 2. Keep Sequences with Gaps
+
+Use sequence numbers like 10, 20, 30 (not 1, 2, 3) to allow inserting new templates later:
+
+```
+Sequence 10: Account basics
+Sequence 20: Contacts
+Sequence 25: Opportunities (added later)
+Sequence 30: Terms
+```
+
+#### 3. Choose Strategy Based on Reusability
+
+- **Reusing existing templates?** → Use Concatenate Templates
+- **Building from scratch?** → Use Own Template (more flexibility)
+
+#### 4. Document Your Namespaces
+
+Add comments to your templates documenting available namespaces:
+
+```
+<!--
+Available Namespaces:
+- Account: {Name, Industry, AnnualRevenue__formatted, Opportunities[]}
+- Contact: {FirstName, LastName, Email, Phone}
+- Terms: {StandardTerms, EffectiveDate__formatted}
+-->
+```
+
+#### 5. Test with Complete Data
+
+Ensure all namespaces have data when testing:
+- Create test records with related data
+- Verify each SOQL query returns results
+- Test with edge cases (empty arrays, null values)
+
+---
+
+### See Also
+
+For more information about composite documents:
+- [Composite Template Management](composite-document-template-management.md) - Admin configuration guide
+- [LWC Composite Button Guide](lwc-composite-button-guide.md) - Interactive generation from Lightning pages
+- [Composite Batch Examples](composite-batch-examples.md) - Batch generation patterns
+- [API Documentation](api.md) - Composite request envelope format
+
+---
+
+## Best Practices
+
+### 1. Use Pre-formatted Fields
+
+**Good:**
+```
+Total: {{Opportunity.Amount__formatted}}
+Date: {{Opportunity.CloseDate__formatted}}
+```
+
+The system automatically provides `__formatted` versions of currency, date, number, and percentage fields.
 
 ### 2. Use Meaningful Field Names
 
@@ -572,19 +983,17 @@ Ensure templates don't break when:
 - Optional fields are null
 - Related objects don't exist
 
-### 5. Keep Logic Simple
+### 5. Use JavaScript for Calculations
 
-Complex calculations should be in Apex:
+Templates support JavaScript expressions for calculations and logic:
 
-**Good (Apex):**
-```apex
-Decimal discount = isPartner ? amount * 0.15 : 0;
-data.put('Discount__formatted', formatCurrency(discount));
+**Examples:**
 ```
+Total Contacts: {{= Account.Contacts.length }}
 
-**Avoid (Template):**
-```
-Discount: {{Amount * 0.15}}  // Don't do math in templates
+Revenue per Employee: {{= (Account.AnnualRevenue / Account.NumberOfEmployees).toFixed(2) }}
+
+Discount: {{= (Amount * 0.15).toLocaleString('en-GB', {style: 'currency', currency: 'GBP'}) }}
 ```
 
 ### 6. Document Custom Fields

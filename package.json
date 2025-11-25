@@ -16,7 +16,7 @@
     "test:lwc:coverage": "sfdx-lwc-jest --coverage",
     "test:all": "npm test && npm run test:lwc",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
-    "test:e2e:local": "./scripts/configure-ci-backend-for-local.sh && npm run test:e2e",
+    "test:e2e:local": "export BACKEND_URL=https://docgen-ci.bravemeadow-58840dba.eastus.azurecontainerapps.io && ./scripts/configure-ci-backend-for-local.sh && npm run test:e2e",
     "test:e2e:ui": "playwright test --ui --config e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test --headed --config e2e/playwright.config.ts",
     "test:e2e:debug": "playwright test --debug --config e2e/playwright.config.ts",

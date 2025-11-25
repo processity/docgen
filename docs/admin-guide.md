@@ -8,8 +8,9 @@
 4. [Step-by-Step: Adding Asset Object Support](#step-by-step-adding-asset-object-support)
 5. [Creating Templates for New Objects](#creating-templates-for-new-objects)
 6. [Deactivating an Object](#deactivating-an-object)
-7. [Troubleshooting](#troubleshooting)
-8. [Frequently Asked Questions](#frequently-asked-questions)
+7. [Composite Documents](#composite-documents)
+8. [Troubleshooting](#troubleshooting)
+9. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
@@ -422,6 +423,573 @@ After deactivating:
 Simply edit the Custom Metadata record and check **Is Active** again.
 
 **Note:** You do NOT need to delete the lookup field or permission set grants. Deactivating the Custom Metadata record is sufficient.
+
+---
+
+## Composite Documents
+
+### What are Composite Documents?
+
+**Composite Documents** allow you to combine data from **multiple sources** (SOQL queries or custom Apex providers) into a **single PDF output**. This enables complex documents that pull data from multiple objects or different queries on the same object.
+
+**Example Use Cases:**
+- Account Summary + Terms & Conditions
+- Case Details + Account Info + Contact Info
+- Opportunity with Line Items + Custom Pricing Terms
+- Invoice with multiple data sources (billing, shipping, line items, terms)
+
+### Key Concepts
+
+#### Namespaces
+Each data source is isolated in its own **namespace** to prevent field name collisions.
+
+**Example:**
+- Namespace `Account`: Contains Account data
+- Namespace `Terms`: Contains Terms & Conditions data
+- Namespace `LineItems`: Contains product line items
+
+#### Template Strategies
+
+There are **two ways** to combine data sources:
+
+1. **Own Template**: Create a single template that references all namespaces (e.g., `{{Account.Name}}`, `{{Terms.Text}}`)
+2. **Concatenate Templates**: Use multiple templates (one per namespace) that are automatically merged and concatenated with section breaks
+
+#### Objects Involved
+
+- **Composite_Document__c**: Main configuration record
+- **Composite_Document_Template__c**: Junction records (many-to-many) linking Composite Documents to Templates
+- **Docgen_Template__c**: Your existing document templates
+- **Generated_Document__c**: Links to Composite_Document__c instead of (or in addition to) Template__c
+
+---
+
+### When to Use Composite Documents
+
+| Scenario | Single Template | Composite Document |
+|----------|----------------|-------------------|
+| Simple single-object reports | ✅ Recommended | ❌ Overkill |
+| Multi-object summaries (Account + Opportunities) | ❌ Limited | ✅ Perfect |
+| Reusing existing template libraries | ❌ Requires merging | ✅ Concatenate strategy |
+| Adding standard terms to custom reports | ❌ Copy-paste | ✅ Namespace isolation |
+| Complex calculations across objects | ❌ Single SOQL limit | ✅ Multiple providers |
+
+**Rule of Thumb:**
+- **1 data source** → Use Single Template
+- **2+ data sources** → Use Composite Document
+
+---
+
+### Quick Start: Creating a Composite Document
+
+**Time Required:** ~20-25 minutes
+
+**Example:** Account Summary with Terms & Conditions
+
+#### Step 1: Create Individual Templates (if needed)
+
+If you're using **Concatenate Templates** strategy and already have templates, skip to Step 2.
+
+**Template 1: Account Summary**
+- Primary Parent: Account
+- SOQL: `SELECT Id, Name, Industry, AnnualRevenue, (SELECT Name, Email FROM Contacts) FROM Account WHERE Id = :recordId`
+- Upload DOCX template with fields like `{{Name}}`, `{{Industry}}`, etc.
+
+**Template 2: Terms & Conditions**
+- Primary Parent: (can be any object, or custom Terms object)
+- SOQL: `SELECT Id, StandardTerms__c, EffectiveDate__c FROM Terms__c LIMIT 1`
+- Upload DOCX template with `{{StandardTerms__c}}`, `{{EffectiveDate__c__formatted}}`
+
+#### Step 2: Create Composite_Document__c Record
+
+1. Navigate to **Composite Documents** tab (App Launcher → Composite Documents)
+2. Click **New**
+3. Fill in fields:
+
+**Name:** `Account Summary with Terms` (auto-numbered like CD-00001)
+
+**Description:** `Complete account overview including contacts and standard terms`
+
+**Template Strategy:** Choose one:
+- **Own Template**: If you want to create a single master template
+- **Concatenate Templates**: If you want to reuse existing templates
+
+**Template Content Version ID:** (Only if using "Own Template" strategy)
+- Upload your composite template DOCX file
+- Copy the ContentVersionId
+- Paste here
+
+**Primary Parent:** `Account`
+- The main object this composite relates to
+
+**Store Merged DOCX:** ☐ Unchecked (optional)
+**Return DOCX to Browser:** ☐ Unchecked (usually PDF)
+**Is Active:** ☑ Checked
+
+4. Click **Save**
+
+#### Step 3: Create Junction Records (Composite_Document_Template__c)
+
+For each data source / template, create a junction record:
+
+**Junction Record 1:**
+1. Click **New Composite Document Template** (related list on Composite Document)
+2. Fill in:
+   - **Composite Document:** (auto-filled)
+   - **Document Template:** Select "Account Summary" template
+   - **Namespace:** `Account`
+   - **Sequence:** `10`
+   - **Is Active:** ☑ Checked
+3. Click **Save**
+
+**Junction Record 2:**
+1. Click **New** again
+2. Fill in:
+   - **Composite Document:** (auto-filled)
+   - **Document Template:** Select "Terms & Conditions" template
+   - **Namespace:** `Terms`
+   - **Sequence:** `20`
+   - **Is Active:** ☑ Checked
+3. Click **Save**
+
+**Important:**
+- **Namespace** must be unique per composite document
+- **Sequence** determines execution order (10, 20, 30...)
+- Lower sequences execute first
+
+#### Step 4: Test Generation
+
+**Option A: Interactive (LWC Button)**
+
+1. Add `compositeDocgenButton` component to Account page layout
+2. Configure component properties:
+   - Composite Document ID: (your CD record ID)
+   - Record ID Field: `accountId`
+   - Button Label: "Generate Summary with Terms"
+3. Navigate to an Account record
+4. Click the button
+5. PDF should open with both Account data and Terms
+
+**Option B: Apex (Developer Console)**
+
+```apex
+// Get test Account
+Account testAccount = [SELECT Id FROM Account LIMIT 1];
+
+// Get Composite Document
+Composite_Document__c composite = [
+    SELECT Id
+    FROM Composite_Document__c
+    WHERE Name = 'Account Summary with Terms'
+    LIMIT 1
+];
+
+// Build recordIds map (JSON string)
+Map<String, Id> recordIds = new Map<String, Id>{
+    'accountId' => testAccount.Id
+};
+String recordIdsJson = JSON.serialize(recordIds);
+
+// Generate composite document
+String downloadUrl = DocgenController.generateComposite(
+    composite.Id,
+    recordIdsJson,
+    'PDF'
+);
+
+System.debug('Download URL: ' + downloadUrl);
+```
+
+#### Step 5: Verify Output
+
+1. Open the generated PDF
+2. Verify it contains:
+   - Account data in first section
+   - Terms & Conditions in second section
+   - Section break between them (if using Concatenate strategy)
+3. Check **Generated Documents** tab:
+   - **Composite Document** field should link to your composite
+   - **Status** should be "SUCCEEDED"
+
+---
+
+### Strategy 1: Own Template (Single Master Template)
+
+#### When to Use
+- Building a new document from scratch
+- Need full control over layout
+- Want to reference data across namespaces
+- Simple multi-source documents
+
+#### Configuration
+
+**Composite_Document__c Settings:**
+- Template Strategy: **Own Template**
+- Template Content Version ID: **Required** (your master template)
+
+**Template Syntax:**
+
+Access namespace data using `{{Namespace.FieldPath}}`:
+
+```
+ACCOUNT OVERVIEW
+
+Company: {{Account.Name}}
+Revenue: {{Account.AnnualRevenue__formatted}}
+
+CONTACTS
+{{FOR contact IN Account.Contacts}}
+  - {{$contact.Name}} ({{$contact.Email}})
+{{END-FOR contact}}
+
+TERMS & CONDITIONS
+
+{{Terms.StandardTerms}}
+
+Effective: {{Terms.EffectiveDate__formatted}}
+```
+
+**Data Structure:**
+
+Your template receives a single data object with all namespaces:
+
+```json
+{
+  "Account": {
+    "Name": "Acme Ltd",
+    "AnnualRevenue__formatted": "£5M",
+    "Contacts": [...]
+  },
+  "Terms": {
+    "StandardTerms": "...",
+    "EffectiveDate__formatted": "01 Jan 2025"
+  }
+}
+```
+
+---
+
+### Strategy 2: Concatenate Templates (Multi-Template Merge)
+
+#### When to Use
+- Reusing existing single-object templates
+- Need different headers/footers per section
+- Building modular template libraries
+- Each section has distinct formatting
+
+#### Configuration
+
+**Composite_Document__c Settings:**
+- Template Strategy: **Concatenate Templates**
+- Template Content Version ID: **Leave blank**
+
+**Template Syntax:**
+
+Each template references **its own namespace's data directly** (no namespace prefix):
+
+**Template 1 (Namespace: "Account"):**
+```
+ACCOUNT SUMMARY
+
+Name: {{Name}}
+Industry: {{Industry}}
+Revenue: {{AnnualRevenue__formatted}}
+```
+
+**Template 2 (Namespace: "Terms"):**
+```
+TERMS & CONDITIONS
+
+{{StandardTerms}}
+Effective: {{EffectiveDate__formatted}}
+```
+
+**Final Output:**
+
+The system:
+1. Merges Template 1 with Account data
+2. Merges Template 2 with Terms data
+3. Concatenates both DOCX files with section breaks
+4. Converts to PDF
+
+---
+
+### Advanced: Using Custom Data Providers
+
+For complex data requirements, you can use **Custom Apex Providers** instead of SOQL.
+
+#### Example: Custom Pricing Calculator
+
+**Apex Provider:**
+```apex
+public class CustomPricingProvider implements DocgenDataProvider {
+    public Map<String, Object> buildData(
+        Id recordId,
+        Docgen_Template__c template,
+        String locale,
+        String timezone
+    ) {
+        // Complex business logic
+        Opportunity opp = [SELECT Id, Amount, Discount__c FROM Opportunity WHERE Id = :recordId];
+
+        Decimal finalPrice = calculateComplexPricing(opp);
+
+        return new Map<String, Object>{
+            'CalculatedPrice__formatted' => formatCurrency(finalPrice, locale),
+            'DiscountApplied' => opp.Discount__c,
+            'PricingNotes' => getPricingNotes(opp)
+        };
+    }
+}
+```
+
+**Template Configuration:**
+- Data Source: `Custom`
+- Class Name: `CustomPricingProvider`
+
+**Junction Record:**
+- Namespace: `Pricing`
+- Document Template: (template using CustomPricingProvider)
+- Sequence: 30
+
+**Template Usage:**
+```
+PRICING DETAILS
+
+Final Price: {{Pricing.CalculatedPrice__formatted}}
+Discount Applied: {{Pricing.DiscountApplied}}%
+
+Notes: {{Pricing.PricingNotes}}
+```
+
+---
+
+### Namespace Best Practices
+
+#### 1. Use Descriptive Names
+
+**Good:**
+- `Account`, `PrimaryContact`, `Terms`, `LineItems`, `Pricing`
+
+**Avoid:**
+- `Data1`, `NS1`, `Obj`, `Template1`
+
+#### 2. Keep Sequences with Gaps
+
+Use multiples of 10 to allow inserting new templates later:
+
+```
+Sequence 10: Account
+Sequence 20: Contacts
+Sequence 25: Opportunities (added later)
+Sequence 30: Terms
+```
+
+#### 3. Document Your Namespaces
+
+Add description to Composite_Document__c record:
+
+```
+Namespaces:
+- Account (seq 10): Company overview and financials
+- Contacts (seq 20): Key contacts with email/phone
+- Terms (seq 30): Standard T&C effective 2025
+```
+
+#### 4. Prevent Namespace Collisions
+
+The system enforces **unique namespaces per composite**. If you try to create two junction records with the same namespace, you'll get an error.
+
+**Example:**
+- ❌ Account (seq 10) + Account (seq 20) = **ERROR**
+- ✅ Account (seq 10) + RelatedAccount (seq 20) = **OK**
+
+---
+
+### Batch Generation with Composites
+
+You can generate composite documents in batch mode using `BatchDocgenEnqueue`:
+
+```apex
+// Example: Generate Account Summaries with Terms for all Enterprise accounts
+Composite_Document__c composite = [
+    SELECT Id
+    FROM Composite_Document__c
+    WHERE Name = 'Account Summary with Terms'
+    LIMIT 1
+];
+
+// Query accounts that need documents
+String query = 'SELECT Id, Name FROM Account WHERE Type = \'Enterprise\' AND AnnualRevenue > 10000000';
+
+// Additional recordIds (if needed for some templates)
+Map<String, Id> additionalIds = new Map<String, Id>();
+// Leave empty if only using primary recordId
+
+// Enqueue batch
+BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+    composite.Id,          // Composite Document ID
+    query,                 // SOQL for batch scope
+    additionalIds,         // Additional static record IDs
+    'PDF',                 // Output format
+    5                      // Priority (optional)
+);
+
+Database.executeBatch(batch, 50);
+```
+
+**Batch Execution:**
+1. Poller picks up QUEUED records
+2. For each composite, executes all data providers in sequence
+3. Merges templates according to strategy
+4. Uploads PDF to Salesforce Files
+5. Links to all parent records
+6. Updates status to SUCCEEDED
+
+---
+
+### Troubleshooting Composite Documents
+
+#### Issue: "Duplicate namespace: Account"
+
+**Cause:** Two junction records have the same Namespace__c value
+
+**Solution:**
+1. Navigate to Composite Document record
+2. View Composite Document Templates related list
+3. Find duplicate namespaces
+4. Rename one to be unique (e.g., "RelatedAccount")
+5. Update your template to use the new namespace
+
+---
+
+#### Issue: Template shows blank data
+
+**Cause:** Namespace mismatch or missing data
+
+**Solutions:**
+
+**For Own Template strategy:**
+- Verify template uses `{{Namespace.Field}}` syntax (not `{{Field}}`)
+- Check junction record has correct Namespace__c value
+- Verify data provider returns data (check debug logs)
+
+**For Concatenate Templates strategy:**
+- Verify template uses `{{Field}}` syntax (not `{{Namespace.Field}}`)
+- Each template should reference its own namespace's data directly
+- Check that template is assigned to correct namespace in junction record
+
+---
+
+#### Issue: Sections in wrong order
+
+**Cause:** Sequence__c values not set correctly
+
+**Solution:**
+1. Review junction records
+2. Verify Sequence__c values (10, 20, 30...)
+3. Lower sequences execute first
+4. Update sequences if needed
+5. Verify all junction records have IsActive__c = true
+
+---
+
+#### Issue: Missing namespace data
+
+**Cause:** One of the data providers failed or returned no data
+
+**Solution:**
+1. Check Generated_Document__c.Error__c field for details
+2. Test each template individually first
+3. Verify SOQL queries return data
+4. Check that recordIds map contains all required IDs
+5. Review Apex debug logs with correlation ID
+
+---
+
+#### Issue: "Missing namespace data: Terms"
+
+**Cause:** Template expects namespace "Terms" but junction records don't define it
+
+**Solution:**
+1. Navigate to Composite Document record
+2. Verify junction record exists with Namespace__c = "Terms"
+3. Verify junction record IsActive__c = true
+4. Check Sequence__c is set
+5. Verify Document Template is selected
+
+---
+
+### Composite Documents FAQ
+
+#### Q: Can I mix SOQL and Custom providers in one composite?
+
+**A:** Yes! Each junction record can reference a template with either Data Source = "SOQL" or "Custom". The system executes all providers in sequence order.
+
+---
+
+#### Q: How many namespaces can I have?
+
+**A:** No hard limit. However, for performance and maintainability, **2-5 namespaces** is recommended. More than 10 may impact performance.
+
+---
+
+#### Q: Can I reuse the same template in multiple composites?
+
+**A:** Yes! Templates are reusable. You can reference the same template in multiple composite documents, potentially with different namespaces.
+
+---
+
+#### Q: What if two namespaces need the same record ID?
+
+**A:** The recordIds map supports multiple keys pointing to the same ID:
+
+```apex
+Map<String, Id> recordIds = new Map<String, Id>{
+    'accountId' => acc.Id,
+    'primaryAccountId' => acc.Id  // Same ID, different key
+};
+```
+
+---
+
+#### Q: Can I use composite documents in Flow/Process Builder?
+
+**A:** Not directly. Use Apex-invocable actions or invoke the batch class from Flow. For interactive generation, use the LWC button component on record pages.
+
+---
+
+#### Q: How does idempotency work with composites?
+
+**A:** The RequestHash includes:
+- Composite Document ID
+- All namespace data
+- recordIds map
+- Output format
+
+Same inputs within 24 hours = cached result (no duplicate generation)
+
+---
+
+#### Q: Can I preview composite data before generating?
+
+**A:** Yes! Check the Generated_Document__c.RequestJSON__c field. It contains the full envelope with all namespace data that was sent to the backend.
+
+---
+
+#### Q: What happens if one namespace fails?
+
+**A:** The entire composite generation fails. Status = FAILED with error details in Error__c field. Fix the failing namespace and retry.
+
+---
+
+### See Also
+
+For detailed composite document information:
+- **[Template Authoring Guide](template-authoring.md)** - Namespace syntax and composite template examples
+- **[LWC Composite Button Guide](lwc-composite-button-guide.md)** - Interactive generation from Lightning pages
+- **[Composite Batch Examples](composite-batch-examples.md)** - Batch generation patterns
+- **[API Documentation](api.md)** - Composite request envelope format
 
 ---
 

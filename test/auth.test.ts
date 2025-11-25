@@ -377,7 +377,7 @@ describe('Azure AD JWT Authentication', () => {
       // Should get schema validation error (400), not auth error
       expect(response.statusCode).toBe(400);
       const body = response.json();
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
       expect(body.message).toContain('required');
     });
 
@@ -401,7 +401,7 @@ describe('Azure AD JWT Authentication', () => {
       // This is the correct Fastify behavior
       expect(response.statusCode).toBe(400);
       const body = response.json();
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
       expect(body.message).toContain('required property');
     });
   });

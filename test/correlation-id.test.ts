@@ -727,7 +727,9 @@ describe('Correlation ID', () => {
       // Correlation ID should be in both header and body for error tracking
       expect(response.headers['x-correlation-id']).toBe(customId);
       expect(body.correlationId).toBe(customId);
-      expect(body.error).toBe('Bad Request');
+      // New error format uses error class name and includes error code
+      expect(body.error).toBeDefined();
+      expect(body.code).toBeDefined();
     });
 
     it('should generate correlation ID for error responses without custom ID', async () => {

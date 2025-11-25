@@ -348,7 +348,6 @@ The `Composite_Document_Template__c` junction object follows the master-detail r
 
 ## Related Documentation
 
-- [Composite Documents Playbook](composite-documents-playbook.md) - Technical implementation guide
 - [LWC Composite Button Guide](lwc-composite-button-guide.md) - Interactive generation button configuration
 - [Docgen Template Guide](docgen-template-guide.md) - Creating and configuring templates
 

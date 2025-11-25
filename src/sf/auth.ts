@@ -312,8 +312,18 @@ export class SalesforceAuth {
       // Sign JWT assertion
       const assertion = this.signJWT();
 
+      // Determine if this is a sandbox based on the domain
+      const isSandbox = this.config.sfDomain?.toLowerCase().includes('sandbox') || false;
+      const authDomain = isSandbox ? 'test.salesforce.com' : 'login.salesforce.com';
+
+      logger.info({
+        sfDomain: this.config.sfDomain,
+        isSandbox,
+        authDomain
+      }, 'Determining Salesforce auth endpoint');
+
       // Exchange JWT for access token
-      const tokenUrl = `https://login.salesforce.com/services/oauth2/token`;
+      const tokenUrl = `https://${authDomain}/services/oauth2/token`;
       const body = new URLSearchParams({
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion,
@@ -393,9 +403,13 @@ export class SalesforceAuth {
     const now = Math.floor(Date.now() / 1000);
     const exp = now + 300; // 5 minutes
 
+    // Determine audience based on whether this is a sandbox
+    const isSandbox = this.config.sfDomain?.toLowerCase().includes('sandbox') || false;
+    const audience = isSandbox ? 'https://test.salesforce.com' : 'https://login.salesforce.com';
+
     const payload = {
       iss: this.config.sfClientId,
-      aud: 'https://login.salesforce.com',
+      aud: audience,
       sub: this.config.sfUsername,
       exp,
     };

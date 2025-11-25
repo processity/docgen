@@ -9,6 +9,7 @@ This document provides detailed technical implementation details for the Docgen 
 - [LibreOffice Conversion Pool (T-11)](#libreoffice-conversion-pool-t-11)
 - [File Upload & Linking (T-12)](#file-upload--linking-t-12)
 - [Batch Processing & Worker Poller (T-14)](#batch-processing--worker-poller-t-14)
+- [Composite Document Architecture (T-18 to T-27)](#composite-document-architecture-t-18-to-t-27)
 - [Observability & Monitoring (T-15)](#observability--monitoring-t-15)
 
 ---
@@ -486,6 +487,32 @@ curl -X GET https://docgen.azurecontainerapps.io/worker/stats \
 **See Also**:
 - [OpenAPI Worker Endpoints](../openapi.yaml#L283-L482) - Complete API documentation
 - [Poller Documentation](./poller.md) - Additional implementation details
+
+---
+
+## Composite Document Architecture (T-18 to T-27)
+
+Composite Documents combine data from multiple sources (2-10 namespaces) into one PDF using **namespace isolation** to prevent field collisions.
+
+### Template Strategies
+
+**Own Template**: Single master template with `{{Namespace.Field}}` syntax. Backend merges once with full composite data.
+
+**Concatenate Templates**: Multiple templates, each receives only its namespace data (no prefix needed). Backend merges individually, concatenates DOCX with section breaks (`<w:sectPr><w:type w:val="nextPage"/>`), then converts to PDF.
+
+### Data Provider Pipeline
+
+`CompositeDocgenDataProvider.buildCompositeData()` executes junction records (`Composite_Document_Template__c`) sequentially by `Sequence__c`. Each provider result is stored at its namespace key. **Variable pool** allows later providers to reference IDs from earlier results.
+
+### Idempotency Hash
+
+Hash includes `recordIds` map (not just data): `sha256(compositeDocId | outputFormat | JSON.serialize(recordIds) | computeDataHash(compositeData))`. Higher cache miss rate than single templates due to multi-dimensional data.
+
+### Performance
+
+Recommend 2-5 namespaces (max 10). API calls: ~(N+5) for Own Template, ~(2N+5) for Concatenate. Typical timing: 2 namespaces = 3-5s, 5 namespaces = 6-10s.
+
+**See Also**: [API Schema](./api.md#composite-document-requests), [Field Paths](./field-path-conventions.md#namespace-scoped-field-paths-composite-documents)
 
 ---
 

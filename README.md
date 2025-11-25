@@ -19,6 +19,7 @@ Docgen enables both **interactive** and **batch** document generation directly f
 - **Batch Processing**: Apex Batch/Queueable classes enqueue thousands of documents for background processing
 - **Template-Based**: Use familiar Microsoft Word (DOCX) templates with merge fields for data population
 - **Multi-Object Support**: Generate documents from Accounts, Opportunities, Cases, Contacts, Leads, and custom objects
+- **Composite Documents**: Combine multiple data sources (SOQL queries or Apex providers) into unified PDF output with namespace isolation
 
 ## Architecture
 
@@ -54,9 +55,118 @@ sequenceDiagram
   API->>SF: Update status (SUCCEEDED/FAILED)
 ```
 
+## Composite Documents
+
+Composite Documents combine data from multiple sources (SOQL queries or Apex providers) into a single PDF with namespace isolation.
+
+### Interactive Flow - Composite Document Generation
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User (Browser)
+    participant L as LWC Button
+    participant AX as Apex Controller
+    participant CD as Composite Document Config
+    participant DT as Document Template Config
+    participant NC as Named Credential AAD
+    participant N as Node Fastify API
+    participant SF as Salesforce REST and Files
+
+    Note over U,SF: Interactive Composite Generation - upload first then return download link
+
+    U->>L: Click Generate Composite PDF button
+    L->>AX: generateComposite(compositeDocId, recordIds, outputFormat)
+    AX->>CD: Load Composite_Document__c
+    AX->>CD: Query Composite_Document_Template__c junction records ordered
+
+    loop For each junction record by Sequence__c
+        AX->>DT: Load referenced Docgen_Template__c
+        AX->>AX: Execute template data provider SOQL or Custom
+        AX->>AX: Store result in namespace key such as Account or Terms
+    end
+
+    AX->>AX: Validate no namespace collisions
+    AX->>AX: Build merged JSON envelope with all namespaces
+    AX->>AX: Compute RequestHash compositeDocId outputFormat dataHash
+    AX->>SF: Check for existing Generated_Document__c for idempotency
+
+    alt Cache Hit - SUCCEEDED within 24h
+        AX-->>L: Return existing downloadUrl
+    else Cache Miss
+        AX->>NC: POST generate using AAD client credentials
+        NC->>N: POST generate with Bearer AAD JWT
+
+        alt Strategy OWN_TEMPLATE
+            N->>SF: Download composite template ContentVersionId
+            N->>N: Merge template with full merged data envelope
+        else Strategy CONCATENATE_TEMPLATES
+            loop For each template in sequence
+                N->>SF: Download template ContentVersionId
+                N->>N: Merge with namespace data such as template1 plus Account data
+            end
+            N->>N: Concatenate merged DOCX files with section breaks
+        end
+
+        N->>N: Convert DOCX to PDF via soffice headless
+        N->>SF: Upload ContentVersion
+        N->>SF: Create ContentDocumentLinks for all parents
+        N->>SF: Update Generated_Document__c with SUCCEEDED status and OutputFileId__c
+        N-->>NC: Respond 200 with downloadUrl and contentVersionId
+        AX-->>L: Return downloadUrl
+        L-->>U: Open PDF
+    end
+```
+
+### Batch Flow - Composite Document Generation
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AX as Apex Batch or Queueable
+    participant SF as Salesforce
+    participant N as Node Poller Worker
+
+    Note over AX,SF: Batch composite generation driven by poller
+
+    AX->>SF: Query Composite_Document__c configuration
+    AX->>SF: Query Composite_Document_Template__c junction records
+
+    loop For each record in batch
+        AX->>AX: Build merged envelope across namespaces
+        AX->>AX: Compute RequestHash value
+        AX->>SF: Insert Generated_Document__c with Status QUEUED
+    end
+
+    loop Poller every 15 to 60 seconds
+        N->>SF: Pick up to twenty queued rows with lock expired
+        N->>SF: Set Status PROCESSING and LockedUntil to now plus two minutes
+
+        par Up to eight concurrent jobs
+            N->>SF: Fetch Composite_Document__c configuration
+
+            alt Strategy own template
+                N->>SF: Download composite template
+                N->>N: Merge template with full data envelope
+            else Strategy concatenate templates
+                N->>SF: Download all template ContentVersionIds
+                N->>N: Merge each template with its namespace data
+                N->>N: Concatenate documents with section breaks
+            end
+
+            N->>N: Convert DOCX to PDF
+            N->>SF: Upload file and link to parents set status succeeded
+        and On failure
+            N->>SF: Increment attempts apply backoff set failed after three attempts
+        end
+    end
+```
+
+
 ## Key Features
 
 - **Dual Processing Modes**: Interactive (synchronous) and batch (asynchronous) generation
+- **Composite Documents**: Combine data from multiple sources with namespace isolation (Own Template or Concatenate Templates strategies)
 - **Template Caching**: Immutable in-memory cache with LRU eviction (500 MB max)
 - **PDF Conversion**: LibreOffice headless conversion with bounded concurrency (8 max per instance)
 - **Idempotency**: SHA-256 request hash prevents duplicate generation within 24-hour window
@@ -127,11 +237,11 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 |----------|-------------|
 | **[Quick Start Guide](docs/quick-start.md)** | Complete setup and installation guide for new developers |
 | **[Scripts Reference](docs/scripts.md)** | Detailed documentation for all helper scripts and Apex templates |
-| **[Architecture Guide](docs/architecture.md)** | Technical implementation details (authentication, caching, conversion, batch processing) |
+| **[Architecture Guide](docs/architecture.md)** | Technical implementation details (authentication, caching, conversion, batch processing, composite documents) |
 | **[Testing Guide](docs/testing.md)** | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration |
-| **[API Reference](docs/api.md)** | REST API endpoints, request/response formats, error handling |
-| **[Template Authoring](docs/template-authoring.md)** | Creating DOCX templates with merge fields, loops, and conditionals |
-| **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax |
+| **[API Reference](docs/api.md)** | REST API endpoints, request/response formats, error handling, composite envelope format |
+| **[Template Authoring](docs/template-authoring.md)** | Creating DOCX templates with merge fields, loops, conditionals, and composite namespaces |
+| **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax including namespace-scoped paths |
 | **[ADRs](docs/adr/)** | Architecture Decision Records (runtime, auth, worker, caching) |
 
 ### For Operations
@@ -148,9 +258,11 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 
 | Document | Description |
 |----------|-------------|
-| **[Admin Guide](docs/admin-guide.md)** | Salesforce admin setup, adding support for new objects |
+| **[Admin Guide](docs/admin-guide.md)** | Salesforce admin setup, adding support for new objects, creating composite documents |
 | **[Admin Runbook](docs/admin-runbook.md)** | Administrative operations and troubleshooting |
 | **[Named Credential Setup](docs/named-credential-setup.md)** | Configuring Azure AD authentication from Salesforce |
+| **[LWC Composite Button Guide](docs/lwc-composite-button-guide.md)** | Configuring compositeDocgenButton component on Lightning pages |
+| **[Composite Batch Examples](docs/composite-batch-examples.md)** | Batch generation patterns for composite documents |
 
 ## Project Structure
 
@@ -182,24 +294,29 @@ docgen/
 ### Custom Objects
 - **Docgen_Template__c**: Template configuration (links to ContentVersion)
 - **Generated_Document__c**: Document generation tracking and status
+- **Composite_Document__c**: Multi-source document configuration
+- **Composite_Document_Template__c**: Junction records linking composites to templates with namespaces
 - **Supported_Object__mdt**: Multi-object configuration (Custom Metadata)
 
 ### Apex Classes
-- **DocgenController**: Interactive generation controller for LWC
-- **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing
+- **DocgenController**: Interactive generation controller for LWC (including composite generation)
+- **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing (single and composite)
 - **StandardSOQLProvider**: Data collection with locale-aware formatting
-- **BatchDocgenEnqueue**: Batch processing for mass generation
+- **CompositeDocgenDataProvider**: Orchestrates multiple data providers with namespace isolation
+- **BatchDocgenEnqueue**: Batch processing for mass generation (single and composite)
 
 **Test Coverage**: 112 Apex tests with 86% code coverage
 
 ### Lightning Web Components
-- **docgenButton**: Document generation button (deployable to any record page)
+- **docgenButton**: Single-template document generation button (deployable to any record page)
+- **compositeDocgenButton**: Composite document generation button with recordIds mapping
 - **docgenTestPage**: E2E testing wrapper component
 
 ### Custom App
 The **Docgen** app includes:
-- Docgen Templates tab (manage templates)
-- Generated Documents tab (track generation history)
+- Docgen Templates tab (manage single-object templates)
+- Composite Documents tab (manage multi-source templates)
+- Generated Documents tab (track generation history for single and composite)
 - Docgen Test Page tab (E2E testing interface)
 
 ## Technology Stack
@@ -264,4 +381,4 @@ MIT - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Built with** ❤️ **by the Docgen team**
+**Built with** ❤️ **by the Processity team**

@@ -290,7 +290,6 @@ If the Apex method fails (e.g., template not found, missing namespace data), an 
 
 ## Related Documentation
 
-- [Composite Document Playbook](composite-documents-playbook.md) - Technical implementation guide
 - [Composite Template Authoring](composite-template-authoring.md) - Guide for creating composite document templates
 - [Composite Batch Examples](composite-batch-examples.md) - Batch generation examples
 

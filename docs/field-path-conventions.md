@@ -275,6 +275,25 @@ Phone: {{Account.Phone}} (if null, shows empty)
 
 ---
 
+## Namespace-Scoped Field Paths (Composite Documents)
+
+Namespaces prevent field collisions when combining multiple data sources. Syntax differs by strategy:
+
+**Own Template**: Use `{{Namespace.Field}}` syntax. Data structure: `{Account: {...}, Terms: {...}}`. Cross-namespace references allowed.
+
+**Concatenate Templates**: Use `{{Field}}` syntax (no prefix). Each template receives only its namespace data.
+
+**Common Issues**:
+- Own Template blank field → Check using `{{Namespace.Field}}` not `{{Field}}`
+- Concatenate blank field → Check using `{{Field}}` not `{{Namespace.Field}}`
+- Namespace collision → Ensure unique `Namespace__c` values in junction records
+
+**Naming**: Use singular PascalCase (e.g., `Account`, `Terms`, `PaymentSchedule`). Avoid special chars, plural forms, snake_case.
+
+**See**: [Template Authoring](./template-authoring.md#composite-documents)
+
+---
+
 ## Naming Rules Summary
 
 | Element | Convention | Example |

@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 yarn.lock
+keys
 
 # Build outputs
 dist/

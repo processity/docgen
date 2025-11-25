@@ -7,10 +7,17 @@ import { mergeTemplate, concatenateDocx } from '../templates';
 import { convertDocxToPdf } from '../convert/soffice';
 import {
   uploadContentVersion,
-  createContentDocumentLinks,
   updateGeneratedDocument,
 } from '../sf/files';
 import { trackMetric, trackGauge } from '../obs';
+import {
+  DocgenError,
+  wrapError,
+  buildSalesforceError,
+  MissingNamespaceError,
+  ValidationError,
+  MissingConfigurationError,
+} from '../errors';
 import type {
   QueuedDocument,
   PollerStats,
@@ -26,7 +33,7 @@ let config: AppConfig;
 // Helper to ensure config is loaded
 function getConfig(): AppConfig {
   if (!config) {
-    throw new Error('Config not loaded. PollerService must be started first.');
+    throw new MissingConfigurationError('Config not loaded. PollerService must be started first.');
   }
   return config;
 }
@@ -264,7 +271,7 @@ export class PollerService {
     try {
       const sfAuth = getSalesforceAuth();
       if (!sfAuth || !getConfig().sfDomain) {
-        throw new Error('Salesforce authentication not configured');
+        throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
@@ -300,7 +307,7 @@ export class PollerService {
     try {
       const sfAuth = getSalesforceAuth();
       if (!sfAuth || !getConfig().sfDomain) {
-        throw new Error('Salesforce authentication not configured');
+        throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
@@ -337,7 +344,7 @@ export class PollerService {
       // Initialize Salesforce API and template service
       const sfAuth = getSalesforceAuth();
       if (!sfAuth || !getConfig().sfDomain) {
-        throw new Error('Salesforce authentication not configured');
+        throw new MissingConfigurationError('Salesforce authentication', { correlationId: doc.CorrelationId__c });
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
       const templateService = new TemplateService(sfApi);
@@ -390,7 +397,7 @@ export class PollerService {
             // Extract namespace data
             const namespaceData = request.data[templateRef.namespace];
             if (namespaceData === undefined) {
-              throw new Error(`Missing namespace data: ${templateRef.namespace}`);
+              throw new MissingNamespaceError(templateRef.namespace, { correlationId: doc.CorrelationId__c });
             }
 
             // Merge template with its namespace data
@@ -418,7 +425,7 @@ export class PollerService {
       } else {
         // SINGLE-TEMPLATE DOCUMENT PROCESSING (existing logic)
         if (!request.templateId) {
-          throw new Error('templateId is required for single-template documents');
+          throw new ValidationError('templateId is required for single-template documents', { correlationId: doc.CorrelationId__c });
         }
 
         log.debug({ templateId: request.templateId }, 'Fetching template');
@@ -457,13 +464,8 @@ export class PollerService {
         { correlationId: doc.CorrelationId__c }
       );
 
-      // Create ContentDocumentLinks
-      if (request.parents) {
-        log.debug({ parents: request.parents }, 'Creating ContentDocumentLinks');
-        await createContentDocumentLinks(uploadResult.contentDocumentId, request.parents, sfApi, {
-          correlationId: doc.CorrelationId__c,
-        });
-      }
+      // ContentDocumentLinks will be created by trigger when Status__c = 'SUCCEEDED'
+      // The trigger reads parent IDs from RequestJSON__c
 
       // Handle merged DOCX storage if requested
       let mergedDocxFileId: string | undefined;
@@ -478,11 +480,7 @@ export class PollerService {
         );
         mergedDocxFileId = docxUpload.contentVersionId;
 
-        if (request.parents) {
-          await createContentDocumentLinks(docxUpload.contentDocumentId, request.parents, sfApi, {
-            correlationId: doc.CorrelationId__c,
-          });
-        }
+        // ContentDocumentLinks for DOCX will also be created by trigger
       }
 
       // Update document status to SUCCEEDED
@@ -510,32 +508,30 @@ export class PollerService {
         contentVersionId: uploadResult.contentVersionId,
       };
     } catch (error: any) {
-      log.error({ error }, 'Failed to process document');
+      // Wrap error in DocgenError if needed (provides code, statusCode, retryable)
+      const docgenError = error instanceof DocgenError
+        ? error
+        : wrapError(error as Error, {
+            correlationId: doc.CorrelationId__c,
+            templateId: request.templateId,
+            compositeDocumentId: request.compositeDocumentId,
+            generatedDocumentId: doc.Id,
+          });
+
+      log.error({
+        code: docgenError.code,
+        message: docgenError.message,
+        statusCode: docgenError.statusCode,
+        retryable: docgenError.retryable,
+        stack: docgenError.stack,
+      }, 'Failed to process document');
 
       // Detect composite flag for error metrics
       const isCompositeDoc = !!request.compositeDocumentId;
 
-      // Determine failure reason for metrics
-      let failureReason = 'unknown';
-      if (error instanceof Error) {
-        if (error.message.includes('Missing namespace data')) {
-          failureReason = 'validation_error'; // Treat missing namespace as validation error (non-retryable)
-        } else if (error.message.includes('404') || error.message.includes('not found')) {
-          failureReason = 'template_not_found';
-        } else if (error.message.includes('validation') || error.message.includes('invalid')) {
-          failureReason = 'validation_error';
-        } else if (error.message.includes('timeout')) {
-          failureReason = 'conversion_timeout';
-        } else if (error.message.includes('conversion failed')) {
-          failureReason = 'conversion_failed';
-        } else if (error.message.includes('upload failed') || error.message.includes('Salesforce API')) {
-          failureReason = 'upload_failed';
-        }
-      }
-
-      // Track failure metrics
+      // Track failure metrics using error code
       trackMetric('docgen_failures_total', 1, {
-        reason: failureReason,
+        reason: docgenError.code,
         templateId: request.templateId || request.compositeDocumentId || 'unknown',
         documentType: isCompositeDoc ? 'composite' : 'single',
         outputFormat: request.outputFormat,
@@ -543,18 +539,15 @@ export class PollerService {
         correlationId: doc.CorrelationId__c,
       });
 
-      // Determine if error is retryable
-      const retryable = this.isRetryableError(error);
-
-      // Handle failure
-      await this.handleFailure(doc.Id, doc.Attempts__c, error.message, retryable, doc.CorrelationId__c);
+      // Handle failure using DocgenError properties
+      await this.handleFailure(doc.Id, doc.Attempts__c, docgenError, doc.CorrelationId__c);
 
       return {
         success: false,
         documentId: doc.Id,
-        error: error.message,
-        retryable,
-        retried: retryable && doc.Attempts__c < getConfig().poller.maxAttempts,
+        error: docgenError.message,
+        retryable: docgenError.retryable,
+        retried: docgenError.retryable && doc.Attempts__c < getConfig().poller.maxAttempts,
       };
     }
   }
@@ -570,7 +563,7 @@ export class PollerService {
     try {
       const sfAuth = getSalesforceAuth();
       if (!sfAuth || !getConfig().sfDomain) {
-        throw new Error('Salesforce authentication not configured');
+        throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
@@ -597,8 +590,7 @@ export class PollerService {
   async handleFailure(
     documentId: string,
     currentAttempts: number,
-    errorMessage: string,
-    retryable: boolean,
+    docgenError: DocgenError,
     correlationId?: string
   ): Promise<void> {
     const newAttempts = currentAttempts + 1;
@@ -606,21 +598,21 @@ export class PollerService {
     try {
       const sfAuth = getSalesforceAuth();
       if (!sfAuth || !getConfig().sfDomain) {
-        throw new Error('Salesforce authentication not configured');
+        throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
       // Check if we should retry
-      if (retryable && newAttempts <= getConfig().poller.maxAttempts) {
+      if (docgenError.retryable && newAttempts <= getConfig().poller.maxAttempts) {
         // Calculate backoff
         const backoffMs = this.computeBackoff(newAttempts);
         const scheduledRetryTime = new Date(Date.now() + backoffMs).toISOString();
 
-        // Requeue with backoff
+        // Requeue with backoff - store full error details
         await sfApi.patch(`/services/data/v59.0/sobjects/Generated_Document__c/${documentId}`, {
           Status__c: 'QUEUED',
           Attempts__c: newAttempts,
-          Error__c: `Attempt ${newAttempts} failed: ${errorMessage}`,
+          Error__c: buildSalesforceError(docgenError, { attempt: newAttempts }),
           ScheduledRetryTime__c: scheduledRetryTime,
         });
 
@@ -628,26 +620,28 @@ export class PollerService {
         trackMetric('retries_total', 1, {
           attempt: newAttempts,
           documentId,
-          reason: retryable ? errorMessage.substring(0, 50) : 'non_retryable',
+          reason: docgenError.code,
           correlationId: correlationId || documentId,
         });
 
         logger.info(
-          { documentId, attempts: newAttempts, backoffMs, scheduledRetryTime },
+          { documentId, attempts: newAttempts, backoffMs, scheduledRetryTime, errorCode: docgenError.code },
           'Document requeued for retry'
         );
       } else {
-        // Mark as permanently FAILED
+        // Mark as permanently FAILED with full error details
         await sfApi.patch(`/services/data/v59.0/sobjects/Generated_Document__c/${documentId}`, {
           Status__c: 'FAILED',
           Attempts__c: newAttempts,
-          Error__c: retryable
-            ? `Max attempts (${getConfig().poller.maxAttempts}) exceeded. Last error: ${errorMessage}`
-            : `Non-retryable error: ${errorMessage}`,
+          Error__c: buildSalesforceError(docgenError, {
+            attempt: newAttempts,
+            maxAttempts: getConfig().poller.maxAttempts,
+            permanentFailure: true,
+          }),
         });
 
         logger.warn(
-          { documentId, attempts: newAttempts, retryable },
+          { documentId, attempts: newAttempts, retryable: docgenError.retryable, errorCode: docgenError.code },
           'Document marked as FAILED'
         );
       }
@@ -672,30 +666,6 @@ export class PollerService {
     }
   }
 
-  /**
-   * Determine if an error is retryable
-   */
-  private isRetryableError(error: any): boolean {
-    const message = error.message?.toLowerCase() || '';
-
-    // Non-retryable errors
-    if (
-      message.includes('missing namespace data') || // Composite document validation error
-      message.includes('template not found') ||
-      message.includes('not found') ||
-      message.includes('invalid request') || // More specific than just "invalid"
-      message.includes('bad request') ||
-      message.includes(' 404') || // Match ": 404" or " 404 "
-      message.includes(' 400') || // Match ": 400" or " 400 "
-      error.status === 404 ||
-      error.status === 400
-    ) {
-      return false;
-    }
-
-    // Retryable errors (timeouts, network issues, 5xx errors, template parsing errors)
-    return true;
-  }
 }
 
 // Singleton instance

@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { SalesforceAuth } from './auth';
 import { createLogger } from '../utils/logger';
 import { trackDependency } from '../obs';
+import { SalesforceApiError } from '../errors';
 
 const logger = createLogger('sf:api');
 
@@ -212,7 +213,10 @@ export class SalesforceApi {
       { status, path, sfErrorMessage, correlationId: options?.correlationId },
       'Binary download failed'
     );
-    throw new Error(`Failed to download binary from Salesforce: ${status}${sfErrorMessage ? ` - ${sfErrorMessage}` : ''}`);
+    throw new SalesforceApiError(status, sfErrorMessage || 'Failed to download binary', {
+      correlationId: options?.correlationId,
+      path,
+    });
   }
 
   /**
@@ -355,7 +359,10 @@ export class SalesforceApi {
       ? error.response.data
       : JSON.stringify(error.response.data);
 
-    throw new Error(`Salesforce API error: ${status} - ${errorMessage}`);
+    throw new SalesforceApiError(status, errorMessage, {
+      correlationId: options?.correlationId,
+      path,
+    });
   }
 
   /**

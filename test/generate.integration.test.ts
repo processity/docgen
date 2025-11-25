@@ -288,7 +288,7 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       console.log('Generated PDF with stored DOCX:', body.downloadUrl);
     });
 
-    it('should handle ContentDocumentLinks when parent IDs are provided', async () => {
+    it('should accept parent IDs for async ContentDocumentLink creation', async () => {
       // First, create a test Account
       const accountResponse = await sfApi.post(
         '/services/data/v59.0/sobjects/Account',
@@ -332,13 +332,19 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
 
         expect(response.statusCode).toBe(200);
 
-        // Verify the ContentDocumentLink was created
-        const linkQuery = `SELECT Id, LinkedEntityId, ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = '${accountId}'`;
-        const linkResult = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(linkQuery)}`);
+        // ContentDocumentLinks are now created asynchronously by a Salesforce trigger
+        // when the Generated_Document__c status changes to SUCCEEDED.
+        // The link creation is tested in the Apex test classes:
+        // - ContentDocumentLinkHelperTest
+        // - GeneratedDocumentTriggerHandlerTest
 
-        expect(linkResult.records.length).toBeGreaterThan(0);
+        const body: DocgenResponse = JSON.parse(response.body);
+        expect(body).toHaveProperty('downloadUrl');
+        expect(body).toHaveProperty('contentVersionId');
 
-        console.log(`Document linked to Account ${accountId}`);
+        // Verify the parent was included in the request (stored in Generated_Document__c)
+        // The actual link will be created asynchronously when document generation completes
+        console.log(`Document generation initiated for Account ${accountId}`);
       } finally {
         // Clean up the test account
         await sfApi.delete(`/services/data/v59.0/sobjects/Account/${accountId}`);
@@ -395,7 +401,7 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should return 400 when outputFormat is invalid', async () => {
@@ -425,7 +431,7 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       expect(response.statusCode).toBe(400);
 
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Bad Request');
+      expect(body.error).toBe('ValidationError');
     });
 
     it('should update Generated_Document__c status to FAILED on error', async () => {

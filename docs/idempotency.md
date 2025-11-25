@@ -406,3 +406,21 @@ The `RequestJSON__c` field may contain **personal data** (names, emails, address
 | **Node** | Generate & upload | No idempotency logic (trusts Apex) |
 
 **Key Takeaway**: Idempotency is **Apex-owned**, with a **24-hour cache window** for interactive flows. Node focuses on generation, not deduplication.
+
+---
+
+## Idempotency in Composite Documents
+
+Hash algorithm: `sha256(compositeDocId | outputFormat | JSON.serialize(recordIds) | computeDataHash(compositeData))`.
+
+**Key Differences**: Uses `compositeDocId` (not `templateId`), includes `recordIds` map, hashes all namespace data.
+
+**Hash Changes When**: compositeDocId changes, outputFormat changes, recordIds map changes (values OR keys), data in any namespace changes.
+
+**Hash Unchanged When**: Template sequence changes, junction IsActive changes, template DOCX content changes.
+
+**Cache Performance**: Composites have ~40-60% hit rate vs ~70-80% for single templates due to multi-dimensional data volatility.
+
+**Best Practices**: Use consistent recordIds key names, avoid volatile data (e.g., `Datetime.now()`), query only fields used in templates.
+
+**See**: [Architecture](./architecture.md#composite-document-architecture-t-18-to-t-27)

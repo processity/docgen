@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConnectedApp xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>girish@processity.ai</contactEmail>
+    <description>Connected App for Docgen Node.js service using JWT Bearer Flow for server-to-server authentication</description>
+    <label>Docgen JWT Bearer</label>
+    <oauthConfig>
+        <callbackUrl>https://oauth.salesforce.com/callback</callbackUrl>
+        <certificate>MIIFbzCCA1egAwIBAgIUcbYBe+QsXW5K2BrkafKCVYOXeCswDQYJKoZIhvcNAQEL
+BQAwYDELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExFjAUBgNVBAcM
+DVNhbiBGcmFuY2lzY28xDzANBgNVBAoMBkRvY2dlbjETMBEGA1UEAwwKZG9jZ2Vu
+LWp3dDAeFw0yNTExMDgxOTAyMzhaFw0zNTExMDYxOTAyMzhaMGAxCzAJBgNVBAYT
+AlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJhbmNpc2Nv
+MQ8wDQYDVQQKDAZEb2NnZW4xEzARBgNVBAMMCmRvY2dlbi1qd3QwggIiMA0GCSqG
+SIb3DQEBAQUAA4ICDwAwggIKAoICAQC3on9k+bktH1xrKSYXKK9lx/UITMn/x90a
+vdNSRJs+hyzh1iFR6S91NEIrTts9xpPJ7gmW1WNJw9CY9S7WJ2kfG7hfkWlJjJP+
+WixcifDN3KHEzi1poZk7/SH5udVHW0a22ESvjSnJ/87o4ioPXyk/A5+hxi9vpi6a
+apqm5w80eBEoR50cyZtS29IfbRJ+cJ53+3w5aD1YPj8s+M7odSW6SgbZkVZx9I87
+vZLB2RWPbyx0HLY8VpgT1TnlXxBN1N7Zi2MoBp0gmTtGavyZEyKAaaBsKaqIpWsk
+dwwpE0Ymq1jnRmkPsAZb2gEKQK1oFw07ATEHaxy48hHUuqZhcN9MP0s86G0WDaML
+k+WBTpEbHGsglpFi8H/Z6jM3E6Rg7Xs7/0vxn7+8GWlG2xQJ83KKzKe7Tsdba08F
+WpMF8IgVDoDNHTQfziaTy0EyfswHqC9YahrZe3ta7h7+mp1eS72RDvIRAyFq2GrZ
+OVj4+ef1ssc7t3yJHUnuEL0rbJsvuiUKdvOOYVcQo5IYk30nVt8uptzVL5FaA/u8
+UX8fMw5nBLTC0+Gy+CbVe3BR6f+9kU2Zp8wKcF0vYLntCY0t180Jq67pS+4ruDQT
+OFw9xkgazKIi1BCfEdSwoTuiwoydVZ0oHwlFohbMl6HAxfb4Iw2eeWy7P8Y/Bfd9
+amSbUpQa0QIDAQABoyEwHzAdBgNVHQ4EFgQUb3Dyodb9Mt0UyRR9cnBFBDi7hF0w
+DQYJKoZIhvcNAQELBQADggIBAFuEsL1WnEQ6e32cAKCIYQGu3qwJPdxlM3Z0Uf3X
+l9dnvkt9T876vYrIZu20Ah2t7HuIdsaXRrbO9vJqgGOb9nhIvUulbEw2mWIIbAW7
+31LqGdWm0gQCBflXDqpFY3qpT+d36BcPmbnUJV7PqUIhLu+BHO3ik11YT5RqtgL5
+4cezK77eaTC7fUhYUK5EiGyhjFeAbZGX0gt/ZSjC2+tkbR67lbV5H/l2HKwlU/ux
+ciHbFpo8f8DS/wuVPVdR+ev4zNbQb42IspX9kUCEy9LmHr/XgiInVSXds1xb1Suw
+yoHFOUAU/1fsX4MkThTOu9edgtnz6fpk7Gob7EW6lnU3twl5jDnVUY3DdCgEbU3d
+watWeml3ai6hDO8Zh4EAc/gQbaaIB3gRjqGJjfd+xPPmmr8nc/QiMPWmG+dqZQMD
+0sgI49xxq36fqfeJzWx/YLO7FltjIvcZM4t6GrHsxGwIQzQSdTl7CV5B3mUBzeIK
+pCKgssbnYU6lLB8xwlX5VX4olVQUtiYMV46QKgPyBnKLLm8M12e3XegSDIa83fTK
+R0iI9mBs2Z2Ygm1ELX9YXaw2AZABd1ObCAMLmfCnks5sGsFrSjHcvadzmexVUPEH
+2QAX34RzotwUAV8iSulxwRm4XbWIBdKw99+yDWMVvRZ510PKnbfH6b92+ctKHusI
+43Kl</certificate>
+        <isAdminApproved>true</isAdminApproved>
+        <isClientCredentialEnabled>false</isClientCredentialEnabled>
+        <isCodeCredentialEnabled>false</isCodeCredentialEnabled>
+        <isCodeCredentialPostOnly>false</isCodeCredentialPostOnly>
+        <isConsumerSecretOptional>false</isConsumerSecretOptional>
+        <isIntrospectAllTokens>false</isIntrospectAllTokens>
+        <isNamedUserJwtEnabled>false</isNamedUserJwtEnabled>
+        <isPkceRequired>false</isPkceRequired>
+        <isRefreshTokenRotationEnabled>false</isRefreshTokenRotationEnabled>
+        <isSecretRequiredForRefreshToken>false</isSecretRequiredForRefreshToken>
+        <isSecretRequiredForTokenExchange>false</isSecretRequiredForTokenExchange>
+        <isTokenExchangeEnabled>false</isTokenExchangeEnabled>
+        <scopes>Api</scopes>
+        <scopes>Web</scopes>
+        <scopes>RefreshToken</scopes>
+        <scopes>OpenID</scopes>
+    </oauthConfig>
+    <oauthPolicy>
+        <ipRelaxation>ENFORCE</ipRelaxation>
+        <isTokenExchangeFlowEnabled>false</isTokenExchangeFlowEnabled>
+        <refreshTokenPolicy>zero</refreshTokenPolicy>
+    </oauthPolicy>
+    <profileName>System Administrator</profileName>
+</ConnectedApp>

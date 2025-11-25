@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import type { ConversionOptions, ConversionPoolStats } from '../types';
 import { createLogger } from '../utils/logger';
 import { trackDependency } from '../obs';
+import { ConversionTimeoutError, ConversionFailedError } from '../errors';
 
 const logger = createLogger('convert:soffice');
 const execFileAsync = promisify(execFile);
@@ -343,14 +344,11 @@ export class LibreOfficeConverter {
     } catch (error: any) {
       // Check if error is timeout
       if (error.killed || error.signal === 'SIGTERM') {
-        const timeoutError = new Error(
-          `LibreOffice conversion timed out after ${timeout}ms`
-        );
         logger.error(
           { correlationId, timeout, killed: error.killed, signal: error.signal },
           'LibreOffice conversion timed out'
         );
-        throw timeoutError;
+        throw new ConversionTimeoutError(timeout, { correlationId });
       }
 
       // Check if error is non-zero exit code
@@ -361,9 +359,6 @@ export class LibreOfficeConverter {
         if (error.stdout) errorDetails.push(`stdout: ${error.stdout.trim()}`);
         const detailsStr = errorDetails.length > 0 ? ` | ${errorDetails.join(' | ')}` : '';
 
-        const exitError = new Error(
-          `LibreOffice conversion failed with exit code ${error.code}: ${error.message}${detailsStr}`
-        );
         logger.error(
           {
             correlationId,
@@ -374,7 +369,10 @@ export class LibreOfficeConverter {
           },
           'LibreOffice conversion failed'
         );
-        throw exitError;
+        throw new ConversionFailedError(
+          `Exit code ${error.code}: ${error.message}${detailsStr}`,
+          { correlationId, exitCode: error.code }
+        );
       }
 
       // Other errors
@@ -382,7 +380,7 @@ export class LibreOfficeConverter {
         { correlationId, error: error.message },
         'LibreOffice execution error'
       );
-      throw error;
+      throw new ConversionFailedError(error.message, { correlationId });
     }
   }
 

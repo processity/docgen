@@ -409,7 +409,6 @@ for (AsyncApexJob job : jobs) {
 
 ## Additional Resources
 
-- [Composite Documents Playbook](./composite-documents-playbook.md) - Full design and implementation details
 - [BatchDocgenEnqueue API Documentation](../force-app/main/default/classes/BatchDocgenEnqueue.cls) - Class reference
 - [DocgenEnvelopeService](../force-app/main/default/classes/DocgenEnvelopeService.cls) - Envelope building methods
 - [CompositeDocgenDataProvider](../force-app/main/default/classes/CompositeDocgenDataProvider.cls) - Data building logic

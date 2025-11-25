@@ -42,12 +42,15 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         // Check if template wants multiple records returned
         Boolean returnMultiple = template.ReturnMultipleRecords__c != null && template.ReturnMultipleRecords__c;
 
+        // Extract subquery relationship names from SOQL for empty array handling
+        Set<String> queriedChildRelationships = extractSubqueryRelationships(template.SOQL__c);
+
         if (returnMultiple) {
             // Return ALL records in a records array (for composite documents)
-            return buildMultiRecordData(results, locale, timezone);
+            return buildMultiRecordData(results, locale, timezone, queriedChildRelationships);
         } else {
             // Legacy behavior: return only first record
-            return buildSingleRecordData(results, recordId, locale, timezone);
+            return buildSingleRecordData(results, recordId, locale, timezone, queriedChildRelationships);
         }
     }
 
@@ -59,7 +62,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         List<SObject> results,
         Id recordId,
         String locale,
-        String timezone
+        String timezone,
+        Set<String> queriedChildRelationships
     ) {
         if (results.isEmpty()) {
             throw new IllegalArgumentException('No records found for recordId: ' + recordId);
@@ -74,10 +78,30 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String objectType = record.getSObjectType().getDescribe().getName();
 
         // Process the record (scalars, parents, and child subqueries)
-        Map<String, Object> processedRecord = processRecord(record, locale, timezone);
+        Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships);
 
         data.put(objectType, processedRecord);
         return data;
+    }
+
+    /**
+     * Extract subquery relationship names from SOQL string
+     * Pattern: (SELECT ... FROM RelationshipName) or (SELECT ... FROM RelationshipName WHERE ...)
+     */
+    @TestVisible
+    private static Set<String> extractSubqueryRelationships(String soql) {
+        Set<String> relationships = new Set<String>();
+        if (String.isBlank(soql)) return relationships;
+
+        // Pattern to match: FROM followed by relationship name inside parentheses
+        // Matches: (SELECT ... FROM Contacts), (SELECT ... FROM Contacts WHERE ...), etc.
+        // Using (?i) for case-insensitive matching since Apex Pattern doesn't support flags
+        Pattern p = Pattern.compile('(?i)\\(\\s*SELECT\\s+[^)]+\\s+FROM\\s+(\\w+)');
+        Matcher m = p.matcher(soql);
+        while (m.find()) {
+            relationships.add(m.group(1));
+        }
+        return relationships;
     }
 
     /**
@@ -87,12 +111,13 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
     private Map<String, Object> buildMultiRecordData(
         List<SObject> results,
         String locale,
-        String timezone
+        String timezone,
+        Set<String> queriedChildRelationships
     ) {
         // Process ALL records (not just the first one)
         List<Object> processedRecords = new List<Object>();
         for (SObject record : results) {
-            Map<String, Object> processedRecord = processRecord(record, locale, timezone);
+            Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships);
             processedRecords.add(processedRecord);
         }
 
@@ -107,37 +132,41 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      *  - scalar fields (with __formatted when applicable)
      *  - parent relationships (SObject -> recurse)
      *  - child relationships (subqueries -> list of maps)
+     *
+     * @param queriedChildRelationships Set of child relationship names that were included in SOQL subqueries
+     *        Used to ensure empty arrays are returned for queried relationships with no children
      */
     @TestVisible
-    private Map<String, Object> processRecord(SObject record, String locale, String timezone) {
+    private Map<String, Object> processRecord(SObject record, String locale, String timezone, Set<String> queriedChildRelationships) {
         Map<String, Object> out = new Map<String, Object>();
         if (record == null) return out;
-    
+
         // Metadata + what's actually populated in this row
         Schema.DescribeSObjectResult d = record.getSObjectType().getDescribe();
         Map<String, Schema.SObjectField> fieldMap = d.fields.getMap();
         Map<String, Object> populated = record.getPopulatedFieldsAsMap();
-    
+
         // Collect child relationship names (e.g., Contacts, Opportunities, CustomChildren__r)
         Set<String> childRelNames = new Set<String>();
         for (Schema.ChildRelationship cr : d.getChildRelationships()) {
             String relName = cr.getRelationshipName();
             if (!String.isBlank(relName)) childRelNames.add(relName);
         }
-    
+
         // 1) Scalars & parent relationships that were actually queried.
         //    IMPORTANT: skip child relationship names here; they are not fields and record.get(<child>) throws.
         for (String key : populated.keySet()) {
             if (childRelNames.contains(key)) continue; // defer to child section
-    
+
             Object val = populated.get(key); // use populated map; don't call record.get(key)
-    
+
             // Parent relationship present (value is an SObject)
             if (val instanceof SObject) {
-                out.put(key, processRecord((SObject) val, locale, timezone));
+                // Recursive call with empty set - nested records don't have their own subqueries
+                out.put(key, processRecord((SObject) val, locale, timezone, new Set<String>()));
                 continue;
             }
-    
+
             // Scalar value
             out.put(key, val);
             if (val != null) {
@@ -145,24 +174,36 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
                 if (formatted != null) out.put(key + '__formatted', formatted);
             }
         }
-    
+
         // 2) Child relationships (only when sub-queried in SOQL)
         for (String relName : childRelNames) {
+            // Check if this child relationship was queried in the SOQL (either has data or was explicitly requested)
+            Boolean wasQueried = queriedChildRelationships != null && queriedChildRelationships.contains(relName);
+            Boolean hasData = populated.containsKey(relName);
+
+            // Skip if relationship wasn't queried AND has no data
+            if (!wasQueried && !hasData) {
+                continue;
+            }
+
             List<SObject> children;
             try {
                 children = record.getSObjects(relName); // null if not subselected; may throw if unsupported -> catch
             } catch (Exception e) {
                 children = null;
             }
-            if (children == null) continue;
-    
+
+            // Always output an array for queried relationships (empty if no children)
             List<Object> processed = new List<Object>();
-            for (SObject child : children) {
-                processed.add(processRecord(child, locale, timezone));
+            if (children != null) {
+                for (SObject child : children) {
+                    // Recursive call with empty set - child records don't have their own subqueries
+                    processed.add(processRecord(child, locale, timezone, new Set<String>()));
+                }
             }
             out.put(relName, processed);
         }
-    
+
         // 3) (Optional) Add empty __formatted for queried-but-null scalars.
         //    Only consider true fields on this sObject to avoid relationship names.
         for (String fieldName : fieldMap.keySet()) {
@@ -183,8 +224,16 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
                 }
             }
         }
-    
+
         return out;
+    }
+
+    /**
+     * Overload for backward compatibility with tests and internal calls
+     */
+    @TestVisible
+    private Map<String, Object> processRecord(SObject record, String locale, String timezone) {
+        return processRecord(record, locale, timezone, new Set<String>());
     }
     
 

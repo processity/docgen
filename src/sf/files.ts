@@ -1,11 +1,13 @@
 /**
- * Salesforce File Upload & Linking Module (T-12)
+ * Salesforce File Upload Module (T-12)
  *
  * Handles:
  * - ContentVersion upload (PDF/DOCX files)
- * - ContentDocumentLink creation (linking files to parent records)
  * - Generated_Document__c updates (status tracking)
- * - Orchestration of upload + link + update flow
+ * - Orchestration of upload + update flow
+ *
+ * Note: ContentDocumentLink creation is now handled by Salesforce trigger
+ * on Generated_Document__c when Status__c = 'SUCCEEDED'
  */
 
 import type { SalesforceApi } from './api';
@@ -13,14 +15,12 @@ import type {
   ContentVersionCreateRequest,
   ContentVersionCreateResponse,
   ContentVersionRecord,
-  ContentDocumentLinkCreateRequest,
-  ContentDocumentLinkCreateResponse,
   GeneratedDocumentUpdateFields,
   DocgenRequest,
-  DocgenParents,
   FileUploadResult,
   CorrelationOptions,
 } from '../types';
+import { SalesforceUploadError, DocgenError, buildSalesforceError } from '../errors';
 
 /**
  * Upload a file (PDF or DOCX) to Salesforce as a ContentVersion
@@ -57,8 +57,9 @@ export async function uploadContentVersion(
   );
 
   if (!createResponse.success || !createResponse.id) {
-    throw new Error(
-      `ContentVersion creation failed: ${JSON.stringify(createResponse.errors)}`
+    throw new SalesforceUploadError(
+      `ContentVersion creation failed: ${JSON.stringify(createResponse.errors)}`,
+      { correlationId: options?.correlationId, fileSize: buffer.length }
     );
   }
 
@@ -73,16 +74,18 @@ export async function uploadContentVersion(
   );
 
   if (!queryResponse.records || queryResponse.records.length === 0) {
-    throw new Error(
-      `ContentVersion created but not found in query: ${contentVersionId}`
+    throw new SalesforceUploadError(
+      `ContentVersion created but not found in query: ${contentVersionId}`,
+      { correlationId: options?.correlationId }
     );
   }
 
   const contentDocumentId = queryResponse.records[0].ContentDocumentId;
 
   if (!contentDocumentId) {
-    throw new Error(
-      `ContentDocumentId not populated for ContentVersion: ${contentVersionId}`
+    throw new SalesforceUploadError(
+      `ContentDocumentId not populated for ContentVersion: ${contentVersionId}`,
+      { correlationId: options?.correlationId }
     );
   }
 
@@ -90,94 +93,6 @@ export async function uploadContentVersion(
     contentVersionId,
     contentDocumentId,
   };
-}
-
-/**
- * Create a ContentDocumentLink to link a file to a parent record
- *
- * @param contentDocumentId - ContentDocument ID to link
- * @param linkedEntityId - Parent record ID (Account, Opportunity, Case, etc.)
- * @param api - Salesforce API client instance
- * @param options - Optional correlation tracking
- * @returns ContentDocumentLink ID
- *
- * @throws Error if link creation fails
- */
-export async function createContentDocumentLink(
-  contentDocumentId: string,
-  linkedEntityId: string,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<string> {
-  const payload: ContentDocumentLinkCreateRequest = {
-    ContentDocumentId: contentDocumentId,
-    LinkedEntityId: linkedEntityId,
-    ShareType: 'V', // Viewer permission
-    Visibility: 'AllUsers', // Visible to all users
-  };
-
-  const response = await api.post<ContentDocumentLinkCreateResponse>(
-    '/services/data/v59.0/sobjects/ContentDocumentLink',
-    payload,
-    options
-  );
-
-  if (!response.success || !response.id) {
-    throw new Error(
-      `ContentDocumentLink creation failed for ${linkedEntityId}: ${JSON.stringify(
-        response.errors
-      )}`
-    );
-  }
-
-  return response.id;
-}
-
-/**
- * Create ContentDocumentLinks for all non-null parent IDs
- *
- * This function filters out null/undefined parents and creates links only for valid IDs.
- * Per T-12 requirements, link failures are non-fatal (logged but don't throw).
- *
- * @param contentDocumentId - ContentDocument ID to link
- * @param parents - Parent record IDs (Account, Opportunity, Case)
- * @param api - Salesforce API client instance
- * @param options - Optional correlation tracking
- * @returns Number of links created and array of errors
- */
-export async function createContentDocumentLinks(
-  contentDocumentId: string,
-  parents: DocgenParents,
-  api: SalesforceApi,
-  options?: CorrelationOptions
-): Promise<{ created: number; errors: string[] }> {
-  // Filter non-null parent IDs (dynamic iteration for any object type)
-  const parentIds: string[] = Object.values(parents).filter(
-    (id): id is string => id !== null && id !== undefined
-  );
-
-  // No parents to link
-  if (parentIds.length === 0) {
-    return { created: 0, errors: [] };
-  }
-
-  const errors: string[] = [];
-  let created = 0;
-
-  // Create links sequentially (could parallelize but safer to serialize)
-  for (const parentId of parentIds) {
-    try {
-      await createContentDocumentLink(contentDocumentId, parentId, api, options);
-      created++;
-    } catch (error) {
-      // Per T-12: Link failures are non-fatal. Collect errors but continue.
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      errors.push(`Failed to link to ${parentId}: ${errorMessage}`);
-    }
-  }
-
-  return { created, errors };
 }
 
 /**
@@ -204,16 +119,17 @@ export async function updateGeneratedDocument(
 }
 
 /**
- * Orchestrator function: Upload files, create links, and update Generated_Document__c
+ * Orchestrator function: Upload files and update Generated_Document__c
  *
  * This is the main entry point for T-12. It handles the complete flow:
  * 1. Upload PDF (always)
  * 2. Upload DOCX (if storeMergedDocx option is true)
- * 3. Create ContentDocumentLinks for all non-null parents
- * 4. Update Generated_Document__c with status and file IDs
+ * 3. Update Generated_Document__c with status and file IDs
+ *
+ * ContentDocumentLink creation is now handled by Salesforce trigger when
+ * Status__c = 'SUCCEEDED'. The trigger reads parent IDs from RequestJSON__c.
  *
  * Per T-12 requirements:
- * - If link creation fails, file is left orphaned and status set to FAILED
  * - storeMergedDocx creates two separate ContentVersions (PDF + DOCX)
  * - generatedDocumentId is required for status tracking
  *
@@ -222,7 +138,7 @@ export async function updateGeneratedDocument(
  * @param request - Full DocgenRequest with parents, options, and generatedDocumentId
  * @param api - Salesforce API client instance
  * @param options - Optional correlation tracking
- * @returns Upload and link results
+ * @returns Upload results
  *
  * @throws Error if PDF upload fails or update fails
  */
@@ -236,8 +152,8 @@ export async function uploadAndLinkFiles(
   const result: FileUploadResult = {
     pdfContentVersionId: '',
     pdfContentDocumentId: '',
-    linkCount: 0,
-    linkErrors: [],
+    linkCount: 0, // Kept for backward compatibility, always 0 now
+    linkErrors: [], // Kept for backward compatibility, always empty now
   };
 
   try {
@@ -268,81 +184,41 @@ export async function uploadAndLinkFiles(
       result.docxContentDocumentId = docxUpload.contentDocumentId;
     }
 
-    // Step 3: Create ContentDocumentLinks if parents provided
-    if (request.parents) {
-      // Link PDF to parents
-      const pdfLinks = await createContentDocumentLinks(
-        result.pdfContentDocumentId,
-        request.parents,
+    // Step 3: Update Generated_Document__c
+    // ContentDocumentLinks will be created by trigger when Status__c = 'SUCCEEDED'
+    if (request.generatedDocumentId) {
+      // Success: Update with file IDs and parent lookups
+      const updateFields: Partial<GeneratedDocumentUpdateFields> = {
+        Status__c: 'SUCCEEDED',
+        OutputFileId__c: result.pdfContentVersionId,
+      };
+
+      // Include DOCX file ID if uploaded
+      if (result.docxContentVersionId) {
+        updateFields.MergedDocxFileId__c = result.docxContentVersionId;
+      }
+
+      // Map parent IDs to Generated_Document__c lookup fields
+      // e.g., ContactId => Contact__c, LeadId => Lead__c
+      // These are still useful for queries/reporting even though linking uses RequestJSON
+      if (request.parents) {
+        for (const [parentKey, parentValue] of Object.entries(
+          request.parents
+        )) {
+          // Convert "ContactId" → "Contact__c", "AccountId" → "Account__c", etc.
+          if (parentKey.endsWith('Id')) {
+            const lookupFieldName = parentKey.slice(0, -2) + '__c';
+            updateFields[lookupFieldName] = parentValue;
+          }
+        }
+      }
+
+      await updateGeneratedDocument(
+        request.generatedDocumentId,
+        updateFields,
         api,
         options
       );
-      result.linkCount += pdfLinks.created;
-      result.linkErrors.push(...pdfLinks.errors);
-
-      // Link DOCX to parents if uploaded
-      if (result.docxContentDocumentId) {
-        const docxLinks = await createContentDocumentLinks(
-          result.docxContentDocumentId,
-          request.parents,
-          api,
-          options
-        );
-        result.linkCount += docxLinks.created;
-        result.linkErrors.push(...docxLinks.errors);
-      }
-    }
-
-    // Step 4: Update Generated_Document__c
-    if (request.generatedDocumentId) {
-      // Check if link creation had errors
-      const hasLinkErrors = result.linkErrors.length > 0;
-
-      if (hasLinkErrors) {
-        // Per T-12: Link failures → status FAILED, file orphaned
-        await updateGeneratedDocument(
-          request.generatedDocumentId,
-          {
-            Status__c: 'FAILED',
-            Error__c: `Link creation failed: ${result.linkErrors.join('; ')}`,
-            OutputFileId__c: result.pdfContentVersionId, // File exists but orphaned
-          },
-          api,
-          options
-        );
-      } else {
-        // Success: Update with file IDs and parent lookups
-        const updateFields: Partial<GeneratedDocumentUpdateFields> = {
-          Status__c: 'SUCCEEDED',
-          OutputFileId__c: result.pdfContentVersionId,
-        };
-
-        // Include DOCX file ID if uploaded
-        if (result.docxContentVersionId) {
-          updateFields.MergedDocxFileId__c = result.docxContentVersionId;
-        }
-
-        // Map parent IDs to Generated_Document__c lookup fields
-        // e.g., ContactId => Contact__c, LeadId => Lead__c
-        if (request.parents) {
-          for (const [parentKey, parentValue] of Object.entries(
-            request.parents
-          )) {
-            // Convert "ContactId" → "Contact__c", "AccountId" → "Account__c", etc.
-            if (parentKey.endsWith('Id')) {
-              const lookupFieldName = parentKey.slice(0, -2) + '__c';
-              updateFields[lookupFieldName] = parentValue;
-            }
-          }
-        }
-
-        await updateGeneratedDocument(
-          request.generatedDocumentId,
-          updateFields,
-          api,
-          options
-        );
-      }
     }
 
     return result;
@@ -354,8 +230,10 @@ export async function uploadAndLinkFiles(
           request.generatedDocumentId,
           {
             Status__c: 'FAILED',
-            Error__c:
-              error instanceof Error ? error.message : 'Unknown error occurred',
+            Error__c: buildSalesforceError(
+              error instanceof Error ? error : new Error(String(error)),
+              { correlationId: options?.correlationId, generatedDocumentId: request.generatedDocumentId }
+            ),
           },
           api,
           options
@@ -366,7 +244,14 @@ export async function uploadAndLinkFiles(
       }
     }
 
-    // Re-throw original error
-    throw error;
+    // Re-throw DocgenError subclasses as-is, wrap others
+    if (error instanceof DocgenError) {
+      throw error;
+    }
+
+    throw new SalesforceUploadError(
+      error instanceof Error ? error.message : String(error),
+      { correlationId: options?.correlationId }
+    );
   }
 }

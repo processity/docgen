@@ -17,8 +17,6 @@ export { SalesforceApi, type RequestOptions } from './api';
 
 export {
   uploadContentVersion,
-  createContentDocumentLink,
-  createContentDocumentLinks,
   updateGeneratedDocument,
   uploadAndLinkFiles,
 } from './files';

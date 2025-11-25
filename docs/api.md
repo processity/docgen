@@ -7,6 +7,8 @@ This document provides a reference for the Docgen REST API. For the complete Ope
 - [Authentication](#authentication)
 - [Health & Readiness Endpoints](#health--readiness-endpoints)
 - [Document Generation](#document-generation)
+  - [Single-Template Generation](#post-generate)
+  - [Composite Document Requests](#composite-document-requests)
 - [Worker Management](#worker-management)
 - [Error Responses](#error-responses)
 - [Request/Response Examples](#requestresponse-examples)
@@ -272,6 +274,29 @@ See the [samples/](../samples/) directory for complete example payloads:
 - `case.json` - Case with related articles
 - `contact.json` - Contact document generation
 - `lead.json` - Lead document generation
+
+---
+
+### Composite Document Requests
+
+Composite mode detected by presence of `compositeDocumentId`. Two strategies differ in template structure:
+
+**Own Template**: Single `templateId`, data namespaced (`{Account: {...}, Terms: {...}}`), template uses `{{Namespace.Field}}`.
+
+**Concatenate Templates**: Array of `templates[{templateId, namespace, sequence}]`, each template gets only its namespace data (no prefix).
+
+**Key Fields**:
+| Field | Own Template | Concatenate |
+|-------|--------------|-------------|
+| `compositeDocumentId` | Required | Required |
+| `templateStrategy` | "Own Template" | "Concatenate Templates" |
+| `templateId` | Required | Absent |
+| `templates[]` | Absent | Required |
+| `data` | Namespaced | Namespaced |
+
+**Validation**: Own Template requires `templateId` + absent `templates`. Concatenate requires `templates` array + absent `templateId`. Missing namespace data returns 400.
+
+**See**: [Field Paths](./field-path-conventions.md#namespace-scoped-field-paths-composite-documents)
 
 ---
 

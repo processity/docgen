@@ -6,8 +6,8 @@ import { authTestRoutes } from './routes/auth-test';
 import { workerRoutes } from './routes/worker';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
-import { getCorrelationId, setCorrelationId } from './utils/correlation-id';
 import { createSalesforceAuth } from './sf/auth';
+import { createErrorHandler } from './errors';
 import { pollerService } from './worker';
 import { initializeAppInsights } from './obs';
 
@@ -52,34 +52,8 @@ export async function build(): Promise<FastifyInstance> {
   });
 
   // Register error handler for all errors (including validation errors)
-  app.setErrorHandler((error, request, reply) => {
-    // Extract correlation ID for error tracking
-    const correlationId = getCorrelationId(request);
-    setCorrelationId(reply, correlationId);
-
-    // Determine status code
-    const statusCode = error.statusCode || (error as any).status || 500;
-
-    // Log error with correlation ID for debugging
-    app.log.error({ correlationId, error: error.message, statusCode, code: (error as any).code }, 'Request error');
-
-    // Normalize error names for consistent client handling
-    let errorName = error.name;
-    if (statusCode === 400) {
-      errorName = 'Bad Request';
-    }
-
-    // Build response with correlation ID
-    // IMPORTANT: Use type assertion to ensure correlationId is sent
-    const response: any = {
-      error: errorName,
-      message: error.message,
-      statusCode,
-      correlationId,
-    };
-
-    return reply.status(statusCode).send(response);
-  });
+  // Uses DocgenError classes for structured error codes, stack traces, and context
+  app.setErrorHandler(createErrorHandler(app));
 
   // Register auth plugin before routes
   await app.register(authPlugin, { config });
