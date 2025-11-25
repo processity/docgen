@@ -268,7 +268,8 @@ private class StandardSOQLProviderTest {
         // Given: Account with Contacts (child relationship)
         Account acc = new Account(
             Name = 'Parent Company',
-            AnnualRevenue = 5000000
+            AnnualRevenue = 5000000,
+            BillingCountry = 'United Kingdom'
         );
         insert acc;
 
@@ -276,12 +277,14 @@ private class StandardSOQLProviderTest {
             new Contact(
                 FirstName = 'John',
                 LastName = 'Doe',
-                AccountId = acc.Id
+                AccountId = acc.Id,
+                Email = 'john.doe@test.com'
             ),
             new Contact(
                 FirstName = 'Jane',
                 LastName = 'Smith',
-                AccountId = acc.Id
+                AccountId = acc.Id,
+                Email = 'jane.smith@test.com'
             )
         };
         insert contacts;
@@ -326,7 +329,8 @@ private class StandardSOQLProviderTest {
         // Given: Account with NO contacts
         Account acc = new Account(
             Name = 'Lonely Company',
-            AnnualRevenue = 100000
+            AnnualRevenue = 100000,
+            BillingCountry = 'United Kingdom'
         );
         insert acc;
 
@@ -351,12 +355,11 @@ private class StandardSOQLProviderTest {
 
         Assert.areEqual('Lonely Company', accountData.get('Name'), 'Should contain Account Name');
 
-        // Child relationship should exist but be empty
-        if (accountData.containsKey('Contacts')) {
-            List<Object> contactsList = (List<Object>) accountData.get('Contacts');
-            Assert.isNotNull(contactsList, 'Contacts list should not be null');
-            Assert.areEqual(0, contactsList.size(), 'Contacts list should be empty');
-        }
+        // Child relationship MUST exist and be empty array
+        Assert.isTrue(accountData.containsKey('Contacts'), 'Contacts key must exist for queried child relationship');
+        List<Object> contactsList = (List<Object>) accountData.get('Contacts');
+        Assert.isNotNull(contactsList, 'Contacts list should not be null');
+        Assert.areEqual(0, contactsList.size(), 'Contacts list should be empty');
     }
 
     @isTest
@@ -507,5 +510,34 @@ private class StandardSOQLProviderTest {
         Assert.areEqual('Minimal Account', accountData.get('Name'), 'Name should be populated');
         // All other fields are null - key behavior is no exception thrown
         Assert.isTrue(true, 'Successfully processed record with all null optional fields');
+    }
+
+    @isTest
+    static void testEmptyChildRelationship_ReturnsEmptyArray() {
+        // Given: Account with NO contacts, SOQL includes Contacts subquery
+        Account acc = new Account(Name = 'No Contacts Corp', BillingCountry = 'United Kingdom');
+        insert acc;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Empty Child Test',
+            TemplateContentVersionId__c = '068000000000009AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: Contacts key MUST exist and be an empty array
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.isTrue(accountData.containsKey('Contacts'), 'Contacts key MUST exist for queried child relationship');
+        List<Object> contacts = (List<Object>) accountData.get('Contacts');
+        Assert.isNotNull(contacts, 'Contacts should be an empty list, not null');
+        Assert.areEqual(0, contacts.size(), 'Contacts list should be empty');
     }
 }
