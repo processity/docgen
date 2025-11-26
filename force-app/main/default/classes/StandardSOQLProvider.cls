@@ -162,8 +162,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
             // Parent relationship present (value is an SObject)
             if (val instanceof SObject) {
-                // Recursive call with empty set - nested records don't have their own subqueries
-                out.put(key, processRecord((SObject) val, locale, timezone, new Set<String>()));
+                // Recursive call - pass queriedChildRelationships for nested empty array handling
+                out.put(key, processRecord((SObject) val, locale, timezone, queriedChildRelationships));
                 continue;
             }
 
@@ -197,8 +197,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             List<Object> processed = new List<Object>();
             if (children != null) {
                 for (SObject child : children) {
-                    // Recursive call with empty set - child records don't have their own subqueries
-                    processed.add(processRecord(child, locale, timezone, new Set<String>()));
+                    // Recursive call - pass queriedChildRelationships for nested empty array handling
+                    processed.add(processRecord(child, locale, timezone, queriedChildRelationships));
                 }
             }
             out.put(relName, processed);

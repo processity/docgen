@@ -540,4 +540,96 @@ private class StandardSOQLProviderTest {
         Assert.isNotNull(contacts, 'Contacts should be an empty list, not null');
         Assert.areEqual(0, contacts.size(), 'Contacts list should be empty');
     }
+
+    @isTest
+    static void testNestedEmptyChildRelationship_ReturnsEmptyArray() {
+        // Given: Account with Opportunity but NO OpportunityLineItems
+        // SOQL has 2-level nesting: Account → Opportunities → OpportunityLineItems
+
+        // Setup: Create Account + Opportunity (no line items)
+        Account acc = new Account(Name = 'Test Corp');
+        insert acc;
+
+        Opportunity opp = new Opportunity(
+            Name = 'Test Deal',
+            AccountId = acc.Id,
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Nested Empty Test',
+            TemplateContentVersionId__c = '068000000000010AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, (SELECT Id, Name, (SELECT Id FROM OpportunityLineItems) FROM Opportunities) FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: OpportunityLineItems key MUST exist as empty array on the Opportunity
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.isTrue(accountData.containsKey('Opportunities'), 'Opportunities key must exist');
+        List<Object> opportunities = (List<Object>) accountData.get('Opportunities');
+        Assert.areEqual(1, opportunities.size(), 'Should have 1 opportunity');
+
+        Map<String, Object> oppData = (Map<String, Object>) opportunities[0];
+        Assert.isTrue(oppData.containsKey('OpportunityLineItems'),
+            'OpportunityLineItems key MUST exist for queried nested child relationship');
+        List<Object> lineItems = (List<Object>) oppData.get('OpportunityLineItems');
+        Assert.isNotNull(lineItems, 'OpportunityLineItems should be empty list, not null');
+        Assert.areEqual(0, lineItems.size(), 'OpportunityLineItems list should be empty');
+    }
+
+    @isTest
+    static void testThreeLevelNestedEmptyChildRelationship_ReturnsEmptyArray() {
+        // Given: Account with Case but NO CaseComments
+        // SOQL has 2-level nesting: Account → Cases → CaseComments
+        // This validates the fix works at multiple nested levels
+
+        Account acc = new Account(Name = 'Three Level Test');
+        insert acc;
+
+        Case c = new Case(
+            Subject = 'Test Case',
+            AccountId = acc.Id,
+            Status = 'New'
+        );
+        insert c;
+        // No CaseComments added
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Three Level Test',
+            TemplateContentVersionId__c = '068000000000011AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, (SELECT Id, Subject, (SELECT Id FROM CaseComments) FROM Cases) FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: CaseComments key MUST exist as empty array on the Case
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.isTrue(accountData.containsKey('Cases'), 'Cases key must exist');
+        List<Object> cases = (List<Object>) accountData.get('Cases');
+        Assert.areEqual(1, cases.size(), 'Should have 1 case');
+
+        Map<String, Object> caseData = (Map<String, Object>) cases[0];
+        Assert.isTrue(caseData.containsKey('CaseComments'),
+            'CaseComments key MUST exist for queried nested child relationship');
+        List<Object> comments = (List<Object>) caseData.get('CaseComments');
+        Assert.isNotNull(comments, 'CaseComments should be empty list, not null');
+        Assert.areEqual(0, comments.size(), 'CaseComments list should be empty');
+    }
 }
