@@ -588,6 +588,121 @@ private class StandardSOQLProviderTest {
     }
 
     @isTest
+    static void testExtractSubqueryRelationships_WithNestedSubqueries() {
+        // Given: SOQL with nested subqueries (Account -> Opportunities -> OpportunityLineItems)
+        String soql = 'SELECT Id, Name, ' +
+            '(SELECT Id, Name FROM Contacts ORDER BY CreatedDate), ' +
+            '(SELECT Id, Name, (SELECT Id FROM OpportunityLineItems) FROM Opportunities ORDER BY CloseDate DESC), ' +
+            '(SELECT Id, Subject, (SELECT Id FROM CaseComments) FROM Cases) ' +
+            'FROM Account WHERE Id = :recordId';
+
+        // When: Extracting subquery relationships
+        Test.startTest();
+        Set<String> relationships = StandardSOQLProvider.extractSubqueryRelationships(soql);
+        Test.stopTest();
+
+        // Then: Should include ALL nested relationships, not just immediate children
+        Assert.isTrue(relationships.contains('Contacts'), 'Should contain Contacts');
+        Assert.isTrue(relationships.contains('Opportunities'), 'Should contain Opportunities');
+        Assert.isTrue(relationships.contains('OpportunityLineItems'), 'Should contain nested OpportunityLineItems');
+        Assert.isTrue(relationships.contains('Cases'), 'Should contain Cases');
+        Assert.isTrue(relationships.contains('CaseComments'), 'Should contain nested CaseComments');
+        Assert.areEqual(5, relationships.size(), 'Should have exactly 5 relationships');
+        // Should NOT include main object
+        Assert.isFalse(relationships.contains('Account'), 'Should NOT contain main object Account');
+    }
+
+    @isTest
+    static void testNestedChildWithData_ReturnsAllRecords() {
+        // Given: Account with MULTIPLE Opportunities with line items
+        // This tests that Opportunities WITH data are correctly processed
+        Account acc = new Account(Name = 'Multi Opp Test Corp', BillingCountry = 'United Kingdom');
+        insert acc;
+
+        // Create multiple opportunities
+        List<Opportunity> opps = new List<Opportunity>();
+        for (Integer i = 0; i < 5; i++) {
+            opps.add(new Opportunity(
+                Name = 'Deal ' + i,
+                AccountId = acc.Id,
+                StageName = 'Prospecting',
+                CloseDate = Date.today().addDays(30 + i)
+            ));
+        }
+        insert opps;
+
+        // Create a product for line items
+        Product2 prod = new Product2(Name = 'Test Product', ProductCode = 'TP001', IsActive = true);
+        insert prod;
+
+        // Get standard pricebook
+        Id pricebookId = Test.getStandardPricebookId();
+
+        PricebookEntry pbe = new PricebookEntry(
+            Pricebook2Id = pricebookId,
+            Product2Id = prod.Id,
+            UnitPrice = 100,
+            IsActive = true
+        );
+        insert pbe;
+
+        // Add line items to first 2 opportunities
+        List<OpportunityLineItem> lineItems = new List<OpportunityLineItem>();
+        for (Integer i = 0; i < 2; i++) {
+            lineItems.add(new OpportunityLineItem(
+                OpportunityId = opps[i].Id,
+                PricebookEntryId = pbe.Id,
+                Quantity = 1,
+                UnitPrice = 100
+            ));
+        }
+        insert lineItems;
+
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = 'Multi Opp Test',
+            TemplateContentVersionId__c = '068000000000012AAA',
+            DataSource__c = 'SOQL',
+            SOQL__c = 'SELECT Id, Name, ' +
+                '(SELECT Id, Name, (SELECT Id, Product2.Name FROM OpportunityLineItems) FROM Opportunities ORDER BY CloseDate) ' +
+                'FROM Account WHERE Id = :recordId'
+        );
+        insert template;
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        // When: Building data
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        // Then: All 5 opportunities should be present
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.isTrue(accountData.containsKey('Opportunities'), 'Opportunities key must exist');
+        List<Object> opportunities = (List<Object>) accountData.get('Opportunities');
+
+        // Debug output
+        System.debug('Number of opportunities in output: ' + opportunities.size());
+        for (Object oppObj : opportunities) {
+            Map<String, Object> oppMap = (Map<String, Object>) oppObj;
+            System.debug('Opp: ' + oppMap.get('Name') + ', has LineItems key: ' + oppMap.containsKey('OpportunityLineItems'));
+        }
+
+        Assert.areEqual(5, opportunities.size(), 'Should have all 5 opportunities');
+
+        // Verify first opp has line items
+        Map<String, Object> firstOpp = (Map<String, Object>) opportunities[0];
+        Assert.isTrue(firstOpp.containsKey('OpportunityLineItems'), 'First opp should have line items key');
+        List<Object> firstOppLineItems = (List<Object>) firstOpp.get('OpportunityLineItems');
+        Assert.areEqual(1, firstOppLineItems.size(), 'First opp should have 1 line item');
+
+        // Verify last opp has empty line items array
+        Map<String, Object> lastOpp = (Map<String, Object>) opportunities[4];
+        Assert.isTrue(lastOpp.containsKey('OpportunityLineItems'), 'Last opp should have line items key');
+        List<Object> lastOppLineItems = (List<Object>) lastOpp.get('OpportunityLineItems');
+        Assert.areEqual(0, lastOppLineItems.size(), 'Last opp should have empty line items');
+    }
+
+    @isTest
     static void testThreeLevelNestedEmptyChildRelationship_ReturnsEmptyArray() {
         // Given: Account with Case but NO CaseComments
         // SOQL has 2-level nesting: Account → Cases → CaseComments

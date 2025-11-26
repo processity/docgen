@@ -42,15 +42,17 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         // Check if template wants multiple records returned
         Boolean returnMultiple = template.ReturnMultipleRecords__c != null && template.ReturnMultipleRecords__c;
 
-        // Extract subquery relationship names from SOQL for empty array handling
-        Set<String> queriedChildRelationships = extractSubqueryRelationships(template.SOQL__c);
+        // Extract subquery relationship names from SOQL, organized by nesting level
+        Map<String, Set<String>> nestedRelationshipMap = extractSubqueryRelationshipsNested(template.SOQL__c);
+        // Top-level relationships are the keys of the map
+        Set<String> topLevelRelationships = nestedRelationshipMap.keySet();
 
         if (returnMultiple) {
             // Return ALL records in a records array (for composite documents)
-            return buildMultiRecordData(results, locale, timezone, queriedChildRelationships);
+            return buildMultiRecordData(results, locale, timezone, topLevelRelationships, nestedRelationshipMap);
         } else {
             // Legacy behavior: return only first record
-            return buildSingleRecordData(results, recordId, locale, timezone, queriedChildRelationships);
+            return buildSingleRecordData(results, recordId, locale, timezone, topLevelRelationships, nestedRelationshipMap);
         }
     }
 
@@ -63,7 +65,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         Id recordId,
         String locale,
         String timezone,
-        Set<String> queriedChildRelationships
+        Set<String> queriedChildRelationships,
+        Map<String, Set<String>> nestedRelationshipMap
     ) {
         if (results.isEmpty()) {
             throw new IllegalArgumentException('No records found for recordId: ' + recordId);
@@ -78,30 +81,122 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String objectType = record.getSObjectType().getDescribe().getName();
 
         // Process the record (scalars, parents, and child subqueries)
-        Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships);
+        Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap);
 
         data.put(objectType, processedRecord);
         return data;
     }
 
     /**
-     * Extract subquery relationship names from SOQL string
-     * Pattern: (SELECT ... FROM RelationshipName) or (SELECT ... FROM RelationshipName WHERE ...)
+     * Extract subquery relationship names from SOQL string, organized by nesting level.
+     * Returns a Map where:
+     *   - Key: child relationship name (e.g., "Opportunities")
+     *   - Value: set of ITS nested child relationship names (e.g., {"OpportunityLineItems"})
+     *
+     * For example, SOQL with (SELECT ... (SELECT ... FROM OpportunityLineItems) FROM Opportunities)
+     * returns: {"Opportunities" => {"OpportunityLineItems"}, "OpportunityLineItems" => {}, ...}
+     *
+     * Note: In SOQL, nested FROMs appear BEFORE their parent FROMs textually, so we use a
+     * two-pass approach to correctly determine parent-child relationships.
+     */
+    @TestVisible
+    private static Map<String, Set<String>> extractSubqueryRelationshipsNested(String soql) {
+        Map<String, Set<String>> relationshipMap = new Map<String, Set<String>>();
+        if (String.isBlank(soql)) return relationshipMap;
+
+        // First pass: collect all (relName, depth, position) tuples
+        List<RelationshipInfo> relInfos = new List<RelationshipInfo>();
+        Integer depth = 0;
+        String soqlLower = soql.toLowerCase();
+
+        for (Integer pos = 0; pos < soql.length(); pos++) {
+            String ch = soql.substring(pos, pos + 1);
+            if (ch == '(') {
+                depth++;
+            } else if (ch == ')') {
+                depth--;
+            } else if (pos + 4 <= soql.length() && soqlLower.substring(pos, pos + 4) == 'from') {
+                // Check it's a word boundary (not part of "transform" etc)
+                Boolean isWordStart = (pos == 0 || !soql.substring(pos - 1, pos).isAlpha());
+                Boolean isWordEnd = (pos + 4 >= soql.length() || !soql.substring(pos + 4, pos + 5).isAlpha());
+
+                if (isWordStart && isWordEnd && depth > 0) {
+                    // Skip whitespace/newlines after FROM
+                    Integer start = pos + 4;
+                    while (start < soql.length()) {
+                        String c = soql.substring(start, start + 1);
+                        if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                            start++;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Find end of relationship name (alphanumeric + underscore)
+                    Integer endPos = start;
+                    while (endPos < soql.length()) {
+                        String c = soql.substring(endPos, endPos + 1);
+                        if (c.isAlpha() || c.isNumeric() || c == '_') {
+                            endPos++;
+                        } else {
+                            break;
+                        }
+                    }
+                    if (endPos > start) {
+                        String relName = soql.substring(start, endPos);
+                        relInfos.add(new RelationshipInfo(relName, depth, pos));
+                    }
+                }
+            }
+        }
+
+        // Second pass: determine parent-child relationships
+        // For each relationship at depth N, find the closest relationship at depth N-1
+        // that has a position AFTER it (that's the parent in SOQL syntax)
+        for (RelationshipInfo info : relInfos) {
+            relationshipMap.put(info.name, new Set<String>());
+        }
+
+        for (RelationshipInfo childInfo : relInfos) {
+            if (childInfo.depth > 1) {
+                // Find parent: relationship at depth-1 with position > child's position
+                RelationshipInfo parentInfo = null;
+                for (RelationshipInfo candidate : relInfos) {
+                    if (candidate.depth == childInfo.depth - 1 && candidate.position > childInfo.position) {
+                        if (parentInfo == null || candidate.position < parentInfo.position) {
+                            parentInfo = candidate;
+                        }
+                    }
+                }
+                if (parentInfo != null) {
+                    relationshipMap.get(parentInfo.name).add(childInfo.name);
+                }
+            }
+        }
+
+        return relationshipMap;
+    }
+
+    /**
+     * Helper class to store relationship extraction info
+     */
+    private class RelationshipInfo {
+        public String name;
+        public Integer depth;
+        public Integer position;
+
+        public RelationshipInfo(String name, Integer depth, Integer position) {
+            this.name = name;
+            this.depth = depth;
+            this.position = position;
+        }
+    }
+
+    /**
+     * Extract subquery relationship names from SOQL string (flat set for backward compatibility)
      */
     @TestVisible
     private static Set<String> extractSubqueryRelationships(String soql) {
-        Set<String> relationships = new Set<String>();
-        if (String.isBlank(soql)) return relationships;
-
-        // Pattern to match: FROM followed by relationship name inside parentheses
-        // Matches: (SELECT ... FROM Contacts), (SELECT ... FROM Contacts WHERE ...), etc.
-        // Using (?i) for case-insensitive matching since Apex Pattern doesn't support flags
-        Pattern p = Pattern.compile('(?i)\\(\\s*SELECT\\s+[^)]+\\s+FROM\\s+(\\w+)');
-        Matcher m = p.matcher(soql);
-        while (m.find()) {
-            relationships.add(m.group(1));
-        }
-        return relationships;
+        return extractSubqueryRelationshipsNested(soql).keySet();
     }
 
     /**
@@ -112,12 +207,13 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         List<SObject> results,
         String locale,
         String timezone,
-        Set<String> queriedChildRelationships
+        Set<String> queriedChildRelationships,
+        Map<String, Set<String>> nestedRelationshipMap
     ) {
         // Process ALL records (not just the first one)
         List<Object> processedRecords = new List<Object>();
         for (SObject record : results) {
-            Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships);
+            Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap);
             processedRecords.add(processedRecord);
         }
 
@@ -133,11 +229,17 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      *  - parent relationships (SObject -> recurse)
      *  - child relationships (subqueries -> list of maps)
      *
-     * @param queriedChildRelationships Set of child relationship names that were included in SOQL subqueries
-     *        Used to ensure empty arrays are returned for queried relationships with no children
+     * @param queriedChildRelationships Set of child relationship names that were queried at THIS level
+     * @param nestedRelationshipMap Map of relationship name to its nested child relationships
      */
     @TestVisible
-    private Map<String, Object> processRecord(SObject record, String locale, String timezone, Set<String> queriedChildRelationships) {
+    private Map<String, Object> processRecord(
+        SObject record,
+        String locale,
+        String timezone,
+        Set<String> queriedChildRelationships,
+        Map<String, Set<String>> nestedRelationshipMap
+    ) {
         Map<String, Object> out = new Map<String, Object>();
         if (record == null) return out;
 
@@ -162,8 +264,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
             // Parent relationship present (value is an SObject)
             if (val instanceof SObject) {
-                // Recursive call - pass queriedChildRelationships for nested empty array handling
-                out.put(key, processRecord((SObject) val, locale, timezone, queriedChildRelationships));
+                // Parent relationships don't have child subqueries in SOQL, so pass empty set
+                out.put(key, processRecord((SObject) val, locale, timezone, new Set<String>(), nestedRelationshipMap));
                 continue;
             }
 
@@ -175,30 +277,46 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             }
         }
 
-        // 2) Child relationships (only when sub-queried in SOQL)
+        // 2) Child relationships (only when sub-queried in SOQL at THIS level)
         for (String relName : childRelNames) {
-            // Check if this child relationship was queried in the SOQL (either has data or was explicitly requested)
+            // Check if this child relationship was queried at THIS level of the hierarchy
             Boolean wasQueried = queriedChildRelationships != null && queriedChildRelationships.contains(relName);
             Boolean hasData = populated.containsKey(relName);
 
-            // Skip if relationship wasn't queried AND has no data
+            // Skip if relationship wasn't queried at this level AND has no data
             if (!wasQueried && !hasData) {
                 continue;
             }
 
-            List<SObject> children;
-            try {
-                children = record.getSObjects(relName); // null if not subselected; may throw if unsupported -> catch
-            } catch (Exception e) {
-                children = null;
+            // Get child records - try populated map first, then getSObjects as fallback
+            List<SObject> children = null;
+            if (hasData) {
+                // Get directly from populated map - this is more reliable than getSObjects
+                Object populatedValue = populated.get(relName);
+                if (populatedValue instanceof List<SObject>) {
+                    children = (List<SObject>) populatedValue;
+                }
             }
+            // Fallback to getSObjects if populated map didn't have it
+            if (children == null) {
+                try {
+                    children = record.getSObjects(relName);
+                } catch (Exception e) {
+                    children = null;
+                }
+            }
+
+            // Get the nested relationships for this child type (if any)
+            Set<String> nestedRels = nestedRelationshipMap != null && nestedRelationshipMap.containsKey(relName)
+                ? nestedRelationshipMap.get(relName)
+                : new Set<String>();
 
             // Always output an array for queried relationships (empty if no children)
             List<Object> processed = new List<Object>();
             if (children != null) {
                 for (SObject child : children) {
-                    // Recursive call - pass queriedChildRelationships for nested empty array handling
-                    processed.add(processRecord(child, locale, timezone, queriedChildRelationships));
+                    // Recursive call - pass ONLY the nested relationships for this child type
+                    processed.add(processRecord(child, locale, timezone, nestedRels, nestedRelationshipMap));
                 }
             }
             out.put(relName, processed);
@@ -233,7 +351,15 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     private Map<String, Object> processRecord(SObject record, String locale, String timezone) {
-        return processRecord(record, locale, timezone, new Set<String>());
+        return processRecord(record, locale, timezone, new Set<String>(), new Map<String, Set<String>>());
+    }
+
+    /**
+     * Overload for backward compatibility - accepts flat set, uses empty nested map
+     */
+    @TestVisible
+    private Map<String, Object> processRecord(SObject record, String locale, String timezone, Set<String> queriedChildRelationships) {
+        return processRecord(record, locale, timezone, queriedChildRelationships, new Map<String, Set<String>>());
     }
     
 
