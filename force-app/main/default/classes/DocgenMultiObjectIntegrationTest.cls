@@ -49,15 +49,16 @@ private class DocgenMultiObjectIntegrationTest {
 
         // When: Generate document
         Test.startTest();
-        String downloadUrl = DocgenController.generate(
+        DocgenController.GenerateResult result = DocgenController.generate(
             scenario.template.Id,
             scenario.recordId,
             'PDF'
         );
         Test.stopTest();
 
-        // Then: Download URL should be returned
-        System.assertNotEquals(null, downloadUrl,
+        // Then: Result should be successful with download URL
+        System.assert(result.success, 'Result should indicate success for ' + objectApiName);
+        System.assertNotEquals(null, result.downloadUrl,
             'Should return download URL for ' + objectApiName);
 
         // And: Generated_Document__c should be created

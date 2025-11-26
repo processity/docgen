@@ -5,6 +5,41 @@
 public with sharing class DocgenController {
 
     /**
+     * Wrapper class for generate() response
+     * Returns either success data or error data, allowing DML to commit before error is returned
+     */
+    public class GenerateResult {
+        @AuraEnabled public Boolean success { get; set; }
+        @AuraEnabled public String downloadUrl { get; set; }
+        @AuraEnabled public String errorMessage { get; set; }
+        @AuraEnabled public String correlationId { get; set; }
+        @AuraEnabled public String generatedDocumentId { get; set; }
+
+        public GenerateResult() {
+            this.success = false;
+        }
+    }
+
+    // Factory methods for GenerateResult (must be at class level, not in inner class)
+    private static GenerateResult successResult(String downloadUrl, String correlationId, String docId) {
+        GenerateResult result = new GenerateResult();
+        result.success = true;
+        result.downloadUrl = downloadUrl;
+        result.correlationId = correlationId;
+        result.generatedDocumentId = docId;
+        return result;
+    }
+
+    private static GenerateResult errorResult(String errorMessage, String correlationId, String docId) {
+        GenerateResult result = new GenerateResult();
+        result.success = false;
+        result.errorMessage = errorMessage;
+        result.correlationId = correlationId;
+        result.generatedDocumentId = docId;
+        return result;
+    }
+
+    /**
      * Get Named Credential name from Custom Settings
      * Allows configuring different Named Credentials for different environments
      * (e.g., 'Docgen_Node_API_CI' for CI tests, 'Docgen_Node_API' for production)
@@ -25,11 +60,10 @@ public with sharing class DocgenController {
      * @param templateId ID of the Docgen_Template__c record
      * @param recordId ID of the source record (Account, Opportunity, Case, etc.)
      * @param outputFormat Output format (PDF or DOCX)
-     * @return Download URL for the generated document
-     * @throws AuraHandledException on validation or generation failures
+     * @return GenerateResult containing either downloadUrl (success) or errorMessage (failure)
      */
     @AuraEnabled
-    public static String generate(Id templateId, Id recordId, String outputFormat) {
+    public static GenerateResult generate(Id templateId, Id recordId, String outputFormat) {
         Generated_Document__c doc;
         String correlationId = generateCorrelationId();
 
@@ -49,7 +83,11 @@ public with sharing class DocgenController {
             Generated_Document__c existingDoc = checkExistingDocument(envelope.requestHash);
             if (existingDoc != null) {
                 // Cache hit - return existing download URL without making callout
-                return buildDownloadUrl(existingDoc.OutputFileId__c);
+                return successResult(
+                    buildDownloadUrl(existingDoc.OutputFileId__c),
+                    existingDoc.CorrelationId__c,
+                    existingDoc.Id
+                );
             }
 
             // Step 4: Make HTTP callout to Node API (must happen before DML)
@@ -60,18 +98,33 @@ public with sharing class DocgenController {
             doc = createGeneratedDocument(envelope, template.Id, recordId, correlationId);
 
             // Step 6: Handle response and update the record status
-            return handleResponse(response, doc, correlationId);
+            return handleResponseWithResult(response, doc, correlationId);
 
         } catch (Exception e) {
-            // Ensure record is marked as FAILED if it was created
+            // Handle error and create/update FAILED record
+            // Return error result instead of throwing to ensure DML commits
+            String docId = null;
+
             if (doc != null && doc.Id != null) {
-                markAsFailed(doc.Id, e.getMessage(), correlationId);
+                // Doc was created before error - update it to FAILED
+                docId = doc.Id;
+                try {
+                    markAsFailed(doc.Id, e.getMessage(), correlationId);
+                } catch (Exception updateEx) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to update record: ' + updateEx.getMessage());
+                }
+            } else {
+                // Error occurred early - create FAILED document record
+                try {
+                    docId = createFailedDocumentAndReturnId(templateId, recordId, outputFormat, e, correlationId);
+                } catch (Exception insertEx) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to create error tracking record: ' + insertEx.getMessage());
+                }
             }
 
-            // Re-throw as AuraHandledException for LWC
-            AuraHandledException auraEx = new AuraHandledException(formatErrorMessage(e));
-            auraEx.setMessage(formatErrorMessage(e));
-            throw auraEx;
+            // Return error result (no exception thrown, so DML commits)
+            String errorMessage = formatErrorMessageWithDetails(e, correlationId);
+            return errorResult(errorMessage, correlationId, docId);
         }
     }
 
@@ -124,13 +177,32 @@ public with sharing class DocgenController {
 
         } catch (Exception e) {
             // Ensure record is marked as FAILED if it was created
+            String recordCreationError = null;
             if (doc != null && doc.Id != null) {
-                markAsFailed(doc.Id, e.getMessage(), correlationId);
+                try {
+                    markAsFailed(doc.Id, e.getMessage(), correlationId);
+                } catch (Exception updateEx) {
+                    recordCreationError = 'Failed to update record: ' + updateEx.getMessage();
+                }
+            } else {
+                // Create a FAILED document record for tracking even if error occurred early
+                try {
+                    createFailedCompositeDocument(compositeDocId, recordIds, outputFormat, e, correlationId);
+                } catch (Exception insertEx) {
+                    // Log the error - include in user message for debugging
+                    recordCreationError = 'Failed to create error tracking record: ' + insertEx.getMessage();
+                    System.debug(LoggingLevel.ERROR, recordCreationError);
+                }
             }
 
-            // Re-throw as AuraHandledException for LWC
-            AuraHandledException auraEx = new AuraHandledException(formatErrorMessage(e));
-            auraEx.setMessage(formatErrorMessage(e));
+            // Re-throw as AuraHandledException for LWC with rich error details
+            String errorMessage = formatErrorMessageWithDetails(e, correlationId);
+            // Include record creation error if any
+            if (recordCreationError != null) {
+                errorMessage += ' [' + recordCreationError + ']';
+            }
+            AuraHandledException auraEx = new AuraHandledException(errorMessage);
+            auraEx.setMessage(errorMessage);
             throw auraEx;
         }
     }
@@ -468,7 +540,7 @@ public with sharing class DocgenController {
     }
 
     /**
-     * Handle HTTP response from Node API
+     * Handle HTTP response from Node API (legacy - throws exception on error)
      */
     private static String handleResponse(HTTPResponse response, Generated_Document__c doc, String correlationId) {
         Integer statusCode = response.getStatusCode();
@@ -491,27 +563,278 @@ public with sharing class DocgenController {
             return buildDownloadUrl(contentVersionId);
 
         } else {
-            // Error path
-            String errorMessage = 'HTTP ' + statusCode + ': ' + response.getStatus();
+            // Error path - parse rich error response from backend
+            ErrorDetails errorDetails = parseErrorResponse(response);
 
-            // Try to parse error body
-            try {
-                Map<String, Object> errorBody = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
-                if (errorBody.containsKey('error')) {
-                    errorMessage += ' - ' + errorBody.get('error');
-                }
-            } catch (Exception e) {
-                // If error body can't be parsed, use status line
-                errorMessage += ' - ' + response.getBody();
-            }
+            // Update record to FAILED with full error details
+            markAsFailedWithDetails(doc.Id, errorDetails, correlationId);
 
-            // Update record to FAILED
-            markAsFailed(doc.Id, errorMessage, correlationId);
-
-            AuraHandledException ex = new AuraHandledException(errorMessage);
-            ex.setMessage(errorMessage);
+            // Throw with user-friendly message that includes key details
+            String userMessage = buildUserErrorMessage(errorDetails);
+            AuraHandledException ex = new AuraHandledException(userMessage);
+            ex.setMessage(userMessage);
             throw ex;
         }
+    }
+
+    /**
+     * Handle HTTP response from Node API - returns GenerateResult instead of throwing
+     * This allows DML to commit before returning error to client
+     */
+    private static GenerateResult handleResponseWithResult(HTTPResponse response, Generated_Document__c doc, String correlationId) {
+        Integer statusCode = response.getStatusCode();
+        String responseBody = response.getBody();
+
+        // Check for HTML error pages even on 200 status (proxy issues)
+        if (isHtmlResponse(responseBody)) {
+            String errorMsg = extractMessageFromHtml(responseBody, statusCode);
+            markAsFailed(doc.Id, errorMsg, correlationId);
+            return errorResult(errorMsg, correlationId, doc.Id);
+        }
+
+        if (statusCode >= 200 && statusCode < 300) {
+            // Try to parse success response
+            try {
+                Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
+                Object contentVersionIdObj = body.get('contentVersionId');
+
+                // Validate contentVersionId is present and is a string
+                if (contentVersionIdObj == null || !(contentVersionIdObj instanceof String)) {
+                    // Backend returned 200 but without valid contentVersionId - treat as error
+                    String errorMsg = 'Backend returned success but missing contentVersionId';
+                    if (body.containsKey('error') || body.containsKey('message')) {
+                        // Response contains error info despite 200 status
+                        errorMsg = (String) body.get('message');
+                        if (String.isBlank(errorMsg)) {
+                            errorMsg = (String) body.get('error');
+                        }
+                    }
+                    markAsFailed(doc.Id, errorMsg + ' Response: ' + responseBody.left(500), correlationId);
+                    return errorResult(errorMsg, correlationId, doc.Id);
+                }
+
+                String contentVersionId = (String) contentVersionIdObj;
+
+                // Update record to SUCCEEDED
+                update new Generated_Document__c(
+                    Id = doc.Id,
+                    Status__c = 'SUCCEEDED',
+                    OutputFileId__c = contentVersionId
+                );
+
+                // Return success result
+                return successResult(
+                    buildDownloadUrl(contentVersionId),
+                    correlationId,
+                    doc.Id
+                );
+            } catch (Exception parseEx) {
+                // Failed to parse response - treat as error
+                String errorMsg = 'Failed to parse backend response: ' + parseEx.getMessage();
+                markAsFailed(doc.Id, errorMsg + ' Response: ' + responseBody.left(500), correlationId);
+                return errorResult(errorMsg, correlationId, doc.Id);
+            }
+
+        } else {
+            // Error path - parse rich error response from backend
+            ErrorDetails errorDetails = parseErrorResponse(response);
+
+            // Update record to FAILED with full error details
+            markAsFailedWithDetails(doc.Id, errorDetails, correlationId);
+
+            // Return error result (no exception, so DML commits)
+            String userMessage = buildUserErrorMessage(errorDetails);
+            return errorResult(userMessage, correlationId, doc.Id);
+        }
+    }
+
+    /**
+     * Parse rich error response from backend
+     * Extracts all error details including code, message, stack, timestamp, and context
+     * Handles various response formats including JSON errors, HTML proxy errors, and plain text
+     */
+    private static ErrorDetails parseErrorResponse(HTTPResponse response) {
+        ErrorDetails details = new ErrorDetails();
+        details.httpStatus = response.getStatusCode();
+        details.httpStatusText = response.getStatus();
+
+        String body = response.getBody();
+
+        // Check if response is HTML (proxy error, gateway error, etc.)
+        if (isHtmlResponse(body)) {
+            details.message = extractMessageFromHtml(body, details.httpStatus);
+            details.errorType = 'ProxyError';
+            details.code = 'NETWORK_ERROR';
+            // Store full HTML in rawResponse for debugging (will go to Error__c)
+            details.rawResponse = body;
+            return details;
+        }
+
+        // Try to parse as JSON
+        try {
+            Map<String, Object> errorBody = (Map<String, Object>) JSON.deserializeUntyped(body);
+
+            details.errorType = (String) errorBody.get('error');
+            details.code = (String) errorBody.get('code');
+            details.message = (String) errorBody.get('message');
+            details.stack = (String) errorBody.get('stack');
+            details.timestamp = (String) errorBody.get('timestamp');
+            details.correlationId = (String) errorBody.get('correlationId');
+
+            // Parse context if present
+            if (errorBody.containsKey('context')) {
+                details.context = (Map<String, Object>) errorBody.get('context');
+            }
+        } catch (Exception e) {
+            // If error body can't be parsed as JSON, create a user-friendly message
+            details.message = 'Server returned an unexpected response (HTTP ' + details.httpStatus + ')';
+            details.rawResponse = body;
+        }
+
+        return details;
+    }
+
+    /**
+     * Check if response body is HTML
+     */
+    private static Boolean isHtmlResponse(String body) {
+        if (String.isBlank(body)) return false;
+        String trimmed = body.trim().toLowerCase();
+        return trimmed.startsWith('<!doctype') ||
+               trimmed.startsWith('<html') ||
+               trimmed.startsWith('<head') ||
+               trimmed.contains('</html>');
+    }
+
+    /**
+     * Extract a user-friendly message from HTML error page
+     * Handles common proxy errors (Squid, nginx, etc.)
+     */
+    private static String extractMessageFromHtml(String html, Integer httpStatus) {
+        // Check for common proxy/network error patterns
+        String htmlLower = html.toLowerCase();
+
+        // Squid proxy errors
+        if (htmlLower.contains('err_cannot_forward') || htmlLower.contains('unable to forward')) {
+            return 'Unable to reach the document generation service. The service may be temporarily unavailable.';
+        }
+        if (htmlLower.contains('err_connect_fail') || htmlLower.contains('connection refused')) {
+            return 'Unable to connect to the document generation service. Please try again later.';
+        }
+        if (htmlLower.contains('err_dns_fail') || htmlLower.contains('dns')) {
+            return 'Unable to resolve the document generation service address. Please contact your administrator.';
+        }
+
+        // Gateway errors
+        if (httpStatus == 502) {
+            return 'The document generation service returned an invalid response (Bad Gateway).';
+        }
+        if (httpStatus == 503) {
+            return 'The document generation service is temporarily unavailable. Please try again later.';
+        }
+        if (httpStatus == 504) {
+            return 'The document generation service took too long to respond (Gateway Timeout).';
+        }
+
+        // Generic timeout
+        if (htmlLower.contains('timeout') || htmlLower.contains('timed out')) {
+            return 'The request to the document generation service timed out. Please try again.';
+        }
+
+        // Fallback for unknown HTML errors
+        return 'Unable to reach the document generation service (HTTP ' + httpStatus + '). Please try again or contact your administrator.';
+    }
+
+    /**
+     * Build user-friendly error message with key details
+     */
+    private static String buildUserErrorMessage(ErrorDetails details) {
+        String message = '';
+
+        // Start with the error message or type
+        if (String.isNotBlank(details.message)) {
+            message = details.message;
+        } else if (String.isNotBlank(details.errorType)) {
+            message = details.errorType;
+        } else {
+            message = 'HTTP ' + details.httpStatus + ': ' + details.httpStatusText;
+        }
+
+        // Add error code if available
+        if (String.isNotBlank(details.code)) {
+            message += ' [' + details.code + ']';
+        }
+
+        // Add correlation ID for support reference
+        if (String.isNotBlank(details.correlationId)) {
+            message += ' (Ref: ' + details.correlationId + ')';
+        }
+
+        return message;
+    }
+
+    /**
+     * Mark Generated_Document__c as FAILED with full error details
+     */
+    private static void markAsFailedWithDetails(Id docId, ErrorDetails details, String correlationId) {
+        // Build structured JSON for Error__c field
+        Map<String, Object> errorPayload = new Map<String, Object>();
+        errorPayload.put('code', details.code);
+        errorPayload.put('errorType', details.errorType);
+        errorPayload.put('message', details.message);
+        errorPayload.put('httpStatus', details.httpStatus);
+        errorPayload.put('timestamp', details.timestamp);
+        errorPayload.put('correlationId', String.isNotBlank(details.correlationId) ? details.correlationId : correlationId);
+
+        if (String.isNotBlank(details.stack)) {
+            errorPayload.put('stack', details.stack);
+        }
+        if (details.context != null && !details.context.isEmpty()) {
+            errorPayload.put('context', details.context);
+        }
+
+        // Include rawResponse for debugging (HTML proxy errors, etc.)
+        // Truncate to reasonable size for debugging
+        if (String.isNotBlank(details.rawResponse)) {
+            String rawTruncated = details.rawResponse.length() > 5000
+                ? details.rawResponse.substring(0, 5000) + '... [truncated]'
+                : details.rawResponse;
+            errorPayload.put('rawResponse', rawTruncated);
+        }
+
+        String errorJson = JSON.serializePretty(errorPayload);
+
+        // Truncate if needed (Error__c field limit is 32768)
+        if (errorJson.length() > 32000) {
+            // Remove stack and rawResponse to fit
+            errorPayload.remove('stack');
+            errorPayload.remove('rawResponse');
+            errorPayload.put('truncated', true);
+            errorJson = JSON.serializePretty(errorPayload);
+        }
+
+        update new Generated_Document__c(
+            Id = docId,
+            Status__c = 'FAILED',
+            Error__c = errorJson,
+            CorrelationId__c = correlationId
+        );
+    }
+
+    /**
+     * Inner class to hold parsed error details from backend
+     */
+    private class ErrorDetails {
+        public Integer httpStatus;
+        public String httpStatusText;
+        public String errorType;
+        public String code;
+        public String message;
+        public String stack;
+        public String timestamp;
+        public String correlationId;
+        public Map<String, Object> context;
+        public String rawResponse;  // For storing HTML/non-JSON responses for debugging
     }
 
     /**
@@ -532,7 +855,136 @@ public with sharing class DocgenController {
     }
 
     /**
-     * Format exception message for LWC consumption
+     * Create a FAILED Generated_Document__c record when error occurs early
+     * (before the normal document creation step)
+     */
+    private static void createFailedDocument(Id templateId, Id recordId, String outputFormat, Exception e, String correlationId) {
+        createFailedDocumentAndReturnId(templateId, recordId, outputFormat, e, correlationId);
+    }
+
+    /**
+     * Create a FAILED Generated_Document__c record when error occurs early and return the Id
+     * (before the normal document creation step)
+     */
+    private static String createFailedDocumentAndReturnId(Id templateId, Id recordId, String outputFormat, Exception e, String correlationId) {
+        Generated_Document__c doc = new Generated_Document__c();
+        doc.Template__c = templateId;
+        doc.Status__c = 'FAILED';
+        doc.OutputFormat__c = outputFormat;
+        doc.Attempts__c = 0;
+        doc.RequestedBy__c = UserInfo.getUserId();
+        doc.CorrelationId__c = correlationId;
+        doc.Error__c = buildErrorJson(e, correlationId);
+
+        // Build request JSON from input parameters for debugging
+        Map<String, Object> requestInfo = new Map<String, Object>{
+            'templateId' => templateId,
+            'recordId' => recordId,
+            'outputFormat' => outputFormat,
+            'correlationId' => correlationId,
+            'requestedAt' => Datetime.now().formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\''),
+            'requestedBy' => UserInfo.getUserId(),
+            'failedEarly' => true
+        };
+        doc.RequestJSON__c = JSON.serializePretty(requestInfo);
+
+        // Set parent lookup dynamically based on object configuration
+        if (recordId != null) {
+            try {
+                String objectApiName = recordId.getSObjectType().getDescribe().getName();
+                DocgenObjectConfigService.validateObjectSupported(objectApiName);
+                Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+                doc.put(config.Lookup_Field_API_Name__c, recordId);
+            } catch (Exception configEx) {
+                // Log but continue - we want to create the error record
+                System.debug(LoggingLevel.WARN, 'Could not set parent lookup: ' + configEx.getMessage());
+            }
+        }
+
+        insert doc;
+        return doc.Id;
+    }
+
+    /**
+     * Create a FAILED Generated_Document__c record for composite document errors
+     */
+    private static void createFailedCompositeDocument(Id compositeDocId, String recordIdsJson, String outputFormat, Exception e, String correlationId) {
+        Generated_Document__c doc = new Generated_Document__c();
+        doc.Composite_Document__c = compositeDocId;
+        doc.Status__c = 'FAILED';
+        doc.OutputFormat__c = outputFormat;
+        doc.Attempts__c = 0;
+        doc.RequestedBy__c = UserInfo.getUserId();
+        doc.CorrelationId__c = correlationId;
+        doc.Error__c = buildErrorJson(e, correlationId);
+
+        // Build request JSON from input parameters for debugging
+        Map<String, Object> requestInfo = new Map<String, Object>{
+            'compositeDocumentId' => compositeDocId,
+            'recordIds' => recordIdsJson,
+            'outputFormat' => outputFormat,
+            'correlationId' => correlationId,
+            'requestedAt' => Datetime.now().formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\''),
+            'requestedBy' => UserInfo.getUserId(),
+            'failedEarly' => true
+        };
+        doc.RequestJSON__c = JSON.serializePretty(requestInfo);
+
+        // Try to set parent lookup from composite document's primary parent
+        if (compositeDocId != null && String.isNotBlank(recordIdsJson)) {
+            try {
+                Map<String, Id> recordIds = parseRecordIds(recordIdsJson);
+                List<Composite_Document__c> composites = [
+                    SELECT PrimaryParent__c
+                    FROM Composite_Document__c
+                    WHERE Id = :compositeDocId
+                    LIMIT 1
+                ];
+
+                if (!composites.isEmpty()) {
+                    Id primaryRecordId = determinePrimaryRecordId(composites[0].PrimaryParent__c, recordIds);
+                    if (primaryRecordId != null) {
+                        String objectApiName = primaryRecordId.getSObjectType().getDescribe().getName();
+                        DocgenObjectConfigService.validateObjectSupported(objectApiName);
+                        Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+                        doc.put(config.Lookup_Field_API_Name__c, primaryRecordId);
+                    }
+                }
+            } catch (Exception configEx) {
+                // Log but continue - we want to create the error record
+                System.debug(LoggingLevel.WARN, 'Could not set parent lookup for composite: ' + configEx.getMessage());
+            }
+        }
+
+        insert doc;
+    }
+
+    /**
+     * Build structured JSON for Error__c field from an exception
+     */
+    private static String buildErrorJson(Exception e, String correlationId) {
+        Map<String, Object> errorPayload = new Map<String, Object>();
+        errorPayload.put('message', e.getMessage());
+        errorPayload.put('type', e.getTypeName());
+        errorPayload.put('correlationId', correlationId);
+        errorPayload.put('timestamp', Datetime.now().formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\''));
+        errorPayload.put('stackTrace', e.getStackTraceString());
+        errorPayload.put('lineNumber', e.getLineNumber());
+
+        String errorJson = JSON.serializePretty(errorPayload);
+
+        // Truncate if needed (Error__c field limit is 32768)
+        if (errorJson.length() > 32000) {
+            errorPayload.remove('stackTrace');
+            errorPayload.put('stackTraceTruncated', true);
+            errorJson = JSON.serializePretty(errorPayload);
+        }
+
+        return errorJson;
+    }
+
+    /**
+     * Format exception message for LWC consumption (legacy - kept for compatibility)
      */
     private static String formatErrorMessage(Exception e) {
         String message = e.getMessage();
@@ -552,6 +1004,21 @@ public with sharing class DocgenController {
         } else {
             return 'Document generation failed: ' + message;
         }
+    }
+
+    /**
+     * Format exception message with correlation ID for LWC consumption
+     * Provides user-friendly message with support reference
+     */
+    private static String formatErrorMessageWithDetails(Exception e, String correlationId) {
+        String baseMessage = formatErrorMessage(e);
+
+        // Add correlation ID as support reference
+        if (String.isNotBlank(correlationId)) {
+            baseMessage += ' (Ref: ' + correlationId + ')';
+        }
+
+        return baseMessage;
     }
 
     /**

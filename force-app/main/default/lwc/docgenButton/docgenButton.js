@@ -120,21 +120,32 @@ export default class DocgenButton extends LightningElement {
         }
       }
 
-      // Call Apex method
-      const downloadUrl = await generate({
+      // Call Apex method - returns GenerateResult wrapper
+      const result = await generate({
         templateId: effectiveTemplateId,
         recordId: this.recordId,
         outputFormat: this.outputFormat
       });
 
-      // Success: Open download URL in new tab
-      window.open(downloadUrl, '_blank');
+      // Check if result indicates success or error
+      if (result && result.success === true && typeof result.downloadUrl === 'string' && result.downloadUrl.startsWith('/')) {
+        // Success: Open download URL in new tab
+        window.open(result.downloadUrl, '_blank');
 
-      // Show success toast
-      this.showToast('Success', this.successMessage, 'success');
+        // Show success toast
+        this.showToast('Success', this.successMessage, 'success');
+      } else if (result && result.success === true) {
+        // Success flag but invalid downloadUrl - backend issue
+        const errorMsg = result?.errorMessage || 'Document generation completed but download URL is invalid';
+        this.showToast('Error', errorMsg, 'error');
+      } else {
+        // Error returned from Apex (DML committed, so FAILED record exists)
+        const errorMsg = result?.errorMessage || 'Document generation failed';
+        this.showToast('Error Generating Document', errorMsg, 'error');
+      }
 
     } catch (error) {
-      // Error: Extract and display error message
+      // Unexpected error (exception thrown from Apex)
       const errorMessage = this.extractErrorMessage(error);
       this.showToast('Error Generating Document', errorMessage, 'error');
     } finally {
@@ -167,6 +178,7 @@ export default class DocgenButton extends LightningElement {
    */
   extractErrorMessage(error) {
     // Handle AuraHandledException (Apex error)
+    // The message now includes error type, code, and correlation ID reference
     if (error?.body?.message) {
       return error.body.message;
     }
@@ -197,4 +209,5 @@ export default class DocgenButton extends LightningElement {
     // Default error message
     return 'An unexpected error occurred. Please try again or contact your administrator.';
   }
+
 }
