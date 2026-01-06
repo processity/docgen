@@ -34,12 +34,11 @@ private class DocgenStatusControllerTest {
     @testSetup
     static void setup() {
         // Create test data
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         List<Generated_Document__c> docs = new List<Generated_Document__c>();
 
