@@ -102,6 +102,487 @@ public class DocgenTestDataFactory {
         return scenario;
     }
 
+    // =========================================================================
+    // PUBLIC OBJECT CREATION METHODS
+    // Use these methods for centralized test data creation
+    // =========================================================================
+
+    /**
+     * Create and insert a test Account
+     * @return Account (inserted)
+     */
+    public static Account createAccount() {
+        return createAccount('Test Account');
+    }
+
+    /**
+     * Create and insert a test Account with specified name
+     * @param name - Account name
+     * @return Account (inserted)
+     */
+    public static Account createAccount(String name) {
+        Account acc = new Account(
+            Name = name,
+            BillingCity = 'San Francisco',
+            AnnualRevenue = 1000000
+        );
+        insert acc;
+        return acc;
+    }
+
+    /**
+     * Create and insert multiple test Accounts
+     * @param count - Number of accounts to create
+     * @return List<Account> (inserted)
+     */
+    public static List<Account> createAccounts(Integer count) {
+        List<Account> accounts = new List<Account>();
+        for (Integer i = 1; i <= count; i++) {
+            accounts.add(new Account(
+                Name = 'Test Account ' + i,
+                BillingCity = 'San Francisco',
+                AnnualRevenue = 100000 * i
+            ));
+        }
+        insert accounts;
+        return accounts;
+    }
+
+    /**
+     * Create and insert a test Contact (without Account)
+     * @return Contact (inserted)
+     */
+    public static Contact createContact() {
+        return createContact('Test', 'Contact', null);
+    }
+
+    /**
+     * Create and insert a test Contact linked to Account
+     * @param accountId - Parent Account Id
+     * @return Contact (inserted)
+     */
+    public static Contact createContact(Id accountId) {
+        return createContact('Test', 'Contact', accountId);
+    }
+
+    /**
+     * Create and insert a test Contact with specified details
+     * @param firstName - Contact first name
+     * @param lastName - Contact last name
+     * @param accountId - Parent Account Id (optional)
+     * @return Contact (inserted)
+     */
+    public static Contact createContact(String firstName, String lastName, Id accountId) {
+        // Sanitize names for email: remove spaces and special characters
+        String sanitizedFirst = firstName.toLowerCase().replaceAll('[^a-z0-9]', '');
+        String sanitizedLast = lastName.toLowerCase().replaceAll('[^a-z0-9]', '');
+        Contact con = new Contact(
+            FirstName = firstName,
+            LastName = lastName,
+            Email = sanitizedFirst + '.' + sanitizedLast + '@example.com',
+            AccountId = accountId
+        );
+        insert con;
+        return con;
+    }
+
+    /**
+     * Create and insert multiple test Contacts
+     * @param count - Number of contacts to create
+     * @param accountId - Parent Account Id (optional)
+     * @return List<Contact> (inserted)
+     */
+    public static List<Contact> createContacts(Integer count, Id accountId) {
+        List<Contact> contacts = new List<Contact>();
+        for (Integer i = 1; i <= count; i++) {
+            contacts.add(new Contact(
+                FirstName = 'Test',
+                LastName = 'Contact ' + i,
+                Email = 'test.contact' + i + '@example.com',
+                AccountId = accountId
+            ));
+        }
+        insert contacts;
+        return contacts;
+    }
+
+    /**
+     * Create and insert a test Lead
+     * @return Lead (inserted)
+     */
+    public static Lead createLead() {
+        return createLead('Test', 'Lead', 'Test Company');
+    }
+
+    /**
+     * Create and insert a test Lead with specified details
+     * @param firstName - Lead first name
+     * @param lastName - Lead last name
+     * @param company - Lead company
+     * @return Lead (inserted)
+     */
+    public static Lead createLead(String firstName, String lastName, String company) {
+        Lead ld = new Lead(
+            FirstName = firstName,
+            LastName = lastName,
+            Company = company,
+            Email = firstName.toLowerCase() + '.' + lastName.toLowerCase() + '@example.com',
+            Status = 'Open - Not Contacted'
+        );
+        insert ld;
+        return ld;
+    }
+
+    /**
+     * Create and insert multiple test Leads
+     * @param count - Number of leads to create
+     * @return List<Lead> (inserted)
+     */
+    public static List<Lead> createLeads(Integer count) {
+        List<Lead> leads = new List<Lead>();
+        for (Integer i = 1; i <= count; i++) {
+            leads.add(new Lead(
+                FirstName = 'Test',
+                LastName = 'Lead ' + i,
+                Company = 'Test Company ' + i,
+                Email = 'test.lead' + i + '@example.com',
+                Status = 'Open - Not Contacted'
+            ));
+        }
+        insert leads;
+        return leads;
+    }
+
+    /**
+     * Create and insert a test Opportunity (creates Account automatically)
+     * @return Opportunity (inserted)
+     */
+    public static Opportunity createOpportunity() {
+        Account acc = createAccount('Account for Opportunity');
+        return createOpportunity('Test Opportunity', acc.Id);
+    }
+
+    /**
+     * Create and insert a test Opportunity linked to Account
+     * @param accountId - Parent Account Id
+     * @return Opportunity (inserted)
+     */
+    public static Opportunity createOpportunity(Id accountId) {
+        return createOpportunity('Test Opportunity', accountId);
+    }
+
+    /**
+     * Create and insert a test Opportunity with specified details
+     * @param name - Opportunity name
+     * @param accountId - Parent Account Id
+     * @return Opportunity (inserted)
+     */
+    public static Opportunity createOpportunity(String name, Id accountId) {
+        Opportunity opp = new Opportunity(
+            Name = name,
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30),
+            AccountId = accountId,
+            Amount = 50000
+        );
+        insert opp;
+        return opp;
+    }
+
+    /**
+     * Create and insert multiple test Opportunities
+     * @param count - Number of opportunities to create
+     * @param accountId - Parent Account Id
+     * @return List<Opportunity> (inserted)
+     */
+    public static List<Opportunity> createOpportunities(Integer count, Id accountId) {
+        List<Opportunity> opps = new List<Opportunity>();
+        for (Integer i = 1; i <= count; i++) {
+            opps.add(new Opportunity(
+                Name = 'Test Opportunity ' + i,
+                StageName = 'Prospecting',
+                CloseDate = Date.today().addDays(30),
+                AccountId = accountId,
+                Amount = 50000 * i
+            ));
+        }
+        insert opps;
+        return opps;
+    }
+
+    /**
+     * Create and insert a test Case (creates Account automatically)
+     * @return Case (inserted)
+     */
+    public static Case createCase() {
+        Account acc = createAccount('Account for Case');
+        return createCase('Test Case', acc.Id);
+    }
+
+    /**
+     * Create and insert a test Case linked to Account
+     * @param accountId - Parent Account Id
+     * @return Case (inserted)
+     */
+    public static Case createCase(Id accountId) {
+        return createCase('Test Case', accountId);
+    }
+
+    /**
+     * Create and insert a test Case with specified details
+     * @param subject - Case subject
+     * @param accountId - Parent Account Id
+     * @return Case (inserted)
+     */
+    public static Case createCase(String subject, Id accountId) {
+        Case cs = new Case(
+            Subject = subject,
+            Status = 'New',
+            Origin = 'Web',
+            AccountId = accountId
+        );
+        insert cs;
+        return cs;
+    }
+
+    /**
+     * Create and insert multiple test Cases
+     * @param count - Number of cases to create
+     * @param accountId - Parent Account Id
+     * @return List<Case> (inserted)
+     */
+    public static List<Case> createCases(Integer count, Id accountId) {
+        List<Case> cases = new List<Case>();
+        for (Integer i = 1; i <= count; i++) {
+            cases.add(new Case(
+                Subject = 'Test Case ' + i,
+                Status = 'New',
+                Origin = 'Web',
+                AccountId = accountId
+            ));
+        }
+        insert cases;
+        return cases;
+    }
+
+    // =========================================================================
+    // TEMPLATE CREATION METHODS
+    // =========================================================================
+
+    /**
+     * Create and insert a Docgen_Template__c for SOQL data source
+     * @param name - Template name
+     * @param primaryParent - Primary object type (Account, Contact, etc.)
+     * @param soql - SOQL query
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createTemplate(String name, String primaryParent, String soql) {
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = name,
+            PrimaryParent__c = primaryParent,
+            DataSource__c = 'SOQL',
+            SOQL__c = soql,
+            TemplateContentVersionId__c = '068000000000000AAA',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true
+        );
+        insert template;
+        return template;
+    }
+
+    /**
+     * Create and insert a Docgen_Template__c for Custom data source
+     * @param name - Template name
+     * @param primaryParent - Primary object type
+     * @param className - Custom provider class name
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createCustomTemplate(String name, String primaryParent, String className) {
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = name,
+            PrimaryParent__c = primaryParent,
+            DataSource__c = 'Custom',
+            ClassName__c = className,
+            TemplateContentVersionId__c = '068000000000000AAA',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true
+        );
+        insert template;
+        return template;
+    }
+
+    /**
+     * Create and insert a Docgen_Template__c with full configuration
+     * @param name - Template name
+     * @param primaryParent - Primary object type
+     * @param dataSource - 'SOQL' or 'Custom'
+     * @param soql - SOQL query (for SOQL data source)
+     * @param className - Custom provider class name (for Custom data source)
+     * @param templateContentVersionId - ContentVersion ID for template file
+     * @param storeMergedDocx - Whether to store merged DOCX
+     * @param returnDocxToBrowser - Whether to return DOCX to browser
+     * @param returnMultipleRecords - Whether template returns multiple records
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createTemplateWithConfig(
+        String name,
+        String primaryParent,
+        String dataSource,
+        String soql,
+        String className,
+        String templateContentVersionId,
+        Boolean storeMergedDocx,
+        Boolean returnDocxToBrowser,
+        Boolean returnMultipleRecords
+    ) {
+        Docgen_Template__c template = new Docgen_Template__c(
+            Name = name,
+            PrimaryParent__c = primaryParent,
+            DataSource__c = dataSource,
+            SOQL__c = soql,
+            ClassName__c = className,
+            TemplateContentVersionId__c = templateContentVersionId,
+            StoreMergedDocx__c = storeMergedDocx,
+            ReturnDocxToBrowser__c = returnDocxToBrowser,
+            ReturnMultipleRecords__c = returnMultipleRecords
+        );
+        insert template;
+        return template;
+    }
+
+    /**
+     * Create a default Account template
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createAccountTemplate() {
+        return createTemplate(
+            'Account Test Template',
+            'Account',
+            'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
+        );
+    }
+
+    /**
+     * Create a default Contact template
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createContactTemplate() {
+        return createTemplate(
+            'Contact Test Template',
+            'Contact',
+            'SELECT Id, FirstName, LastName, Email, AccountId FROM Contact WHERE Id = :recordId'
+        );
+    }
+
+    /**
+     * Create a default Lead template
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createLeadTemplate() {
+        return createTemplate(
+            'Lead Test Template',
+            'Lead',
+            'SELECT Id, FirstName, LastName, Company, Email, Status FROM Lead WHERE Id = :recordId'
+        );
+    }
+
+    /**
+     * Create a default Opportunity template
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createOpportunityTemplate() {
+        return createTemplate(
+            'Opportunity Test Template',
+            'Opportunity',
+            'SELECT Id, Name, StageName, CloseDate, Amount, AccountId FROM Opportunity WHERE Id = :recordId'
+        );
+    }
+
+    /**
+     * Create a default Case template
+     * @return Docgen_Template__c (inserted)
+     */
+    public static Docgen_Template__c createCaseTemplate() {
+        return createTemplate(
+            'Case Test Template',
+            'Case',
+            'SELECT Id, Subject, Status, Origin, AccountId FROM Case WHERE Id = :recordId'
+        );
+    }
+
+    // =========================================================================
+    // GENERATED DOCUMENT CREATION METHODS
+    // =========================================================================
+
+    /**
+     * Create and insert a Generated_Document__c record
+     * @param templateId - Template ID
+     * @param accountId - Account lookup (optional)
+     * @param status - Document status
+     * @return Generated_Document__c (inserted)
+     */
+    public static Generated_Document__c createGeneratedDocument(
+        Id templateId,
+        Id accountId,
+        String status
+    ) {
+        Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
+            Account__c = accountId,
+            Status__c = status,
+            OutputFormat__c = 'PDF',
+            RequestHash__c = 'hash-' + System.currentTimeMillis() + '-' + Math.random(),
+            CorrelationId__c = 'corr-' + System.currentTimeMillis()
+        );
+        insert doc;
+        return doc;
+    }
+
+    /**
+     * Create and insert a Generated_Document__c with full configuration
+     * @param templateId - Template ID
+     * @param compositeDocId - Composite Document ID (optional)
+     * @param accountId - Account lookup (optional)
+     * @param contactId - Contact lookup (optional)
+     * @param leadId - Lead lookup (optional)
+     * @param opportunityId - Opportunity lookup (optional)
+     * @param caseId - Case lookup (optional)
+     * @param status - Document status
+     * @param outputFormat - Output format (PDF, DOCX)
+     * @return Generated_Document__c (inserted)
+     */
+    public static Generated_Document__c createGeneratedDocumentWithConfig(
+        Id templateId,
+        Id compositeDocId,
+        Id accountId,
+        Id contactId,
+        Id leadId,
+        Id opportunityId,
+        Id caseId,
+        String status,
+        String outputFormat
+    ) {
+        Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
+            Composite_Document__c = compositeDocId,
+            Account__c = accountId,
+            Contact__c = contactId,
+            Lead__c = leadId,
+            Opportunity__c = opportunityId,
+            Case__c = caseId,
+            Status__c = status,
+            OutputFormat__c = outputFormat,
+            RequestHash__c = 'hash-' + System.currentTimeMillis() + '-' + Math.random(),
+            CorrelationId__c = 'corr-' + System.currentTimeMillis()
+        );
+        insert doc;
+        return doc;
+    }
+
+    // =========================================================================
+    // PRIVATE HELPER METHODS (for internal use by scenario builders)
+    // =========================================================================
+
     /**
      * Create a test record for the specified object type
      *

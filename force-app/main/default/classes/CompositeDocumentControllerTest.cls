@@ -9,32 +9,18 @@ private class CompositeDocumentControllerTest {
 
     @testSetup
     static void setup() {
-        // Create test templates
-        List<Docgen_Template__c> templates = new List<Docgen_Template__c>();
+        // Create test templates using factory
+        DocgenTestDataFactory.createTemplate(
+            'Account Summary Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
 
-        templates.add(new Docgen_Template__c(
-            Name = 'Account Summary Template',
-            PrimaryParent__c = 'Account',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            TemplateContentVersionId__c = '068000000000001',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            ReturnMultipleRecords__c = false
-        ));
-
-        templates.add(new Docgen_Template__c(
-            Name = 'Terms and Conditions',
-            PrimaryParent__c = 'Account',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId',
-            TemplateContentVersionId__c = '068000000000002',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            ReturnMultipleRecords__c = false
-        ));
-
-        insert templates;
+        DocgenTestDataFactory.createTemplate(
+            'Terms and Conditions',
+            'Account',
+            'SELECT Id FROM Account WHERE Id = :recordId'
+        );
 
         // Create composite document
         Composite_Document__c composite = new Composite_Document__c(

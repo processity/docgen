@@ -120,67 +120,34 @@ private class DocgenControllerTest {
     @testSetup
     static void setup() {
         // Create test template for Account
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Account Template',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        DocgenTestDataFactory.createTemplate(
+            'Test Account Template',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         // Create template for Contact
-        Docgen_Template__c contactTemplate = new Docgen_Template__c(
-            Name = 'Test Contact Template',
-            TemplateContentVersionId__c = '068000000000002AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Email FROM Contact WHERE Id = :recordId',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Contact',
-            ReturnMultipleRecords__c = false
+        DocgenTestDataFactory.createTemplate(
+            'Test Contact Template',
+            'Contact',
+            'SELECT Id, Name, Email FROM Contact WHERE Id = :recordId'
         );
-        insert contactTemplate;
 
         // Create template for Lead
-        Docgen_Template__c leadTemplate = new Docgen_Template__c(
-            Name = 'Test Lead Template',
-            TemplateContentVersionId__c = '068000000000003AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Company FROM Lead WHERE Id = :recordId',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Lead',
-            ReturnMultipleRecords__c = false
+        DocgenTestDataFactory.createTemplate(
+            'Test Lead Template',
+            'Lead',
+            'SELECT Id, Name, Company FROM Lead WHERE Id = :recordId'
         );
-        insert leadTemplate;
 
         // Create test Account
-        Account acc = new Account(
-            Name = 'Test Account Ltd',
-            AnnualRevenue = 1200000
-        );
-        insert acc;
+        DocgenTestDataFactory.createAccount('Test Account Ltd');
 
         // Create test Contact
-        Contact con = new Contact(
-            FirstName = 'John',
-            LastName = 'Smith',
-            Email = 'john.smith@example.com'
-        );
-        insert con;
+        DocgenTestDataFactory.createContact('John', 'Smith', null);
 
         // Create test Lead
-        Lead led = new Lead(
-            FirstName = 'Jane',
-            LastName = 'Doe',
-            Company = 'Test Company Inc',
-            Email = 'jane.doe@example.com'
-        );
-        insert led;
+        DocgenTestDataFactory.createLead('Jane', 'Doe', 'Test Company Inc');
     }
 
     /**

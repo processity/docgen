@@ -61,24 +61,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildEnvelopeWithAccount() {
         // Given: An Account and SOQL template
-        Account acc = new Account(
-            Name = 'Acme Ltd',
-            BillingCity = 'London',
-            AnnualRevenue = 1200000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Acme Ltd');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account Template',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
-            StoreMergedDocx__c = true,
-            ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Account Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000001AAA',
+            true,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -109,27 +104,20 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildEnvelopeWithOpportunity() {
         // Given: An Opportunity with Account
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Opportunity', acc.Id);
 
-        Opportunity opp = new Opportunity(
-            Name = 'Test Opportunity',
-            AccountId = acc.Id,
-            CloseDate = Date.today().addDays(30),
-            StageName = 'Prospecting',
-            Amount = 250000
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Opportunity Template',
+            'Opportunity',
+            'SOQL',
+            'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
+            null,
+            '068000000000002AAA',
+            false,
+            false,
+            false
         );
-        insert opp;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Opportunity Template',
-            TemplateContentVersionId__c = '068000000000002AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -151,26 +139,20 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildEnvelopeWithCase() {
         // Given: A Case with Account
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Case cs = DocgenTestDataFactory.createCase('Test Case', acc.Id);
 
-        Case cs = new Case(
-            Subject = 'Test Case',
-            AccountId = acc.Id,
-            Status = 'New',
-            Origin = 'Web'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Case Template',
+            'Case',
+            'SOQL',
+            'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
+            null,
+            '068000000000003AAA',
+            false,
+            false,
+            false
         );
-        insert cs;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Case Template',
-            TemplateContentVersionId__c = '068000000000003AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -234,17 +216,13 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithCustomProvider() {
         // Given: A template with Custom data source
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Custom Provider Template',
-            TemplateContentVersionId__c = '068000000000004AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createCustomTemplate(
+            'Custom Provider Template',
+            null,
+            'MockCustomProvider'
         );
-        insert template;
 
         // When: Building envelope with custom provider
         Test.startTest();
@@ -266,18 +244,14 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithInvalidDataSource() {
         // Given: A template with invalid DataSource (manually set in test)
-        Account acc = new Account(Name = 'Test');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test');
 
         // Note: In real scenario, picklist prevents this, but testing defensive code
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Invalid Source',
-            TemplateContentVersionId__c = '068000000000005AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Invalid Source',
+            null,
+            'SELECT Id FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         // When: Trying to build with invalid provider setup
         Test.startTest();
@@ -300,19 +274,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testOptionsMapping() {
         // Given: A template with specific options
-        Account acc = new Account(Name = 'Test');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Options Test',
-            TemplateContentVersionId__c = '068000000000006AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            StoreMergedDocx__c = true,
-            ReturnDocxToBrowser__c = true,
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Options Test',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000006AAA',
+            true,
+            true,
+            false
         );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -334,24 +308,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithOpportunityWithoutAccount() {
         // Given: An Opportunity WITHOUT AccountId (orphan opportunity)
-        Opportunity opp = new Opportunity(
-            Name = 'Orphan Opportunity',
-            AccountId = null, // No parent account
-            CloseDate = Date.today().addDays(30),
-            StageName = 'Prospecting',
-            Amount = 100000
-        );
-        insert opp;
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Orphan Opportunity', null);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Orphan Opp Template',
-            TemplateContentVersionId__c = '068000000000007AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Orphan Opp Template',
+            'Opportunity',
+            'SOQL',
+            'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
+            null,
+            '068000000000007AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope for opportunity without account
         Test.startTest();
@@ -378,23 +347,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithCaseWithoutAccount() {
         // Given: A Case WITHOUT AccountId
-        Case cs = new Case(
-            Subject = 'Orphan Case',
-            AccountId = null, // No parent account
-            Status = 'New',
-            Origin = 'Email'
-        );
-        insert cs;
+        Case cs = DocgenTestDataFactory.createCase('Orphan Case', null);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Orphan Case Template',
-            TemplateContentVersionId__c = '068000000000008AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Orphan Case Template',
+            'Case',
+            'SOQL',
+            'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
+            null,
+            '068000000000008AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope for case without account
         Test.startTest();
@@ -419,18 +384,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testOutputFileNameGeneration() {
         // Given: Account and template for filename generation
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template with Special $%^ Chars',
-            TemplateContentVersionId__c = '068000000000009AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Test Template with Special $%^ Chars',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000009AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -459,21 +425,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testHashStabilityAcrossRebuilds() {
         // Given: Same account and template
-        Account acc = new Account(
-            Name = 'Stable Account',
-            AnnualRevenue = 5000000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Stable Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Stable Template',
-            TemplateContentVersionId__c = '068000000000010AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Stable Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000010AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope twice with same inputs
         Test.startTest();
@@ -505,27 +469,20 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testHashChangesWhenDataChanges() {
         // Given: Account with different data values
-        Account acc1 = new Account(
-            Name = 'Account One',
-            AnnualRevenue = 1000000
-        );
-        insert acc1;
+        Account acc1 = DocgenTestDataFactory.createAccount('Account One');
+        Account acc2 = DocgenTestDataFactory.createAccount('Account Two');
 
-        Account acc2 = new Account(
-            Name = 'Account Two',
-            AnnualRevenue = 2000000
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Same Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000011AAA',
+            false,
+            false,
+            false
         );
-        insert acc2;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Same Template',
-            TemplateContentVersionId__c = '068000000000011AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelopes for different accounts
         Test.startTest();
@@ -557,34 +514,21 @@ private class DocgenEnvelopeServiceTest {
         // For standard Case, we can only link to Account directly
         // This test verifies the parents map handles all three types
 
-        Account acc = new Account(Name = 'Multi-Parent Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Multi-Parent Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Related Opportunity', acc.Id);
+        Case cs = DocgenTestDataFactory.createCase('Multi-Parent Case', acc.Id);
 
-        Opportunity opp = new Opportunity(
-            Name = 'Related Opportunity',
-            AccountId = acc.Id,
-            CloseDate = Date.today(),
-            StageName = 'Closed Won'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Multi-Parent Template',
+            'Case',
+            'SOQL',
+            'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
+            null,
+            '068000000000012AAA',
+            false,
+            false,
+            false
         );
-        insert opp;
-
-        Case cs = new Case(
-            Subject = 'Multi-Parent Case',
-            AccountId = acc.Id,
-            Status = 'New',
-            Origin = 'Phone'
-        );
-        insert cs;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Multi-Parent Template',
-            TemplateContentVersionId__c = '068000000000012AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Subject, AccountId FROM Case WHERE Id = :recordId',
-            PrimaryParent__c = 'Case',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelope for Case
         Test.startTest();
@@ -611,17 +555,13 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithFailingCustomProvider() {
         // Given: Template with failing custom provider
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Failing Provider Template',
-            TemplateContentVersionId__c = '068000000000013AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'FailingCustomProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createCustomTemplate(
+            'Failing Provider Template',
+            null,
+            'FailingCustomProvider'
         );
-        insert template;
 
         // When/Then: Should throw exception from custom provider
         Test.startTest();
@@ -647,17 +587,13 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildWithNonExistentCustomProvider() {
         // Given: Template with non-existent provider class
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Non-Existent Provider Template',
-            TemplateContentVersionId__c = '068000000000014AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'NonExistentProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createCustomTemplate(
+            'Non-Existent Provider Template',
+            null,
+            'NonExistentProvider'
         );
-        insert template;
 
         // When/Then: Should throw exception for missing provider class
         Test.startTest();
@@ -680,34 +616,22 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testVeryLargeDataEnvelope() {
         // Given: Account with many contacts (large data set)
-        Account acc = new Account(
-            Name = 'Large Data Account',
-            AnnualRevenue = 50000000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Large Data Account');
 
         // Create many contacts to generate large data set
-        List<Contact> contacts = new List<Contact>();
-        for (Integer i = 0; i < 200; i++) {
-            contacts.add(new Contact(
-                FirstName = 'Contact',
-                LastName = 'Number' + i,
-                AccountId = acc.Id,
-                Email = 'contact' + i + '@example.com',
-                Description = 'This is a test contact with some description text to increase payload size. Adding more text here to make the envelope larger.'
-            ));
-        }
-        insert contacts;
+        List<Contact> contacts = DocgenTestDataFactory.createContacts(200, acc.Id);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Large Data Template',
-            TemplateContentVersionId__c = '068000000000015AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName, Email, Description FROM Contacts) FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Large Data Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName, Email, Description FROM Contacts) FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000015AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope with large data set
         Test.startTest();
@@ -745,21 +669,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testRequestJSONSize() {
         // Given: Account for envelope generation
-        Account acc = new Account(
-            Name = 'JSON Size Test Account',
-            AnnualRevenue = 1000000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('JSON Size Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'JSON Size Template',
-            TemplateContentVersionId__c = '068000000000016AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'JSON Size Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000016AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope and serializing to JSON
         Test.startTest();
@@ -800,22 +722,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIds_Contact_ReturnsSingleParent() {
         // Given: Contact record with no Account parent
-        Contact contact = new Contact(
-            FirstName = 'Test',
-            LastName = 'Contact',
-            Email = 'test@example.com'
-        );
-        insert contact;
+        Contact contact = DocgenTestDataFactory.createContact('Test', 'Contact', null);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Contact Template',
-            TemplateContentVersionId__c = '068000000000017AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, FirstName, LastName, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Contact Template',
+            'Contact',
+            'SOQL',
+            'SELECT Id, FirstName, LastName, Email FROM Contact WHERE Id = :recordId',
+            null,
+            '068000000000017AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope for Contact
         Test.startTest();
@@ -842,24 +761,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIds_Lead_ReturnsSingleParent() {
         // Given: Lead record with no parent relationships
-        Lead lead = new Lead(
-            FirstName = 'Test',
-            LastName = 'Lead',
-            Company = 'Test Company',
-            Email = 'testlead@example.com',
-            Status = 'Open - Not Contacted'
-        );
-        insert lead;
+        Lead lead = DocgenTestDataFactory.createLead('Test', 'Lead', 'Test Company');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Lead Template',
-            TemplateContentVersionId__c = '068000000000018AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, FirstName, LastName, Company, Email FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Lead Template',
+            'Lead',
+            'SOQL',
+            'SELECT Id, FirstName, LastName, Company, Email FROM Lead WHERE Id = :recordId',
+            null,
+            '068000000000018AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         // When: Building envelope for Lead
         Test.startTest();
@@ -886,26 +800,20 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIds_ContactWithAccount_ReturnsMultiParent() {
         // Given: Contact with Account parent relationship
-        Account acc = new Account(Name = 'Parent Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Parent Account');
+        Contact contact = DocgenTestDataFactory.createContact('Related', 'Contact', acc.Id);
 
-        Contact contact = new Contact(
-            FirstName = 'Related',
-            LastName = 'Contact',
-            AccountId = acc.Id,
-            Email = 'related@example.com'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Contact with Account Template',
+            'Contact',
+            'SOQL',
+            'SELECT Id, FirstName, LastName, AccountId, Email FROM Contact WHERE Id = :recordId',
+            null,
+            '068000000000019AAA',
+            false,
+            false,
+            false
         );
-        insert contact;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Contact with Account Template',
-            TemplateContentVersionId__c = '068000000000019AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId, Email FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelope for Contact with Account
         Test.startTest();
@@ -927,51 +835,46 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIds_DynamicKeyFormat() {
         // Given: Different object types
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
-
-        Contact contact = new Contact(
-            LastName = 'Test Contact',
-            AccountId = acc.Id
-        );
-        insert contact;
-
-        Lead lead = new Lead(
-            LastName = 'Test Lead',
-            Company = 'Test Co',
-            Status = 'Open - Not Contacted'
-        );
-        insert lead;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Contact contact = DocgenTestDataFactory.createContact(acc.Id);
+        Lead lead = DocgenTestDataFactory.createLead('Test', 'Lead', 'Test Co');
 
         // Create templates for each
-        Docgen_Template__c accTemplate = new Docgen_Template__c(
-            Name = 'Account Dynamic Test',
-            TemplateContentVersionId__c = '068000000000020AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Account Dynamic Test',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000020AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c contactTemplate = new Docgen_Template__c(
-            Name = 'Contact Dynamic Test',
-            TemplateContentVersionId__c = '068000000000021AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, LastName, AccountId FROM Contact WHERE Id = :recordId',
-            PrimaryParent__c = 'Contact',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c contactTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Contact Dynamic Test',
+            'Contact',
+            'SOQL',
+            'SELECT Id, LastName, AccountId FROM Contact WHERE Id = :recordId',
+            null,
+            '068000000000021AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c leadTemplate = new Docgen_Template__c(
-            Name = 'Lead Dynamic Test',
-            TemplateContentVersionId__c = '068000000000022AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, LastName, Company FROM Lead WHERE Id = :recordId',
-            PrimaryParent__c = 'Lead',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c leadTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Lead Dynamic Test',
+            'Lead',
+            'SOQL',
+            'SELECT Id, LastName, Company FROM Lead WHERE Id = :recordId',
+            null,
+            '068000000000022AAA',
+            false,
+            false,
+            false
         );
-
-        insert new List<Docgen_Template__c>{ accTemplate, contactTemplate, leadTemplate };
 
         // When: Building envelopes for each object type
         Test.startTest();
@@ -998,27 +901,20 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIds_OpportunityWithAccount_VerifyBothParents() {
         // Given: Opportunity with Account (verify existing behavior still works)
-        Account acc = new Account(Name = 'Opportunity Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Opportunity Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Multi-Parent Opp', acc.Id);
 
-        Opportunity opp = new Opportunity(
-            Name = 'Multi-Parent Opp',
-            AccountId = acc.Id,
-            CloseDate = Date.today().addDays(30),
-            StageName = 'Prospecting',
-            Amount = 500000
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Opp Multi-Parent Template',
+            'Opportunity',
+            'SOQL',
+            'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
+            null,
+            '068000000000023AAA',
+            false,
+            false,
+            false
         );
-        insert opp;
-
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Opp Multi-Parent Template',
-            TemplateContentVersionId__c = '068000000000023AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Amount, AccountId FROM Opportunity WHERE Id = :recordId',
-            PrimaryParent__c = 'Opportunity',
-            ReturnMultipleRecords__c = false
-        );
-        insert template;
 
         // When: Building envelope
         Test.startTest();
@@ -1052,29 +948,26 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildForCompositeWithTwoNamespaces() {
         // Given: Composite document with 2 templates (Account, Terms)
-        Account acc = new Account(
-            Name = 'Composite Test Account',
-            AnnualRevenue = 5000000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Composite Test Account');
 
         // Create templates for each namespace
-        Docgen_Template__c accountTemplate = new Docgen_Template__c(
-            Name = 'Account Summary',
-            TemplateContentVersionId__c = '068000000000024AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Account Summary',
+            null,
+            'SOQL',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000024AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c termsTemplate = new Docgen_Template__c(
-            Name = 'Terms and Conditions',
-            TemplateContentVersionId__c = '068000000000025AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c termsTemplate = DocgenTestDataFactory.createCustomTemplate(
+            'Terms and Conditions',
+            null,
+            'MockCustomProvider'
         );
-        insert new List<Docgen_Template__c>{ accountTemplate, termsTemplate };
 
         // Create composite document
         Composite_Document__c composite = new Composite_Document__c(
@@ -1137,17 +1030,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildForCompositeOwnTemplateStrategy() {
         // Given: Composite with "Own Template" strategy
-        Account acc = new Account(Name = 'Own Template Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Own Template Account');
 
-        Docgen_Template__c accountTemplate = new Docgen_Template__c(
-            Name = 'Account Data Provider',
-            TemplateContentVersionId__c = '068000000000026AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Account Data Provider',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000026AAA',
+            false,
+            false,
+            false
         );
-        insert accountTemplate;
 
         Composite_Document__c composite = new Composite_Document__c(
             Template_Strategy__c = 'Own Template',
@@ -1191,33 +1086,43 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testBuildForCompositeConcatenateStrategy() {
         // Given: Composite with "Concatenate Templates" strategy
-        Account acc = new Account(Name = 'Concat Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Concat Account');
 
-        Docgen_Template__c template1 = new Docgen_Template__c(
-            Name = 'Section 1',
-            TemplateContentVersionId__c = '068000000000028AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template1 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Section 1',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000028AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c template2 = new Docgen_Template__c(
-            Name = 'Section 2',
-            TemplateContentVersionId__c = '068000000000029AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template2 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Section 2',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000029AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c template3 = new Docgen_Template__c(
-            Name = 'Section 3',
-            TemplateContentVersionId__c = '068000000000030AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template3 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Section 3',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000030AAA',
+            false,
+            false,
+            false
         );
-        insert new List<Docgen_Template__c>{ template1, template2, template3 };
 
         Composite_Document__c composite = new Composite_Document__c(
             Template_Strategy__c = 'Concatenate Templates',
@@ -1290,32 +1195,32 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testExtractParentIdsFromCompositeData() {
         // Given: Composite data with Account and Contact namespaces
-        Account acc = new Account(Name = 'Parent Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Parent Account');
+        Contact contact = DocgenTestDataFactory.createContact('Test', 'Contact', acc.Id);
 
-        Contact contact = new Contact(
-            FirstName = 'Test',
-            LastName = 'Contact',
-            AccountId = acc.Id
-        );
-        insert contact;
-
-        Docgen_Template__c accountTemplate = new Docgen_Template__c(
-            Name = 'Account Template',
-            TemplateContentVersionId__c = '068000000000031AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Account Template',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000031AAA',
+            false,
+            false,
+            false
         );
 
-        Docgen_Template__c contactTemplate = new Docgen_Template__c(
-            Name = 'Contact Template',
-            TemplateContentVersionId__c = '068000000000032AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, FirstName, LastName, AccountId FROM Contact WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c contactTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Contact Template',
+            null,
+            'SOQL',
+            'SELECT Id, FirstName, LastName, AccountId FROM Contact WHERE Id = :recordId',
+            null,
+            '068000000000032AAA',
+            false,
+            false,
+            false
         );
-        insert new List<Docgen_Template__c>{ accountTemplate, contactTemplate };
 
         Composite_Document__c composite = new Composite_Document__c(
             Template_Strategy__c = 'Concatenate Templates',
@@ -1370,17 +1275,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testCompositeHashComputation() {
         // Given: Two different composites with same data
-        Account acc = new Account(Name = 'Hash Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Hash Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Hash Template',
-            TemplateContentVersionId__c = '068000000000033AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Hash Template',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000033AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         Composite_Document__c composite1 = new Composite_Document__c(
             Template_Strategy__c = 'Own Template',
@@ -1460,17 +1367,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testCompositeOptionsMapping() {
         // Given: Composite with specific option settings
-        Account acc = new Account(Name = 'Options Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Options Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Options Template',
-            TemplateContentVersionId__c = '068000000000036AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Options Template',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000036AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         Composite_Document__c composite = new Composite_Document__c(
             Template_Strategy__c = 'Own Template',
@@ -1514,17 +1423,19 @@ private class DocgenEnvelopeServiceTest {
     @isTest
     static void testCompositeOutputFileName() {
         // Given: Composite document for filename generation
-        Account acc = new Account(Name = 'Filename Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Filename Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Filename Template',
-            TemplateContentVersionId__c = '068000000000038AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Filename Template',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000038AAA',
+            false,
+            false,
+            false
         );
-        insert template;
 
         Composite_Document__c composite = new Composite_Document__c(
             Template_Strategy__c = 'Own Template',

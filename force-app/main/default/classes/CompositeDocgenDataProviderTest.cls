@@ -24,12 +24,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testBuildCompositeDataWithTwoNamespaces() {
         // Given: Account record and composite with 2 templates
-        Account acc = new Account(
-            Name = 'Acme Ltd',
-            BillingCity = 'London',
-            AnnualRevenue = 1200000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Acme Ltd');
 
         // Create composite document (use Concatenate Templates to avoid validation rule)
         Composite_Document__c composite = new Composite_Document__c(
@@ -40,24 +35,18 @@ private class CompositeDocgenDataProviderTest {
         insert composite;
 
         // Create first template for Account data
-        Docgen_Template__c accountTemplate = new Docgen_Template__c(
-            Name = 'Account Summary',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplate(
+            'Account Summary',
+            'Account',
+            'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert accountTemplate;
 
         // Create second template for Terms (using Custom provider for testing)
-        Docgen_Template__c termsTemplate = new Docgen_Template__c(
-            Name = 'Terms and Conditions',
-            TemplateContentVersionId__c = '068000000000002AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c termsTemplate = DocgenTestDataFactory.createCustomTemplate(
+            'Terms and Conditions',
+            null,
+            'MockCustomProvider'
         );
-        insert termsTemplate;
 
         // Create junction records
         List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>{
@@ -110,14 +99,8 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testBuildCompositeDataWithChildRelationships() {
         // Given: Account with Contacts
-        Account acc = new Account(Name = 'Parent Account');
-        insert acc;
-
-        List<Contact> contacts = new List<Contact>{
-            new Contact(LastName = 'Contact 1', AccountId = acc.Id),
-            new Contact(LastName = 'Contact 2', AccountId = acc.Id)
-        };
-        insert contacts;
+        Account acc = DocgenTestDataFactory.createAccount('Parent Account');
+        DocgenTestDataFactory.createContacts(2, acc.Id);
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Account with Contacts',
@@ -127,14 +110,11 @@ private class CompositeDocgenDataProviderTest {
         insert composite;
 
         // Template with child relationship query
-        Docgen_Template__c accountTemplate = new Docgen_Template__c(
-            Name = 'Account with Contacts',
-            TemplateContentVersionId__c = '068000000000003AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, LastName FROM Contacts) FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplate(
+            'Account with Contacts',
+            'Account',
+            'SELECT Id, Name, (SELECT Id, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
         );
-        insert accountTemplate;
 
         Composite_Document_Template__c junction = new Composite_Document_Template__c(
             Composite_Document__c = composite.Id,
@@ -173,8 +153,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testNamespaceCollisionThrowsException() {
         // Given: Composite with duplicate namespace
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Duplicate Namespace Test',
@@ -183,23 +162,17 @@ private class CompositeDocgenDataProviderTest {
         );
         insert composite;
 
-        Docgen_Template__c template1 = new Docgen_Template__c(
-            Name = 'Template 1',
-            TemplateContentVersionId__c = '068000000000004AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template1 = DocgenTestDataFactory.createTemplate(
+            'Template 1',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template1;
 
-        Docgen_Template__c template2 = new Docgen_Template__c(
-            Name = 'Template 2',
-            TemplateContentVersionId__c = '068000000000005AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template2 = DocgenTestDataFactory.createTemplate(
+            'Template 2',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template2;
 
         // Both junctions use same namespace "Account"
         List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>{
@@ -280,8 +253,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testInactiveJunctionRecordsFiltered() {
         // Given: Composite with active and inactive junctions
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Active/Inactive Test',
@@ -290,23 +262,17 @@ private class CompositeDocgenDataProviderTest {
         );
         insert composite;
 
-        Docgen_Template__c activeTemplate = new Docgen_Template__c(
-            Name = 'Active Template',
-            TemplateContentVersionId__c = '068000000000006AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c activeTemplate = DocgenTestDataFactory.createTemplate(
+            'Active Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert activeTemplate;
 
-        Docgen_Template__c inactiveTemplate = new Docgen_Template__c(
-            Name = 'Inactive Template',
-            TemplateContentVersionId__c = '068000000000007AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, BillingCity FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c inactiveTemplate = DocgenTestDataFactory.createTemplate(
+            'Inactive Template',
+            'Account',
+            'SELECT Id, BillingCity FROM Account WHERE Id = :recordId'
         );
-        insert inactiveTemplate;
 
         List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>{
             new Composite_Document_Template__c(
@@ -352,8 +318,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testSequenceOrderingEnforced() {
         // Given: Templates with sequences 30, 10, 20 (out of order)
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Sequence Test',
@@ -441,16 +406,8 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testVariableExtractionBetweenTemplates() {
         // Given: Opportunity with AccountId
-        Account acc = new Account(Name = 'Test Account', BillingCity = 'London');
-        insert acc;
-
-        Opportunity opp = new Opportunity(
-            Name = 'Test Opp',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Opp', acc.Id);
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Variable Extraction Test',
@@ -460,24 +417,18 @@ private class CompositeDocgenDataProviderTest {
         insert composite;
 
         // First template queries Opportunity (returns AccountId)
-        Docgen_Template__c oppTemplate = new Docgen_Template__c(
-            Name = 'Opportunity Template',
-            TemplateContentVersionId__c = '068000000000011AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AccountId FROM Opportunity WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c oppTemplate = DocgenTestDataFactory.createTemplate(
+            'Opportunity Template',
+            'Opportunity',
+            'SELECT Id, Name, AccountId FROM Opportunity WHERE Id = :recordId'
         );
-        insert oppTemplate;
 
         // Second template queries Account (should use extracted accountId)
-        Docgen_Template__c accTemplate = new Docgen_Template__c(
-            Name = 'Account Template',
-            TemplateContentVersionId__c = '068000000000012AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c accTemplate = DocgenTestDataFactory.createTemplate(
+            'Account Template',
+            'Account',
+            'SELECT Id, Name, BillingCity FROM Account WHERE Id = :recordId'
         );
-        insert accTemplate;
 
         List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>{
             new Composite_Document_Template__c(
@@ -519,7 +470,7 @@ private class CompositeDocgenDataProviderTest {
         // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.areEqual('Test Account', accountData.get('Name'), 'Account data should be populated');
-        Assert.areEqual('London', accountData.get('BillingCity'), 'Account city should be populated');
+        Assert.areEqual('San Francisco', accountData.get('BillingCity'), 'Account city should be populated');
     }
 
     /**
@@ -529,11 +480,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testLocaleTimezonePropagation() {
         // Given: Account with currency and date fields
-        Account acc = new Account(
-            Name = 'Test Account',
-            AnnualRevenue = 1500000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Locale Test',
@@ -542,14 +489,11 @@ private class CompositeDocgenDataProviderTest {
         );
         insert composite;
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account Template',
-            TemplateContentVersionId__c = '068000000000013AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Account Template',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         Composite_Document_Template__c junction = new Composite_Document_Template__c(
             Composite_Document__c = composite.Id,
@@ -589,8 +533,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testProviderClassNotFoundThrowsException() {
         // Given: Template with invalid custom provider class
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Error Test',
@@ -599,14 +542,11 @@ private class CompositeDocgenDataProviderTest {
         );
         insert composite;
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Invalid Provider Template',
-            TemplateContentVersionId__c = '068000000000014AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'NonExistentProviderClass',  // This class doesn't exist
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createCustomTemplate(
+            'Invalid Provider Template',
+            null,
+            'NonExistentProviderClass'  // This class doesn't exist
         );
-        insert template;
 
         Composite_Document_Template__c junction = new Composite_Document_Template__c(
             Composite_Document__c = composite.Id,
@@ -645,8 +585,7 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testMixedSOQLAndCustomProviders() {
         // Given: Composite with SOQL and Custom providers
-        Account acc = new Account(Name = 'Test Account', AnnualRevenue = 500000);
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Mixed Providers Test',
@@ -656,24 +595,18 @@ private class CompositeDocgenDataProviderTest {
         insert composite;
 
         // SOQL provider
-        Docgen_Template__c soqlTemplate = new Docgen_Template__c(
-            Name = 'SOQL Template',
-            TemplateContentVersionId__c = '068000000000015AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c soqlTemplate = DocgenTestDataFactory.createTemplate(
+            'SOQL Template',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert soqlTemplate;
 
         // Custom provider
-        Docgen_Template__c customTemplate = new Docgen_Template__c(
-            Name = 'Custom Template',
-            TemplateContentVersionId__c = '068000000000016AAA',
-            DataSource__c = 'Custom',
-            ClassName__c = 'MockCustomProvider',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c customTemplate = DocgenTestDataFactory.createCustomTemplate(
+            'Custom Template',
+            null,
+            'MockCustomProvider'
         );
-        insert customTemplate;
 
         List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>{
             new Composite_Document_Template__c(
@@ -726,17 +659,13 @@ private class CompositeDocgenDataProviderTest {
     @isTest
     static void testBuildDataThrowsNotSupportedException() {
         // Given: CompositeDocgenDataProvider instance
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '068000000000017AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name FROM Account WHERE Id = :recordId',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         CompositeDocgenDataProvider provider = new CompositeDocgenDataProvider();
 

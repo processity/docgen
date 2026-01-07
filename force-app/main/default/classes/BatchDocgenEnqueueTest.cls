@@ -15,29 +15,15 @@ private class BatchDocgenEnqueueTest {
      */
     @testSetup
     static void setup() {
-        // Create test template
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account Summary Template',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId',
-            StoreMergedDocx__c = false,
-            ReturnDocxToBrowser__c = false,
-            PrimaryParent__c = 'Account',
-            ReturnMultipleRecords__c = false
+        // Create test template using factory
+        DocgenTestDataFactory.createTemplate(
+            'Account Summary Template',
+            'Account',
+            'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
-        // Create test accounts (50 for various batch size tests)
-        List<Account> accounts = new List<Account>();
-        for (Integer i = 1; i <= 50; i++) {
-            accounts.add(new Account(
-                Name = 'Test Account ' + i,
-                BillingCity = 'London',
-                AnnualRevenue = 100000 * i
-            ));
-        }
-        insert accounts;
+        // Create test accounts (50 for various batch size tests) using factory
+        DocgenTestDataFactory.createAccounts(50);
     }
 
     /**
@@ -423,11 +409,7 @@ private class BatchDocgenEnqueueTest {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
 
         // Create a Terms__c custom object record (simulated with Contact for testing)
-        Contact termsRecord = new Contact(
-            FirstName = 'Standard',
-            LastName = 'Terms and Conditions'
-        );
-        insert termsRecord;
+        Contact termsRecord = DocgenTestDataFactory.createContact('Standard', 'Terms and Conditions', null);
 
         Map<String, Id> additionalRecordIds = new Map<String, Id>{
             'termsId' => termsRecord.Id
@@ -729,11 +711,7 @@ private class BatchDocgenEnqueueTest {
         );
 
         // Create a terms record (using Contact as proxy)
-        Contact termsRecord = new Contact(
-            FirstName = 'Company',
-            LastName = 'Terms'
-        );
-        insert termsRecord;
+        Contact termsRecord = DocgenTestDataFactory.createContact('Company', 'Terms', null);
 
         Map<String, Id> additionalRecordIds = new Map<String, Id>{
             'termsId' => termsRecord.Id

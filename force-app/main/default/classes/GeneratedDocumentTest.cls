@@ -17,13 +17,11 @@ private class GeneratedDocumentTest {
      * Required because validation rule requires either Template__c or Composite_Document__c
      */
     private static Id createTestTemplate() {
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
         return template.Id;
     }
 
@@ -123,22 +121,9 @@ private class GeneratedDocumentTest {
     static void testParentLookups() {
         // Given: Parent records
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
-
-        Opportunity opp = new Opportunity(
-            Name = 'Test Opportunity',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
-
-        Case c = new Case(
-            Subject = 'Test Case',
-            AccountId = acc.Id
-        );
-        insert c;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Opportunity', acc.Id);
+        Case c = DocgenTestDataFactory.createCase('Test Case', acc.Id);
 
         // When: Insert document with all parents
         Generated_Document__c doc = new Generated_Document__c(
@@ -393,13 +378,11 @@ private class GeneratedDocumentTest {
     @isTest
     static void testTemplateLookup() {
         // Given: Template record
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         // When: Create document with template lookup
         Generated_Document__c doc = new Generated_Document__c(

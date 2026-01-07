@@ -9,13 +9,11 @@ private class GeneratedDocumentTriggerHandlerTest {
      * Create a test template for use in tests
      */
     private static Id createTestTemplate() {
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
         return template.Id;
     }
 
@@ -41,8 +39,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerFiresOnStatusSucceeded() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         ContentVersion cv = createTestContentVersion('Test Document');
 
@@ -82,8 +79,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerDoesNotFireForOtherStatuses() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         ContentVersion cv = createTestContentVersion('Test Document');
 
@@ -122,8 +118,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerDoesNotFireWithoutFile() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         String requestJSON = '{"parents": {"AccountId": "' + acc.Id + '"}}';
 
@@ -159,13 +154,9 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerBulkUpdate() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        List<Account> accounts = new List<Account>();
         List<Generated_Document__c> docs = new List<Generated_Document__c>();
 
-        for (Integer i = 0; i < 50; i++) {
-            accounts.add(new Account(Name = 'Test Account ' + i));
-        }
-        insert accounts;
+        List<Account> accounts = DocgenTestDataFactory.createAccounts(50);
 
         for (Integer i = 0; i < 50; i++) {
             String requestJSON = '{"parents": {"AccountId": "' + accounts[i].Id + '"}}';
@@ -231,8 +222,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerOnlyFiresOncePerStatusChange() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         ContentVersion cv = createTestContentVersion('Test Document');
 
@@ -285,8 +275,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerHandlesDocxFile() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         ContentVersion pdfVersion = createTestContentVersion('PDF Document');
         ContentVersion docxVersion = createTestContentVersion('DOCX Document');
@@ -334,22 +323,11 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerHandlesMultipleParentTypes() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
-        Opportunity opp = new Opportunity(
-            Name = 'Test Opportunity',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Opportunity', acc.Id);
 
-        Case c = new Case(
-            Subject = 'Test Case',
-            AccountId = acc.Id
-        );
-        insert c;
+        Case c = DocgenTestDataFactory.createCase('Test Case', acc.Id);
 
         ContentVersion cv = createTestContentVersion('Multi Parent Document');
 
@@ -442,8 +420,7 @@ private class GeneratedDocumentTriggerHandlerTest {
     static void testTriggerHandlesRetryFromFailed() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
         ContentVersion cv = createTestContentVersion('Retry Document');
 

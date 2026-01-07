@@ -237,8 +237,7 @@ private class DocgenTemplateFileControllerTest {
     @isTest
     static void testGetRecordMetadataInvalidId() {
         // Create an invalid ID (Account ID instead of template/composite)
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         Test.startTest();
         Map<String, Object> metadata = DocgenTemplateFileController.getRecordMetadata(acc.Id);
@@ -254,8 +253,7 @@ private class DocgenTemplateFileControllerTest {
     @isTest
     static void testUpdateTemplateContentVersionIdUnsupportedObject() {
         // Create an Account (unsupported object)
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         // Create a ContentVersion
         ContentVersion cv = new ContentVersion(

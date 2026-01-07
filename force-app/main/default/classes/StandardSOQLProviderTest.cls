@@ -144,20 +144,13 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithAccount() {
         // Given: An Account and template with SOQL
-        Account acc = new Account(
-            Name = 'Acme Ltd',
-            BillingCity = 'London',
-            AnnualRevenue = 1200000
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Acme Ltd');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account Summary',
-            TemplateContentVersionId__c = '068000000000001AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Account Summary',
+            'Account',
+            'SELECT Id, Name, BillingCity, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -172,26 +165,20 @@ private class StandardSOQLProviderTest {
 
         Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
         Assert.areEqual('Acme Ltd', accountData.get('Name'), 'Should contain Account Name');
-        Assert.areEqual('London', accountData.get('BillingCity'), 'Should contain BillingCity');
+        Assert.areEqual('San Francisco', accountData.get('BillingCity'), 'Should contain BillingCity');
         Assert.isNotNull(accountData.get('AnnualRevenue__formatted'), 'Should contain formatted AnnualRevenue');
     }
 
     @isTest
     static void testBuildDataWithNullFields() {
         // Given: An Account with null revenue but populated name
-        Account acc = new Account(
-            Name = 'Test Account',
-            AnnualRevenue = null
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account Test',
-            TemplateContentVersionId__c = '068000000000002AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Account Test',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -212,16 +199,13 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithInvalidSOQL() {
         // Given: A template with invalid SOQL
-        Account acc = new Account(Name = 'Test');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Invalid SOQL',
-            TemplateContentVersionId__c = '068000000000003AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT InvalidField FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Invalid SOQL',
+            'Account',
+            'SELECT InvalidField FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -239,16 +223,19 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithMissingSOQL() {
         // Given: A template with null SOQL__c
-        Account acc = new Account(Name = 'Test');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'No SOQL',
-            TemplateContentVersionId__c = '068000000000004AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = null
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'No SOQL',
+            'Account',
+            'SOQL',
+            null,  // SOQL is null
+            null,
+            '068000000000004AAA',
+            false,
+            true,
+            false
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -266,36 +253,16 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithChildRelationships() {
         // Given: Account with Contacts (child relationship)
-        Account acc = new Account(
-            Name = 'Parent Company',
-            AnnualRevenue = 5000000,
-            BillingCountry = 'United Kingdom'
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Parent Company');
 
-        List<Contact> contacts = new List<Contact>{
-            new Contact(
-                FirstName = 'John',
-                LastName = 'Doe',
-                AccountId = acc.Id,
-                Email = 'john.doe@test.com'
-            ),
-            new Contact(
-                FirstName = 'Jane',
-                LastName = 'Smith',
-                AccountId = acc.Id,
-                Email = 'jane.smith@test.com'
-            )
-        };
-        insert contacts;
+        DocgenTestDataFactory.createContact('John', 'Doe', acc.Id);
+        DocgenTestDataFactory.createContact('Jane', 'Smith', acc.Id);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account with Contacts',
-            TemplateContentVersionId__c = '068000000000005AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Account with Contacts',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -327,20 +294,13 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithEmptyChildRelationship() {
         // Given: Account with NO contacts
-        Account acc = new Account(
-            Name = 'Lonely Company',
-            AnnualRevenue = 100000,
-            BillingCountry = 'United Kingdom'
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Lonely Company');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Account with No Contacts',
-            TemplateContentVersionId__c = '068000000000006AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Account with No Contacts',
+            'Account',
+            'SELECT Id, Name, (SELECT Id, FirstName, LastName FROM Contacts) FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -365,24 +325,15 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithParentRelationship() {
         // Given: Opportunity with Owner (parent relationship)
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount();
 
-        Opportunity opp = new Opportunity(
-            Name = 'Big Deal',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Big Deal', acc.Id);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Opportunity with Owner',
-            TemplateContentVersionId__c = '068000000000007AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, Owner.Name, Account.Name FROM Opportunity WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Opportunity with Owner',
+            'Opportunity',
+            'SELECT Id, Name, Owner.Name, Account.Name FROM Opportunity WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -480,22 +431,13 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testBuildDataWithAllNullFields() {
         // Given: Account with all optional fields null
-        Account acc = new Account(
-            Name = 'Minimal Account',
-            AnnualRevenue = null,
-            BillingCity = null,
-            BillingStreet = null,
-            Phone = null
-        );
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Minimal Account');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'All Nulls Test',
-            TemplateContentVersionId__c = '068000000000008AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, AnnualRevenue, BillingCity, BillingStreet, Phone FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'All Nulls Test',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue, BillingCity, BillingStreet, Phone FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -515,16 +457,13 @@ private class StandardSOQLProviderTest {
     @isTest
     static void testEmptyChildRelationship_ReturnsEmptyArray() {
         // Given: Account with NO contacts, SOQL includes Contacts subquery
-        Account acc = new Account(Name = 'No Contacts Corp', BillingCountry = 'United Kingdom');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('No Contacts Corp');
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Empty Child Test',
-            TemplateContentVersionId__c = '068000000000009AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Empty Child Test',
+            'Account',
+            'SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -547,24 +486,15 @@ private class StandardSOQLProviderTest {
         // SOQL has 2-level nesting: Account → Opportunities → OpportunityLineItems
 
         // Setup: Create Account + Opportunity (no line items)
-        Account acc = new Account(Name = 'Test Corp');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Corp');
 
-        Opportunity opp = new Opportunity(
-            Name = 'Test Deal',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Deal', acc.Id);
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Nested Empty Test',
-            TemplateContentVersionId__c = '068000000000010AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, Name, (SELECT Id FROM OpportunityLineItems) FROM Opportunities) FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Nested Empty Test',
+            'Account',
+            'SELECT Id, Name, (SELECT Id, Name, (SELECT Id FROM OpportunityLineItems) FROM Opportunities) FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -616,20 +546,10 @@ private class StandardSOQLProviderTest {
     static void testNestedChildWithData_ReturnsAllRecords() {
         // Given: Account with MULTIPLE Opportunities with line items
         // This tests that Opportunities WITH data are correctly processed
-        Account acc = new Account(Name = 'Multi Opp Test Corp', BillingCountry = 'United Kingdom');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Multi Opp Test Corp');
 
         // Create multiple opportunities
-        List<Opportunity> opps = new List<Opportunity>();
-        for (Integer i = 0; i < 5; i++) {
-            opps.add(new Opportunity(
-                Name = 'Deal ' + i,
-                AccountId = acc.Id,
-                StageName = 'Prospecting',
-                CloseDate = Date.today().addDays(30 + i)
-            ));
-        }
-        insert opps;
+        List<Opportunity> opps = DocgenTestDataFactory.createOpportunities(5, acc.Id);
 
         // Create a product for line items
         Product2 prod = new Product2(Name = 'Test Product', ProductCode = 'TP001', IsActive = true);
@@ -658,15 +578,13 @@ private class StandardSOQLProviderTest {
         }
         insert lineItems;
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Multi Opp Test',
-            TemplateContentVersionId__c = '068000000000012AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, ' +
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Multi Opp Test',
+            'Account',
+            'SELECT Id, Name, ' +
                 '(SELECT Id, Name, (SELECT Id, Product2.Name FROM OpportunityLineItems) FROM Opportunities ORDER BY CloseDate) ' +
                 'FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 
@@ -708,24 +626,16 @@ private class StandardSOQLProviderTest {
         // SOQL has 2-level nesting: Account → Cases → CaseComments
         // This validates the fix works at multiple nested levels
 
-        Account acc = new Account(Name = 'Three Level Test');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Three Level Test');
 
-        Case c = new Case(
-            Subject = 'Test Case',
-            AccountId = acc.Id,
-            Status = 'New'
-        );
-        insert c;
+        Case c = DocgenTestDataFactory.createCase('Test Case', acc.Id);
         // No CaseComments added
 
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Three Level Test',
-            TemplateContentVersionId__c = '068000000000011AAA',
-            DataSource__c = 'SOQL',
-            SOQL__c = 'SELECT Id, Name, (SELECT Id, Subject, (SELECT Id FROM CaseComments) FROM Cases) FROM Account WHERE Id = :recordId'
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Three Level Test',
+            'Account',
+            'SELECT Id, Name, (SELECT Id, Subject, (SELECT Id FROM CaseComments) FROM Cases) FROM Account WHERE Id = :recordId'
         );
-        insert template;
 
         StandardSOQLProvider provider = new StandardSOQLProvider();
 

@@ -9,13 +9,11 @@ private class ContentDocumentLinkHelperTest {
      * Create a test template for use in tests
      */
     private static Id createTestTemplate() {
-        Docgen_Template__c template = new Docgen_Template__c(
-            Name = 'Test Template',
-            TemplateContentVersionId__c = '0681e000000000AAA',
-            DataSource__c = 'SOQL',
-            ReturnMultipleRecords__c = false
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Test Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
         );
-        insert template;
         return template.Id;
     }
 
@@ -43,8 +41,7 @@ private class ContentDocumentLinkHelperTest {
     static void testCreateLinksForSingleParent() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         ContentVersion cv = createTestContentVersion('Test Document');
 
@@ -89,23 +86,9 @@ private class ContentDocumentLinkHelperTest {
     static void testCreateLinksForMultipleParents() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
-
-        Opportunity opp = new Opportunity(
-            Name = 'Test Opportunity',
-            AccountId = acc.Id,
-            StageName = 'Prospecting',
-            CloseDate = Date.today().addDays(30)
-        );
-        insert opp;
-
-        Contact con = new Contact(
-            FirstName = 'Test',
-            LastName = 'Contact',
-            AccountId = acc.Id
-        );
-        insert con;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('Test Opportunity', acc.Id);
+        Contact con = DocgenTestDataFactory.createContact('Test', 'Contact', acc.Id);
 
         ContentVersion cv = createTestContentVersion('Multi Parent Document');
 
@@ -164,8 +147,7 @@ private class ContentDocumentLinkHelperTest {
     static void testCreateLinksForCustomObjects() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         ContentVersion cv = createTestContentVersion('Custom Object Document');
 
@@ -213,8 +195,7 @@ private class ContentDocumentLinkHelperTest {
     static void testHandleNullParents() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         ContentVersion cv = createTestContentVersion('Null Parent Document');
 
@@ -260,8 +241,7 @@ private class ContentDocumentLinkHelperTest {
     static void testCreateLinksForPdfAndDocx() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         ContentVersion pdfVersion = createTestContentVersion('PDF Document');
         ContentVersion docxVersion = createTestContentVersion('DOCX Document');
@@ -310,13 +290,8 @@ private class ContentDocumentLinkHelperTest {
     static void testBulkOperation() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        List<Account> accounts = new List<Account>();
+        List<Account> accounts = DocgenTestDataFactory.createAccounts(50);
         List<Generated_Document__c> docs = new List<Generated_Document__c>();
-
-        for (Integer i = 0; i < 50; i++) {
-            accounts.add(new Account(Name = 'Test Account ' + i));
-        }
-        insert accounts;
 
         for (Integer i = 0; i < 50; i++) {
             ContentVersion cv = createTestContentVersion('Bulk Document ' + i);
@@ -474,8 +449,7 @@ private class ContentDocumentLinkHelperTest {
     static void testHandleInvalidParentIds() {
         // Setup: Create test data
         Id templateId = createTestTemplate();
-        Account acc = new Account(Name = 'Test Account');
-        insert acc;
+        Account acc = DocgenTestDataFactory.createAccount('Test Account');
 
         ContentVersion cv = createTestContentVersion('Invalid ID Document');
 
