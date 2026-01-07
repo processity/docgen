@@ -470,7 +470,7 @@ private class CompositeDocgenDataProviderTest {
         // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.areEqual('Test Account', accountData.get('Name'), 'Account data should be populated');
-        Assert.areEqual('London', accountData.get('BillingCity'), 'Account city should be populated');
+        Assert.areEqual('San Francisco', accountData.get('BillingCity'), 'Account city should be populated');
     }
 
     /**

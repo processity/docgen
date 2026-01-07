@@ -173,10 +173,13 @@ public class DocgenTestDataFactory {
      * @return Contact (inserted)
      */
     public static Contact createContact(String firstName, String lastName, Id accountId) {
+        // Sanitize names for email: remove spaces and special characters
+        String sanitizedFirst = firstName.toLowerCase().replaceAll('[^a-z0-9]', '');
+        String sanitizedLast = lastName.toLowerCase().replaceAll('[^a-z0-9]', '');
         Contact con = new Contact(
             FirstName = firstName,
             LastName = lastName,
-            Email = firstName.toLowerCase() + '.' + lastName.toLowerCase() + '@example.com',
+            Email = sanitizedFirst + '.' + sanitizedLast + '@example.com',
             AccountId = accountId
         );
         insert con;

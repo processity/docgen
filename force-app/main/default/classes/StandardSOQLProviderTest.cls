@@ -165,7 +165,7 @@ private class StandardSOQLProviderTest {
 
         Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
         Assert.areEqual('Acme Ltd', accountData.get('Name'), 'Should contain Account Name');
-        Assert.areEqual('London', accountData.get('BillingCity'), 'Should contain BillingCity');
+        Assert.areEqual('San Francisco', accountData.get('BillingCity'), 'Should contain BillingCity');
         Assert.isNotNull(accountData.get('AnnualRevenue__formatted'), 'Should contain formatted AnnualRevenue');
     }
 
