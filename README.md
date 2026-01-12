@@ -205,6 +205,8 @@ npm run dev
 
 The Salesforce components are available as an **unlocked package** for easy installation:
 
+Package: 0HoWS00000009uX0AQ - Processity PBO
+
 [![Install Unlocked Package](https://img.shields.io/badge/Install-Unlocked%20Package-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY)
 
 **Option 1: Install via URL**
