@@ -1,16 +1,28 @@
 {
   "packageDirectories": [
     {
+      "versionName": "ver 0.3",
+      "versionNumber": "0.3.0.NEXT",
       "path": "force-app/main",
-      "default": true
+      "default": true,
+      "package": "docgen",
+      "versionDescription": "Document generation package for Salesforce - Generate DOCX documents from templates"
     },
     {
       "path": "force-app/test",
+      "default": false
+    },
+    {
+      "path": "force-app/unpackaged",
       "default": false
     }
   ],
   "name": "docgen",
   "namespace": "",
   "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "60.0"
+  "sourceApiVersion": "60.0",
+  "packageAliases": {
+    "docgen": "0HoWS00000009uX0AQ",
+    "docgen@0.3.0-7": "04tWS000001i5OPYAY"
+  }
 }

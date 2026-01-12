@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io/)
 [![Salesforce](https://img.shields.io/badge/Salesforce-Integration-00A1E0?logo=salesforce)](https://www.salesforce.com/)
+[![Salesforce Package](https://img.shields.io/badge/Package-v0.3.0--7-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY)
 
 A production-ready document generation service that creates PDF documents from Salesforce data using DOCX templates and LibreOffice, deployed on Azure Container Apps.
 
@@ -162,7 +163,6 @@ sequenceDiagram
     end
 ```
 
-
 ## Key Features
 
 - **Dual Processing Modes**: Interactive (synchronous) and batch (asynchronous) generation
@@ -201,7 +201,34 @@ npm test
 npm run dev
 ```
 
-### Salesforce Setup
+### Salesforce Package Installation
+
+The Salesforce components are available as an **unlocked package** for easy installation:
+
+[![Install Unlocked Package](https://img.shields.io/badge/Install-Unlocked%20Package-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY)
+
+**Option 1: Install via URL**
+
+Click the badge above or use this link:
+
+```
+https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY
+```
+
+**Option 2: Deploy metadata to org**
+
+```bash
+# Deploy metadata to org
+sf project deploy --target-org <YourOrg> --wait 30 --no-prompt
+```
+
+**After Installation:**
+
+1. Assign the `Docgen_User` permission set to users who need access
+2. Configure the Named Credential endpoint URL for your Node.js API
+3. Set up External Credential principals for Azure AD authentication
+
+### Salesforce Setup (Development)
 
 ```bash
 # Authenticate to Dev Hub
@@ -233,36 +260,36 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 
 ### For Developers
 
-| Document | Description |
-|----------|-------------|
-| **[Quick Start Guide](docs/quick-start.md)** | Complete setup and installation guide for new developers |
-| **[Scripts Reference](docs/scripts.md)** | Detailed documentation for all helper scripts and Apex templates |
-| **[Architecture Guide](docs/architecture.md)** | Technical implementation details (authentication, caching, conversion, batch processing, composite documents) |
-| **[Testing Guide](docs/testing.md)** | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration |
-| **[API Reference](docs/api.md)** | REST API endpoints, request/response formats, error handling, composite envelope format |
-| **[Template Authoring](docs/template-authoring.md)** | Creating DOCX templates with merge fields, loops, conditionals, and composite namespaces |
-| **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax including namespace-scoped paths |
-| **[ADRs](docs/adr/)** | Architecture Decision Records (runtime, auth, worker, caching) |
+| Document                                                     | Description                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **[Quick Start Guide](docs/quick-start.md)**                 | Complete setup and installation guide for new developers                                                      |
+| **[Scripts Reference](docs/scripts.md)**                     | Detailed documentation for all helper scripts and Apex templates                                              |
+| **[Architecture Guide](docs/architecture.md)**               | Technical implementation details (authentication, caching, conversion, batch processing, composite documents) |
+| **[Testing Guide](docs/testing.md)**                         | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration                                               |
+| **[API Reference](docs/api.md)**                             | REST API endpoints, request/response formats, error handling, composite envelope format                       |
+| **[Template Authoring](docs/template-authoring.md)**         | Creating DOCX templates with merge fields, loops, conditionals, and composite namespaces                      |
+| **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax including namespace-scoped paths                                         |
+| **[ADRs](docs/adr/)**                                        | Architecture Decision Records (runtime, auth, worker, caching)                                                |
 
 ### For Operations
 
-| Document | Description |
-|----------|-------------|
-| **[Deployment Guide](docs/deploy.md)** | CI/CD workflows, deployment procedures, rollback strategies |
-| **[Provisioning Guide](docs/provisioning.md)** | One-time environment setup in Azure |
-| **[Runbooks](docs/runbooks.md)** | Operational procedures (scaling, key rotation, disaster recovery) |
-| **[Monitoring & Dashboards](docs/dashboards.md)** | Application Insights dashboards, KQL queries, alert rules |
-| **[Troubleshooting Index](docs/troubleshooting-index.md)** | Common issues and resolution steps |
+| Document                                                   | Description                                                       |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| **[Deployment Guide](docs/deploy.md)**                     | CI/CD workflows, deployment procedures, rollback strategies       |
+| **[Provisioning Guide](docs/provisioning.md)**             | One-time environment setup in Azure                               |
+| **[Runbooks](docs/runbooks.md)**                           | Operational procedures (scaling, key rotation, disaster recovery) |
+| **[Monitoring & Dashboards](docs/dashboards.md)**          | Application Insights dashboards, KQL queries, alert rules         |
+| **[Troubleshooting Index](docs/troubleshooting-index.md)** | Common issues and resolution steps                                |
 
 ### For Administrators
 
-| Document | Description |
-|----------|-------------|
-| **[Admin Guide](docs/admin-guide.md)** | Salesforce admin setup, adding support for new objects, creating composite documents |
-| **[Admin Runbook](docs/admin-runbook.md)** | Administrative operations and troubleshooting |
-| **[Named Credential Setup](docs/named-credential-setup.md)** | Configuring Azure AD authentication from Salesforce |
-| **[LWC Composite Button Guide](docs/lwc-composite-button-guide.md)** | Configuring compositeDocgenButton component on Lightning pages |
-| **[Composite Batch Examples](docs/composite-batch-examples.md)** | Batch generation patterns for composite documents |
+| Document                                                             | Description                                                                          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **[Admin Guide](docs/admin-guide.md)**                               | Salesforce admin setup, adding support for new objects, creating composite documents |
+| **[Admin Runbook](docs/admin-runbook.md)**                           | Administrative operations and troubleshooting                                        |
+| **[Named Credential Setup](docs/named-credential-setup.md)**         | Configuring Azure AD authentication from Salesforce                                  |
+| **[LWC Composite Button Guide](docs/lwc-composite-button-guide.md)** | Configuring compositeDocgenButton component on Lightning pages                       |
+| **[Composite Batch Examples](docs/composite-batch-examples.md)**     | Batch generation patterns for composite documents                                    |
 
 ## Project Structure
 
@@ -292,13 +319,15 @@ docgen/
 ## Salesforce Components
 
 ### Custom Objects
-- **Docgen_Template__c**: Template configuration (links to ContentVersion)
-- **Generated_Document__c**: Document generation tracking and status
-- **Composite_Document__c**: Multi-source document configuration
-- **Composite_Document_Template__c**: Junction records linking composites to templates with namespaces
-- **Supported_Object__mdt**: Multi-object configuration (Custom Metadata)
+
+- **Docgen_Template\_\_c**: Template configuration (links to ContentVersion)
+- **Generated_Document\_\_c**: Document generation tracking and status
+- **Composite_Document\_\_c**: Multi-source document configuration
+- **Composite_Document_Template\_\_c**: Junction records linking composites to templates with namespaces
+- **Supported_Object\_\_mdt**: Multi-object configuration (Custom Metadata)
 
 ### Apex Classes
+
 - **DocgenController**: Interactive generation controller for LWC (including composite generation)
 - **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing (single and composite)
 - **StandardSOQLProvider**: Data collection with locale-aware formatting
@@ -308,12 +337,15 @@ docgen/
 **Test Coverage**: 112 Apex tests with 86% code coverage
 
 ### Lightning Web Components
+
 - **docgenButton**: Single-template document generation button (deployable to any record page)
 - **compositeDocgenButton**: Composite document generation button with recordIds mapping
 - **docgenTestPage**: E2E testing wrapper component
 
 ### Custom App
+
 The **Docgen** app includes:
+
 - Docgen Templates tab (manage single-object templates)
 - Composite Documents tab (manage multi-source templates)
 - Generated Documents tab (track generation history for single and composite)
@@ -321,28 +353,31 @@ The **Docgen** app includes:
 
 ## Technology Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Runtime** | Node.js 20+ with TypeScript |
-| **Web Framework** | Fastify |
-| **Template Engine** | docx-templates |
-| **PDF Conversion** | LibreOffice (headless) |
-| **Authentication** | Azure AD OAuth2 (inbound), Salesforce JWT Bearer (outbound) |
-| **Testing** | Jest, Supertest, Nock, Playwright |
-| **Infrastructure** | Azure Container Apps, Azure Container Registry, Azure Key Vault |
-| **Observability** | Azure Application Insights, OpenTelemetry |
-| **CI/CD** | GitHub Actions |
+| Layer               | Technology                                                      |
+| ------------------- | --------------------------------------------------------------- |
+| **Runtime**         | Node.js 20+ with TypeScript                                     |
+| **Web Framework**   | Fastify                                                         |
+| **Template Engine** | docx-templates                                                  |
+| **PDF Conversion**  | LibreOffice (headless)                                          |
+| **Authentication**  | Azure AD OAuth2 (inbound), Salesforce JWT Bearer (outbound)     |
+| **Testing**         | Jest, Supertest, Nock, Playwright                               |
+| **Infrastructure**  | Azure Container Apps, Azure Container Registry, Azure Key Vault |
+| **Observability**   | Azure Application Insights, OpenTelemetry                       |
+| **CI/CD**           | GitHub Actions                                                  |
 
 ## API Endpoints
 
 ### Health & Readiness
+
 - **GET /healthz**: Liveness probe (always returns 200)
 - **GET /readyz**: Readiness probe with dependency checks
 
 ### Document Generation
+
 - **POST /generate**: Generate PDF/DOCX from template (requires Azure AD token)
 
 ### Worker Management
+
 - **POST /worker/start**: Start batch poller
 - **POST /worker/stop**: Stop batch poller gracefully
 - **GET /worker/status**: Current worker state
