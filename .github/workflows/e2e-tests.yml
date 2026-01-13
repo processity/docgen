@@ -93,16 +93,51 @@ jobs:
           TMP_DUP_DIR=$(mktemp -d -p ./tmp dup-rules.XXXXXX)
           sf project retrieve start --metadata DuplicateRule --target-org "$ORG_ALIAS" --output-dir "$TMP_DUP_DIR" --wait 10
 
-          find "$TMP_DUP_DIR" -name "*.duplicateRule-meta.xml" -print0 | while IFS= read -r -d '' RULE_FILE; do
-            if grep -q "<isActive>" "$RULE_FILE"; then
-              perl -pi -e 's/<isActive>true<\\/isActive>/<isActive>false<\\/isActive>/g' "$RULE_FILE"
-            else
-              perl -0777 -pi -e 's#</DuplicateRule>#  <isActive>false</isActive>\\n</DuplicateRule>#' "$RULE_FILE"
-            fi
-          done
+          python3 - <<'PY'
+import glob
+import xml.etree.ElementTree as ET
+
+ns = "http://soap.sforce.com/2006/04/metadata"
+files = glob.glob("tmp/**/duplicateRules/*.duplicateRule-meta.xml", recursive=True)
+
+if not files:
+    print("⚠️  No DuplicateRule files found after retrieve")
+    raise SystemExit(0)
+
+for path in files:
+    tree = ET.parse(path)
+    root = tree.getroot()
+    is_active = root.find(f"{{{ns}}}isActive")
+    if is_active is None:
+        is_active = ET.SubElement(root, f"{{{ns}}}isActive")
+    is_active.text = "false"
+    tree.write(path, encoding="UTF-8", xml_declaration=True)
+    print(f"Set isActive=false in {path}")
+PY
+
+          ACTIVE_TRUE=$(rg -n "<isActive>true</isActive>" "$TMP_DUP_DIR/duplicateRules" || true)
+          if [ -n "$ACTIVE_TRUE" ]; then
+            echo "❌ Some DuplicateRules still marked active in source:"
+            echo "$ACTIVE_TRUE"
+            exit 1
+          fi
 
           sf project deploy start --source-dir "$TMP_DUP_DIR" --target-org "$ORG_ALIAS" --wait 10
           rm -rf "$TMP_DUP_DIR"
+
+          # Verify after deploy (re-retrieve and check)
+          TMP_DUP_VERIFY_DIR=$(mktemp -d -p ./tmp dup-verify.XXXXXX)
+          sf project retrieve start --metadata DuplicateRule --target-org "$ORG_ALIAS" --output-dir "$TMP_DUP_VERIFY_DIR" --wait 10
+
+          VERIFY_ACTIVE=$(rg -n "<isActive>true</isActive>" "$TMP_DUP_VERIFY_DIR/duplicateRules" || true)
+          rm -rf "$TMP_DUP_VERIFY_DIR"
+
+          if [ -n "$VERIFY_ACTIVE" ]; then
+            echo "❌ Duplicate rules still active after deploy:"
+            echo "$VERIFY_ACTIVE"
+            exit 1
+          fi
+
           echo "✅ Duplicate rules deactivated"
 
       - name: Configure External Credential with AAD secrets
