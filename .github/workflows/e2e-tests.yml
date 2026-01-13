@@ -89,7 +89,8 @@ jobs:
             exit 0
           fi
 
-          TMP_DUP_DIR=$(mktemp -d)
+          mkdir -p tmp
+          TMP_DUP_DIR=$(mktemp -d -p ./tmp dup-rules.XXXXXX)
           sf project retrieve start --metadata DuplicateRule --target-org "$ORG_ALIAS" --output-dir "$TMP_DUP_DIR" --wait 10
 
           find "$TMP_DUP_DIR" -name "*.duplicateRule-meta.xml" -print0 | while IFS= read -r -d '' RULE_FILE; do
@@ -101,6 +102,7 @@ jobs:
           done
 
           sf project deploy start --source-dir "$TMP_DUP_DIR" --target-org "$ORG_ALIAS" --wait 10
+          rm -rf "$TMP_DUP_DIR"
           echo "✅ Duplicate rules deactivated"
 
       - name: Configure External Credential with AAD secrets
