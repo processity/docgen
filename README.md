@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg)](https://prettier.io/)
 [![Salesforce](https://img.shields.io/badge/Salesforce-Integration-00A1E0?logo=salesforce)](https://www.salesforce.com/)
-[![Salesforce Package](https://img.shields.io/badge/Package-v0.3.0--7-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY)
+[![Salesforce Package](https://img.shields.io/badge/Package-v0.3.1-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001jy7XYAQ)
 
 A production-ready document generation service that creates PDF documents from Salesforce data using DOCX templates and LibreOffice, deployed on Azure Container Apps.
 
@@ -207,14 +207,14 @@ The Salesforce components are available as an **unlocked package** for easy inst
 
 Package: 0HoWS00000009uX0AQ - Processity PBO
 
-[![Install Unlocked Package](https://img.shields.io/badge/Install-Unlocked%20Package-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY)
+[![Install Unlocked Package](https://img.shields.io/badge/Install-Unlocked%20Package-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001jy7XYAQ)
 
 **Option 1: Install via URL**
 
 Click the badge above or use this link:
 
 ```
-https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001i5OPYAY
+https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001jy7XYAQ
 ```
 
 **Option 2: Deploy metadata to org**

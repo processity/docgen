@@ -13,7 +13,7 @@
 #
 # What it does:
 #   1. Configures CI backend to point to your scratch org
-#   2. Deploys test metadata to scratch org
+#   2. Deploys required auth metadata to scratch org
 #   3. Configures External Credential in scratch org
 #   4. Runs E2E tests with real backend
 #
@@ -86,8 +86,8 @@ configure_backend_for_scratch_org() {
     log_success "Backend configured for $SCRATCH_ORG_ALIAS"
 }
 
-deploy_test_metadata() {
-    log_step "Step 2: Deploy Test Metadata to Scratch Org"
+deploy_auth_metadata() {
+    log_step "Step 2: Deploy Required Auth Metadata to Scratch Org"
 
     log_info "Deploying External Credential and Named Credential metadata..."
 
@@ -97,7 +97,7 @@ deploy_test_metadata() {
       --metadata PermissionSet:Docgen_User \
       --target-org "$SCRATCH_ORG_ALIAS"
 
-    log_success "Test metadata deployed"
+    log_success "Auth metadata deployed"
 }
 
 configure_external_credential() {
@@ -177,7 +177,7 @@ main() {
 
     check_aad_credentials
     configure_backend_for_scratch_org
-    deploy_test_metadata
+    deploy_auth_metadata
     configure_external_credential
     run_e2e_tests
     print_summary

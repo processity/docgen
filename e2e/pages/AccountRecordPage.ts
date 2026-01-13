@@ -2,7 +2,7 @@ import { Page, Locator } from '@playwright/test';
 import { getScratchOrgInfo } from '../utils/scratch-org';
 
 /**
- * Page Object Model for Salesforce Account record page
+ * Page Object Model for Docgen Test Page with Account context
  */
 export class AccountRecordPage {
   readonly page: Page;
@@ -12,9 +12,9 @@ export class AccountRecordPage {
 
   constructor(page: Page) {
     this.page = page;
-    // Look for either the standard detail panel or the flexipage container
-    this.recordDetailPanel = page.locator('records-lwc-detail-panel, .slds-page-header, article.slds-card');
-    this.pageHeader = page.locator('h1.slds-page-header__title, h1 span');
+    // Look for the Docgen test page root
+    this.recordDetailPanel = page.locator('c-docgen-test-page, lightning-card[title="Docgen E2E Test Page"]');
+    this.pageHeader = page.locator('lightning-card[title="Docgen E2E Test Page"] h2, h1 span');
   }
 
   /**
@@ -29,24 +29,22 @@ export class AccountRecordPage {
   }
 
   /**
-   * Navigate to Account record page
+   * Navigate to Docgen Test Page for an Account record
    */
   async goto(accountId: string): Promise<void> {
     const baseUrl = await this.getBaseUrl();
-    // Use the test flexipage since standard page doesn't have our component
     await this.page.goto(
-      `${baseUrl}/lightning/r/Account/${accountId}/view?flexipageName=Account_Docgen_Test`
+      `${baseUrl}/lightning/n/Docgen_Test_Page?c__recordId=${accountId}`
     );
   }
 
   /**
-   * Navigate to Account record page with test flexipage
+   * Navigate to Docgen Test Page for an Account record
    */
   async gotoWithTestFlexipage(accountId: string): Promise<void> {
-    // Navigate with flexipageName parameter to force our custom flexipage
     const baseUrl = await this.getBaseUrl();
     await this.page.goto(
-      `${baseUrl}/lightning/r/Account/${accountId}/view?flexipageName=Account_Docgen_Test`
+      `${baseUrl}/lightning/n/Docgen_Test_Page?c__recordId=${accountId}`
     );
   }
 

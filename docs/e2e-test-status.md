@@ -45,10 +45,10 @@ E2E tests have been set up successfully with Playwright. Basic tests pass, but t
 
 ### 2. **Page Navigation Issue**
 - **Issue**: Navigation goes to Accounts list page (showing "Sales") instead of Account record page
-- **Expected URL**: `/lightning/r/Account/${accountId}/view?flexipageName=Account_Docgen_Test`
+- **Expected URL**: `/lightning/n/Docgen_Test_Page?c__recordId=${accountId}`
 - **Actual Behavior**: Lands on Accounts list view
 - **Possible Causes**:
-  - Flexipage not properly assigned to Account object
+  - Docgen Test Page not available in the org
   - URL parameter not being honored
   - Account record not found (404 redirect)
   - Session/authentication issue
@@ -69,19 +69,17 @@ E2E tests have been set up successfully with Playwright. Basic tests pass, but t
 
 1. Scratch org created and active
 2. Main metadata deployed successfully
-3. Test metadata deployed successfully (flexipage with correct template ID)
+3. Docgen Test Page available (App Page)
 4. Permission set assigned (Docgen_User)
 5. Test template created (ContentVersion ID: 068S900000HO8PFIA1)
 6. Playwright installed and configured
 7. Test mode enabled in DocgenController
-8. Flexipage structure corrected (template ID without leading space)
 
 ### Configuration Files
 
-- **Flexipage**: `force-app/test/default/flexipages/Account_Docgen_Test.flexipage-meta.xml`
-  - Template ID: `068S900000HO8PFIA1` ✅
-  - Component: `docgenButton` ✅
-  - Properties: buttonLabel, outputFormat, successMessage, templateId ✅
+- **Test Page**: `force-app/main/default/flexipages/Docgen_Test_Page.flexipage-meta.xml`
+  - Component: `docgenTestPage` ✅
+  - Template ID: passed via URL parameter `c__templateId` ✅
 
 - **Test Mode**: Enabled via Anonymous Apex
   - `DocgenController.enableTestMode()` called successfully ✅
@@ -103,9 +101,9 @@ const accountId = await createRecord('Account', {
 ### Priority 2: Debug Navigation
 
 1. Verify Account record is created successfully
-2. Check if URL with `flexipageName` parameter works manually
+2. Check if the Docgen Test Page URL works manually
 3. Add debug logging to see actual URL navigated to
-4. Consider using standard record page URL without flexipage parameter
+4. Consider using the Docgen Test Page URL with `c__recordId` instead of record page navigation
 
 ### Priority 3: Verify Test Mode Behavior
 
@@ -115,11 +113,10 @@ const accountId = await createRecord('Account', {
 
 ## Script Compatibility
 
-The setup script (`scripts/setup-scratch-org.sh`) works correctly with the new flexipage structure:
+The setup script (`scripts/setup-scratch-org.sh`) works correctly with the Docgen Test Page:
 - ✅ Creates test template via Python
 - ✅ Uploads to Salesforce Files
-- ✅ Would update flexipage if `REPLACE_WITH_TEMPLATE_ID` placeholder exists
-- ⚠️ Current flexipage already has correct ID, so sed replacement not needed
+- ✅ Prints the template ID to use with the Docgen Test Page URL
 
 ## Test Infrastructure
 
