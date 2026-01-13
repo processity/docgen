@@ -72,23 +72,36 @@ jobs:
         run: |
           echo "🔧 Disabling active duplicate rules..."
 
-          ACTIVE_RULE_IDS=$(sf data query --use-tooling-api --query "SELECT Id FROM DuplicateRule WHERE IsActive = true" --json | jq -r '.result.records[].Id')
+          ORG_ALIAS="${{ steps.create-org.outputs.org_alias }}"
 
-          if [ -z "$ACTIVE_RULE_IDS" ]; then
-            echo "✅ No active duplicate rules found"
+          DUP_LIST_JSON=$(sf org list metadata --metadata-type DuplicateRule --target-org "$ORG_ALIAS" --json)
+          DUP_LIST_STATUS=$(echo "$DUP_LIST_JSON" | jq -r '.status // 1')
+
+          if [ "$DUP_LIST_STATUS" != "0" ]; then
+            echo "❌ Failed to list duplicate rules"
+            echo "$DUP_LIST_JSON"
+            exit 1
+          fi
+
+          DUP_COUNT=$(echo "$DUP_LIST_JSON" | jq -r '.result | length')
+          if [ "$DUP_COUNT" = "0" ]; then
+            echo "✅ No duplicate rules found"
             exit 0
           fi
 
-          for RULE_ID in $ACTIVE_RULE_IDS; do
-            sf data update record --use-tooling-api --sobject DuplicateRule --record-id "$RULE_ID" --values "IsActive=false" || echo "⚠️  Failed to deactivate DuplicateRule $RULE_ID"
+          TMP_DUP_DIR=$(mktemp -d)
+          sf project retrieve start --metadata DuplicateRule --target-org "$ORG_ALIAS" --output-dir "$TMP_DUP_DIR" --wait 10
+
+          find "$TMP_DUP_DIR" -name "*.duplicateRule-meta.xml" -print0 | while IFS= read -r -d '' RULE_FILE; do
+            if grep -q "<isActive>" "$RULE_FILE"; then
+              perl -pi -e 's/<isActive>true<\\/isActive>/<isActive>false<\\/isActive>/g' "$RULE_FILE"
+            else
+              perl -0777 -pi -e 's#</DuplicateRule>#  <isActive>false</isActive>\\n</DuplicateRule>#' "$RULE_FILE"
+            fi
           done
 
-          REMAINING=$(sf data query --use-tooling-api --query "SELECT Id FROM DuplicateRule WHERE IsActive = true" --json | jq -r '.result.records | length')
-          if [ "$REMAINING" != "0" ]; then
-            echo "⚠️  ${REMAINING} duplicate rules still active"
-          else
-            echo "✅ All duplicate rules deactivated"
-          fi
+          sf project deploy start --source-dir "$TMP_DUP_DIR" --target-org "$ORG_ALIAS" --wait 10
+          echo "✅ Duplicate rules deactivated"
 
       - name: Configure External Credential with AAD secrets
         id: apex-config
