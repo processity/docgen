@@ -15,6 +15,32 @@ import { test, expect } from '../fixtures/salesforce.fixture';
 import { WorkerHelper } from '../utils/worker-helper';
 import { BatchHelper } from '../utils/batch-helper';
 import { ScratchOrgHelper } from '../utils/scratch-org';
+import * as fs from 'fs';
+import * as path from 'path';
+
+async function uploadTemplate(
+  orgHelper: ScratchOrgHelper,
+  templateFileName: string,
+  firstPublishLocationId: string
+): Promise<string> {
+  const templatePath = path.join(__dirname, '../fixtures', templateFileName);
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Template file not found: ${templatePath}`);
+  }
+
+  const templateBuffer = fs.readFileSync(templatePath);
+  const templateBase64 = templateBuffer.toString('base64');
+
+  const result = await orgHelper.createRecord('ContentVersion', {
+    Title: `E2E_${templateFileName}_${Date.now()}`,
+    PathOnClient: templateFileName,
+    VersionData: templateBase64,
+    FirstPublishLocationId: firstPublishLocationId
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  return result.id;
+}
 
 test.describe('BatchDocgenEnqueue E2E Tests', () => {
   let workerHelper: WorkerHelper;
@@ -223,31 +249,11 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
     const accountTemplateId = salesforce.testData.templateId;
     const recordsPerType = 5;
+    let contactTemplateId: string | null = null;
+    let leadTemplateId: string | null = null;
+    let contactTemplateContentVersionId: string | null = null;
+    let leadTemplateContentVersionId: string | null = null;
 
-    // Create templates for Contact and Lead with appropriate SOQL
-    console.log('\nCreating templates for Contact and Lead...');
-    const contactTemplateId = await orgHelper.createRecord('Docgen_Template__c', {
-      Name: `Contact_Template_${Date.now()}`,
-      DataSource__c: 'SOQL',
-      TemplateContentVersionId__c: salesforce.testData.contentVersionId,
-      SOQL__c: 'SELECT Id, Name, Email, Department FROM Contact WHERE Id = :recordId',
-      StoreMergedDocx__c: false,
-      ReturnDocxToBrowser__c: false
-    });
-
-    const leadTemplateId = await orgHelper.createRecord('Docgen_Template__c', {
-      Name: `Lead_Template_${Date.now()}`,
-      DataSource__c: 'SOQL',
-      TemplateContentVersionId__c: salesforce.testData.contentVersionId,
-      SOQL__c: 'SELECT Id, Name, Email, Company, Status FROM Lead WHERE Id = :recordId',
-      StoreMergedDocx__c: false,
-      ReturnDocxToBrowser__c: false
-    });
-
-    console.log(`✓ Created Contact template: ${contactTemplateId.id}`);
-    console.log(`✓ Created Lead template: ${leadTemplateId.id}`);
-
-    // Create test records for multiple object types
     console.log(`\nCreating test records for multiple object types...`);
 
     console.log(`  Creating ${recordsPerType} Accounts...`);
@@ -259,9 +265,52 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
     console.log(`  Creating ${recordsPerType} Leads...`);
     const leadIds = await batchHelper.createTestLeads(recordsPerType);
 
+    // Create templates for Contact and Lead with appropriate SOQL
+    console.log('\nCreating templates for Contact and Lead...');
+    contactTemplateContentVersionId = await uploadTemplate(
+      orgHelper,
+      'test-template-contact.docx',
+      contactIds[0]
+    );
+    leadTemplateContentVersionId = await uploadTemplate(
+      orgHelper,
+      'test-template-lead.docx',
+      leadIds[0]
+    );
+
+    const contactTemplate = await orgHelper.createRecord('Docgen_Template__c', {
+      Name: `Contact_Template_${Date.now()}`,
+      PrimaryParent__c: 'Contact',
+      DataSource__c: 'SOQL',
+      TemplateContentVersionId__c: contactTemplateContentVersionId,
+      SOQL__c: 'SELECT Id, FirstName, LastName, Email, Department FROM Contact WHERE Id = :recordId',
+      StoreMergedDocx__c: false,
+      ReturnDocxToBrowser__c: false
+    });
+
+    const leadTemplate = await orgHelper.createRecord('Docgen_Template__c', {
+      Name: `Lead_Template_${Date.now()}`,
+      PrimaryParent__c: 'Lead',
+      DataSource__c: 'SOQL',
+      TemplateContentVersionId__c: leadTemplateContentVersionId,
+      SOQL__c: 'SELECT Id, FirstName, LastName, Email, Company, Status FROM Lead WHERE Id = :recordId',
+      StoreMergedDocx__c: false,
+      ReturnDocxToBrowser__c: false
+    });
+
+    contactTemplateId = contactTemplate.id;
+    leadTemplateId = leadTemplate.id;
+
+    console.log(`✓ Created Contact template: ${contactTemplateId}`);
+    console.log(`✓ Created Lead template: ${leadTemplateId}`);
+
     console.log(`✓ Created ${accountIds.length + contactIds.length + leadIds.length} records across 3 object types`);
 
     try {
+      if (!contactTemplateId || !leadTemplateId) {
+        throw new Error('Contact/Lead template IDs were not created');
+      }
+
       // Execute 3 separate batches (one per object type with appropriate template)
       console.log('\nExecuting batch for Accounts...');
       const accountBatchJobId = await batchHelper.executeBatchEnqueue({
@@ -273,7 +322,7 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
       console.log('Executing batch for Contacts...');
       const contactBatchJobId = await batchHelper.executeBatchEnqueue({
-        templateId: contactTemplateId.id,
+        templateId: contactTemplateId,
         recordIds: contactIds,
         outputFormat: 'PDF',
         parentField: 'Contact__c'
@@ -281,7 +330,7 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
 
       console.log('Executing batch for Leads...');
       const leadBatchJobId = await batchHelper.executeBatchEnqueue({
-        templateId: leadTemplateId.id,
+        templateId: leadTemplateId,
         recordIds: leadIds,
         outputFormat: 'PDF',
         parentField: 'Lead__c'
@@ -338,8 +387,19 @@ test.describe('BatchDocgenEnqueue E2E Tests', () => {
       // Cleanup templates
       console.log('\nCleaning up templates...');
       try {
-        await orgHelper.deleteRecords('Docgen_Template__c', [contactTemplateId.id, leadTemplateId.id]);
-        console.log('✓ Templates deleted');
+        const templateIds = [contactTemplateId, leadTemplateId].filter(
+          (id): id is string => !!id
+        );
+        if (templateIds.length) {
+          await orgHelper.deleteRecords('Docgen_Template__c', templateIds);
+        }
+        const contentVersionIds = [contactTemplateContentVersionId, leadTemplateContentVersionId].filter(
+          (id): id is string => !!id
+        );
+        if (contentVersionIds.length) {
+          await orgHelper.deleteRecords('ContentVersion', contentVersionIds);
+        }
+        console.log('✓ Templates and ContentVersions deleted');
       } catch (error) {
         console.warn('⚠️  Failed to delete templates:', error);
       }
