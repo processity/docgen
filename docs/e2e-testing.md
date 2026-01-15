@@ -213,11 +213,12 @@ test('test name', async ({ salesforce }) => {
 6. Authenticate to Dev Hub (using `SFDX_AUTH_URL` secret)
 7. Create scratch org (1-day duration)
 8. Deploy main metadata
-9. Get org credentials (instance URL, access token)
-10. Run Playwright tests
-11. Upload test results and reports as artifacts
-12. Delete scratch org (cleanup)
-13. Comment on PR with test summary
+9. Deploy test metadata
+10. Get org credentials (instance URL, access token)
+11. Run Playwright tests
+12. Upload test results and reports as artifacts
+13. Delete scratch org (cleanup)
+14. Comment on PR with test summary
 
 **Triggers**:
 - Pull requests to `main`
@@ -248,12 +249,13 @@ sf org set default --org docgen-e2e
 **Symptom**: `Locator 'c-docgen-button' not found`
 
 **Causes**:
-- Docgen Test Page not deployed
+- Test metadata not deployed
+- Flexipage not assigned to Account record
 - Component not on page
 
 **Fix**:
 ```bash
-sf project deploy start --source-dir force-app/main
+sf project deploy start --source-dir force-app/test
 sf org open  # Manually verify component is visible
 ```
 

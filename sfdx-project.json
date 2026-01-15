@@ -9,6 +9,10 @@
       "versionDescription": "Document generation package for Salesforce - Generate DOCX documents from templates"
     },
     {
+      "path": "force-app/test",
+      "default": false
+    },
+    {
       "path": "force-app/unpackaged",
       "default": false
     }

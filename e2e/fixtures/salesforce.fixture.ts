@@ -267,22 +267,22 @@ Then check logs at: Setup > Debug Logs
 }
 
 /**
- * Verify the Docgen Test Page flexipage is available
- * This ensures the test page exists for UI validation
+ * Activate the test flexipage as org default for Account
+ * This makes the docgenButton component visible on Account record pages
  */
 async function activateTestFlexipage(): Promise<void> {
   try {
     // Query for the flexipage
-    const flexipageQuery = `SELECT Id, DeveloperName FROM FlexiPage WHERE DeveloperName = 'Docgen_Test_Page' LIMIT 1`;
+    const flexipageQuery = `SELECT Id, DeveloperName FROM FlexiPage WHERE DeveloperName = 'Account_Docgen_Test' LIMIT 1`;
     const flexipages = await querySalesforce(flexipageQuery);
 
     if (flexipages.length === 0) {
-      console.log('⚠️  Warning: Docgen Test Page flexipage not found, tests may fail');
+      console.log('⚠️  Warning: Test flexipage not found, tests may fail');
       return;
     }
 
     const flexipageId = flexipages[0].Id;
-    console.log(`✓ Found Docgen Test Page flexipage: ${flexipageId}`);
+    console.log(`✓ Found test flexipage: ${flexipageId}`);
 
     // Note: FlexiPage activation requires UI metadata API which is complex
     // For now, we'll document that tests need manual activation or use a different approach

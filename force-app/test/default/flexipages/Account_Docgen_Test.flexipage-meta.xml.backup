@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DEPRECATED: This Record Page is no longer used as of 2025-11-13.
+    E2E tests now use the Docgen_Test_Page App Page instead.
+    Kept for reference only. Can be safely deleted after validation.
+-->
+<FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <flexiPageRegions>
+        <itemInstances>
+            <componentInstance>
+                <componentInstanceProperties>
+                    <name>buttonLabel</name>
+                    <value>Generate Test Document</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>outputFormat</name>
+                    <value>PDF</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>successMessage</name>
+                    <value>Test document generated successfully!</value>
+                </componentInstanceProperties>
+                <componentInstanceProperties>
+                    <name>templateName</name>
+                    <value>E2E_Test_Template</value>
+                </componentInstanceProperties>
+                <componentName>docgenButton</componentName>
+                <identifier>docgenButtonInstance</identifier>
+            </componentInstance>
+        </itemInstances>
+        <name>main</name>
+        <type>Region</type>
+    </flexiPageRegions>
+    <masterLabel>Account Docgen Test Page</masterLabel>
+    <sobjectType>Account</sobjectType>
+    <template>
+        <name>flexipage:recordHomeSingleColNoHeaderTemplateDesktop</name>
+    </template>
+    <type>RecordPage</type>
+</FlexiPage>

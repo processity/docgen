@@ -143,6 +143,12 @@ sf project deploy start --source-dir force-app/main --wait 10
 
 echo "✓ Main metadata deployed successfully"
 
+echo ""
+echo "📤 Deploying test metadata to scratch org..."
+sf project deploy start --source-dir force-app/test --wait 10
+
+echo "✓ Test metadata deployed successfully"
+
 # Create test template and upload to Salesforce Files
 echo ""
 echo "📄 Creating test template for E2E tests..."
@@ -216,12 +222,32 @@ rm -rf "$TEST_TEMPLATE_DIR"
 
 if [ -n "$TEMPLATE_ID" ]; then
     echo "✓ Test template created with ContentVersion ID: $TEMPLATE_ID"
-    echo "ℹ️  Use this template ID with the Docgen Test Page (App Page) via URL parameter:"
-    echo "   /lightning/n/Docgen_Test_Page?c__templateId=$TEMPLATE_ID"
+
+    # Update the flexipage with the actual template ID
+    FLEXIPAGE_FILE="force-app/test/default/flexipages/Account_Docgen_Test.flexipage-meta.xml"
+
+    if [ -f "$FLEXIPAGE_FILE" ]; then
+        echo "📝 Updating test flexipage with template ID..."
+
+        # Create backup
+        cp "$FLEXIPAGE_FILE" "${FLEXIPAGE_FILE}.backup"
+
+        # Replace placeholder with actual ID
+        sed -i.tmp "s/REPLACE_WITH_TEMPLATE_ID/$TEMPLATE_ID/g" "$FLEXIPAGE_FILE"
+        rm -f "${FLEXIPAGE_FILE}.tmp"
+
+        # Redeploy test metadata with updated flexipage
+        echo "📤 Redeploying test metadata with updated template ID..."
+        sf project deploy start --source-dir force-app/test --wait 10
+
+        echo "✓ Test flexipage updated and redeployed with template ID: $TEMPLATE_ID"
+    else
+        echo "⚠️  Warning: Could not find flexipage file at $FLEXIPAGE_FILE"
+    fi
     echo ""
 else
     echo "⚠️  Warning: Could not extract ContentVersion ID from Apex output"
-    echo "You may need to manually create a template and use its ID on the Docgen Test Page"
+    echo "You may need to manually create a template and update the flexipage"
 fi
 
 # Assign permission set to the user
@@ -283,7 +309,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ Scratch org setup complete!"
 echo ""
 echo "Configured components:"
-echo "  ✓ Metadata deployed (main)"
+echo "  ✓ Metadata deployed (main + test)"
 echo "  ✓ Permission set assigned (Docgen_User)"
 echo "  ✓ External Credential configured with AAD"
 echo "  ✓ Custom Settings pointing to CI Named Credential"

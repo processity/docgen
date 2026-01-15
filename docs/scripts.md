@@ -35,12 +35,13 @@ export AAD_CLIENT_SECRET="your-secret-here"
 1. ✅ Validates `AAD_CLIENT_ID` and `AAD_CLIENT_SECRET` are set (fails early if not)
 2. ✅ Creates scratch org (default: 7 days, alias: docgen-dev)
 3. ✅ Deploys main metadata (custom objects, Apex classes, LWC components)
-4. ✅ Creates and uploads test DOCX template
-5. ✅ Assigns Docgen_User permission set
-6. ✅ Configures External Credential with AAD credentials
-7. ✅ Configures Custom Settings to use CI Named Credential
-8. ✅ Tests Named Credential connectivity with backend
-9. ✅ Runs Apex tests to verify deployment
+4. ✅ Deploys test metadata
+5. ✅ Creates and uploads test DOCX template
+6. ✅ Assigns Docgen_User permission set
+7. ✅ Configures External Credential with AAD credentials
+8. ✅ Configures Custom Settings to use CI Named Credential
+9. ✅ Tests Named Credential connectivity with backend
+10. ✅ Runs Apex tests to verify deployment
 
 **Duration:** ~5-7 minutes
 

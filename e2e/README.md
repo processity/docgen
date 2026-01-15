@@ -55,6 +55,7 @@ npm run e2e:setup
 This script:
 - Creates a scratch org (alias: `docgen-e2e`, 7-day duration)
 - Deploys main metadata (`force-app/main`)
+- Deploys test metadata (`force-app/test`)
 - Runs Apex tests
 - Opens the org in a browser
 
@@ -276,8 +277,9 @@ sf org set default --org docgen-e2e
 **Problem**: `docgenButton` component not found on page
 
 **Solution**:
-1. Check that main metadata deployed: `sf project deploy start --source-dir force-app/main`
-2. Verify the Docgen Test Page exists: `sf org open` and navigate to App Launcher → Docgen Test Page
+1. Check that test metadata deployed: `sf project deploy start --source-dir force-app/test`
+2. Verify flexipage exists: `sf org open` and navigate to Account record page
+3. Manually assign flexipage to Account record (Setup > Lightning App Builder)
 
 ### Tests Timeout
 
@@ -303,7 +305,7 @@ sf org set default --org docgen-e2e
 Tests run automatically in GitHub Actions (`.github/workflows/e2e-tests.yml`):
 
 1. Create ephemeral scratch org
-2. Deploy main metadata
+2. Deploy main + test metadata
 3. Run Playwright tests
 4. Upload test results and reports as artifacts
 5. Delete scratch org
