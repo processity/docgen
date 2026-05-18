@@ -29,6 +29,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve package version
+        id: package-version
+        run: |
+          PACKAGE_VERSION="$(node scripts/latest-package-version.js)"
+          echo "Resolved package: ${PACKAGE_VERSION}"
+          echo "package=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli
 
@@ -63,10 +70,33 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy Salesforce metadata
+      - name: Install Docgen unlocked package
+        env:
+          DOCGEN_PACKAGE_VERSION: ${{ steps.package-version.outputs.package }}
         run: |
-          sf project deploy start --source-dir force-app --wait 10
-          echo "✅ Metadata deployed"
+          sf package install \
+            --package "${DOCGEN_PACKAGE_VERSION}" \
+            --target-org ${{ steps.create-org.outputs.org_alias }} \
+            --wait 20 \
+            --publish-wait 20 \
+            --apex-compile package \
+            --no-prompt
+          echo "✅ Package installed"
+
+      - name: Deploy supplemental Salesforce metadata
+        run: |
+          # Deploy custom metadata records and test-only metadata without connected apps.
+          sf project deploy start \
+            --source-dir force-app/unpackaged/default/customMetadata \
+            --target-org ${{ steps.create-org.outputs.org_alias }} \
+            --wait 10
+
+          sf project deploy start \
+            --source-dir force-app/test \
+            --target-org ${{ steps.create-org.outputs.org_alias }} \
+            --wait 10
+
+          echo "✅ Supplemental metadata deployed"
 
       - name: Configure External Credential with AAD secrets
         id: apex-config

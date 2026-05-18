@@ -53,9 +53,9 @@ public class DocgenTestDataFactory {
         TestScenario scenario = new TestScenario();
         scenario.objectApiName = objectApiName;
 
-        // Create test record based on object type
+        // Create test record based on object type (bypass duplicate rules)
         scenario.record = createTestRecord(objectApiName);
-        insert scenario.record;
+        insertWithDuplicateBypass(scenario.record);
         scenario.recordId = scenario.record.Id;
 
         // Get configuration to find lookup field name
@@ -79,13 +79,13 @@ public class DocgenTestDataFactory {
         BulkTestScenario scenario = new BulkTestScenario();
         scenario.objectApiName = objectApiName;
 
-        // Create multiple test records
+        // Create multiple test records (bypass duplicate rules)
         for (Integer i = 0; i < recordCount; i++) {
             SObject record = createTestRecord(objectApiName, i);
             scenario.records.add(record);
         }
 
-        insert scenario.records;
+        insertWithDuplicateBypass(scenario.records);
 
         // Extract IDs
         for (SObject record : scenario.records) {
@@ -126,7 +126,7 @@ public class DocgenTestDataFactory {
             BillingCity = 'San Francisco',
             AnnualRevenue = 1000000
         );
-        insert acc;
+        insertWithDuplicateBypass(acc);
         return acc;
     }
 
@@ -144,7 +144,7 @@ public class DocgenTestDataFactory {
                 AnnualRevenue = 100000 * i
             ));
         }
-        insert accounts;
+        insertWithDuplicateBypass(accounts);
         return accounts;
     }
 
@@ -182,7 +182,7 @@ public class DocgenTestDataFactory {
             Email = sanitizedFirst + '.' + sanitizedLast + '@example.com',
             AccountId = accountId
         );
-        insert con;
+        insertWithDuplicateBypass(con);
         return con;
     }
 
@@ -202,7 +202,7 @@ public class DocgenTestDataFactory {
                 AccountId = accountId
             ));
         }
-        insert contacts;
+        insertWithDuplicateBypass(contacts);
         return contacts;
     }
 
@@ -229,7 +229,7 @@ public class DocgenTestDataFactory {
             Email = firstName.toLowerCase() + '.' + lastName.toLowerCase() + '@example.com',
             Status = 'Open - Not Contacted'
         );
-        insert ld;
+        insertWithDuplicateBypass(ld);
         return ld;
     }
 
@@ -249,7 +249,7 @@ public class DocgenTestDataFactory {
                 Status = 'Open - Not Contacted'
             ));
         }
-        insert leads;
+        insertWithDuplicateBypass(leads);
         return leads;
     }
 
@@ -285,7 +285,7 @@ public class DocgenTestDataFactory {
             AccountId = accountId,
             Amount = 50000
         );
-        insert opp;
+        insertWithDuplicateBypass(opp);
         return opp;
     }
 
@@ -306,7 +306,7 @@ public class DocgenTestDataFactory {
                 Amount = 50000 * i
             ));
         }
-        insert opps;
+        insertWithDuplicateBypass(opps);
         return opps;
     }
 
@@ -341,7 +341,7 @@ public class DocgenTestDataFactory {
             Origin = 'Web',
             AccountId = accountId
         );
-        insert cs;
+        insertWithDuplicateBypass(cs);
         return cs;
     }
 
@@ -361,7 +361,7 @@ public class DocgenTestDataFactory {
                 AccountId = accountId
             ));
         }
-        insert cases;
+        insertWithDuplicateBypass(cases);
         return cases;
     }
 
@@ -386,7 +386,7 @@ public class DocgenTestDataFactory {
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = true
         );
-        insert template;
+        insertWithDuplicateBypass(template);
         return template;
     }
 
@@ -407,7 +407,7 @@ public class DocgenTestDataFactory {
             StoreMergedDocx__c = false,
             ReturnDocxToBrowser__c = true
         );
-        insert template;
+        insertWithDuplicateBypass(template);
         return template;
     }
 
@@ -446,7 +446,7 @@ public class DocgenTestDataFactory {
             ReturnDocxToBrowser__c = returnDocxToBrowser,
             ReturnMultipleRecords__c = returnMultipleRecords
         );
-        insert template;
+        insertWithDuplicateBypass(template);
         return template;
     }
 
@@ -534,7 +534,7 @@ public class DocgenTestDataFactory {
             RequestHash__c = 'hash-' + System.currentTimeMillis() + '-' + Math.random(),
             CorrelationId__c = 'corr-' + System.currentTimeMillis()
         );
-        insert doc;
+        insertWithDuplicateBypass(doc);
         return doc;
     }
 
@@ -575,7 +575,7 @@ public class DocgenTestDataFactory {
             RequestHash__c = 'hash-' + System.currentTimeMillis() + '-' + Math.random(),
             CorrelationId__c = 'corr-' + System.currentTimeMillis()
         );
-        insert doc;
+        insertWithDuplicateBypass(doc);
         return doc;
     }
 
@@ -624,9 +624,9 @@ public class DocgenTestDataFactory {
                 Status = 'Open - Not Contacted'
             );
         } else if (objectApiName == 'Opportunity') {
-            // Need an Account for Opportunity
+            // Need an Account for Opportunity (bypass duplicate rules)
             Account acc = new Account(Name = 'Test Account for Opp' + suffix);
-            insert acc;
+            insertWithDuplicateBypass(acc);
 
             return new Opportunity(
                 Name = 'Test Opportunity' + suffix,
@@ -636,9 +636,9 @@ public class DocgenTestDataFactory {
                 Amount = 50000
             );
         } else if (objectApiName == 'Case') {
-            // Optionally link to Account
+            // Optionally link to Account (bypass duplicate rules)
             Account acc = new Account(Name = 'Test Account for Case' + suffix);
-            insert acc;
+            insertWithDuplicateBypass(acc);
 
             return new Case(
                 Subject = 'Test Case' + suffix,
@@ -670,7 +670,7 @@ public class DocgenTestDataFactory {
             ReturnDocxToBrowser__c = true
         );
 
-        insert template;
+        insertWithDuplicateBypass(template);
         return template;
     }
 
@@ -755,7 +755,7 @@ public class DocgenTestDataFactory {
             IsActive__c = true
         );
 
-        insert composite;
+        insertWithDuplicateBypass(composite);
         return composite;
     }
 
@@ -782,7 +782,7 @@ public class DocgenTestDataFactory {
             IsActive__c = true
         );
 
-        insert junction;
+        insertWithDuplicateBypass(junction);
         return junction;
     }
 
@@ -802,9 +802,9 @@ public class DocgenTestDataFactory {
         CompositeScenario scenario = new CompositeScenario();
         scenario.objectApiName = objectApiName;
 
-        // Create test record
+        // Create test record (bypass duplicate rules)
         scenario.testRecord = createTestRecord(objectApiName);
-        insert scenario.testRecord;
+        insertWithDuplicateBypass(scenario.testRecord);
         scenario.testRecordId = scenario.testRecord.Id;
 
         // Create composite document
@@ -834,7 +834,7 @@ public class DocgenTestDataFactory {
                 StoreMergedDocx__c = false,
                 ReturnDocxToBrowser__c = true
             );
-            insert template;
+            insertWithDuplicateBypass(template);
             scenario.templates.add(template);
 
             // Create junction record
@@ -854,4 +854,34 @@ public class DocgenTestDataFactory {
      * Custom exception for unsupported object types
      */
     public class UnsupportedObjectException extends Exception {}
+
+    // =========================================================================
+    // DUPLICATE RULE BYPASS HELPER
+    // =========================================================================
+
+    /**
+     * Insert a record while bypassing duplicate rules.
+     * Use this in test methods to avoid duplicate detection blocking test data creation.
+     *
+     * @param record - SObject to insert
+     */
+    private static void insertWithDuplicateBypass(SObject record) {
+        Database.DMLOptions dmlOptions = new Database.DMLOptions();
+        dmlOptions.DuplicateRuleHeader.allowSave = true;
+        dmlOptions.DuplicateRuleHeader.runAsCurrentUser = true;
+        Database.insert(record, dmlOptions);
+    }
+
+    /**
+     * Insert multiple records while bypassing duplicate rules.
+     * Use this in test methods to avoid duplicate detection blocking test data creation.
+     *
+     * @param records - List of SObjects to insert
+     */
+    private static void insertWithDuplicateBypass(List<SObject> records) {
+        Database.DMLOptions dmlOptions = new Database.DMLOptions();
+        dmlOptions.DuplicateRuleHeader.allowSave = true;
+        dmlOptions.DuplicateRuleHeader.runAsCurrentUser = true;
+        Database.insert(records, dmlOptions);
+    }
 }

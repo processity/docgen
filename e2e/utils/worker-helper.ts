@@ -296,24 +296,39 @@ System.debug('WORKER_STATS:' + JSON.serialize(stats));
    */
   async verifyContentDocumentLinks(
     contentDocumentId: string,
-    expectedParentIds: string[]
+    expectedParentIds: string[],
+    maxWaitMs: number = 0,
+    pollIntervalMs: number = 2000
   ): Promise<boolean> {
-    const parentIdList = expectedParentIds.map(id => `'${id}'`).join(',');
-    const query = `
-      SELECT Id, LinkedEntityId, ShareType, Visibility
-      FROM ContentDocumentLink
-      WHERE ContentDocumentId = '${contentDocumentId}'
-      AND LinkedEntityId IN (${parentIdList})
-    `;
+    const startTime = Date.now();
 
-    const links = await this.orgHelper.query<{
-      Id: string;
-      LinkedEntityId: string;
-    }>(query);
+    while (true) {
+      const parentIdList = expectedParentIds.map(id => `'${id}'`).join(',');
+      const query = `
+        SELECT Id, LinkedEntityId, ShareType, Visibility
+        FROM ContentDocumentLink
+        WHERE ContentDocumentId = '${contentDocumentId}'
+        AND LinkedEntityId IN (${parentIdList})
+      `;
 
-    // Verify all expected parents are linked
-    const linkedParentIds = links.map(link => link.LinkedEntityId);
-    return expectedParentIds.every(parentId => linkedParentIds.includes(parentId));
+      const links = await this.orgHelper.query<{
+        Id: string;
+        LinkedEntityId: string;
+      }>(query);
+
+      const linkedParentIds = links.map(link => link.LinkedEntityId);
+      const allLinked = expectedParentIds.every(parentId => linkedParentIds.includes(parentId));
+
+      if (allLinked) {
+        return true;
+      }
+
+      if (maxWaitMs <= 0 || Date.now() - startTime >= maxWaitMs) {
+        return false;
+      }
+
+      await this.page.waitForTimeout(pollIntervalMs);
+    }
   }
 
   /**
