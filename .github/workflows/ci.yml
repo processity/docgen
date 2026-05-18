@@ -32,6 +32,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve package version
+        id: package-version
+        run: |
+          PACKAGE_VERSION="$(node scripts/latest-package-version.js)"
+          echo "Resolved package: ${PACKAGE_VERSION}"
+          echo "package=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Install LibreOffice
         run: |
           sudo apt-get update
@@ -85,9 +92,29 @@ jobs:
           SCRATCH_ORG_AUTH_URL=$(sf org display --verbose --json --target-org ci-test-org | jq -r '.result.sfdxAuthUrl')
           echo "scratch_org_auth_url=$SCRATCH_ORG_AUTH_URL" >> $GITHUB_OUTPUT
 
-          # Deploy metadata to scratch org
-          echo "📤 Deploying metadata to scratch org..."
-          sf project deploy start --source-dir force-app --wait 10
+          # Install package metadata exactly as subscribers receive it.
+          echo "📦 Installing Docgen unlocked package: ${DOCGEN_PACKAGE_VERSION}"
+          sf package install \
+            --package "${DOCGEN_PACKAGE_VERSION}" \
+            --target-org ci-test-org \
+            --wait 20 \
+            --publish-wait 20 \
+            --apex-compile package \
+            --no-prompt
+
+          # Deploy only scratch-org supplemental metadata.
+          # Do not deploy force-app/unpackaged/default/connectedApps in CI.
+          echo "📤 Deploying supported-object custom metadata..."
+          sf project deploy start \
+            --source-dir force-app/unpackaged/default/customMetadata \
+            --target-org ci-test-org \
+            --wait 10
+
+          echo "📤 Deploying test metadata..."
+          sf project deploy start \
+            --source-dir force-app/test \
+            --target-org ci-test-org \
+            --wait 10
 
           # Assign permission set to user
           echo "🔐 Assigning Docgen_User permission set..."
@@ -96,6 +123,7 @@ jobs:
           echo "✅ Scratch org created and configured successfully"
         env:
           DEVHUB_SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+          DOCGEN_PACKAGE_VERSION: ${{ steps.package-version.outputs.package }}
         continue-on-error: true
 
       - name: Run integration tests
@@ -208,6 +236,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve package version
+        id: package-version
+        run: |
+          PACKAGE_VERSION="$(node scripts/latest-package-version.js)"
+          echo "Resolved package: ${PACKAGE_VERSION}"
+          echo "package=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Install Salesforce CLI
         run: |
           npm install -g @salesforce/cli
@@ -225,16 +260,38 @@ jobs:
         run: |
           sf org create scratch --definition-file config/project-scratch-def.json --alias ciorg --set-default --duration-days 1 --wait 10
 
-      - name: Deploy metadata to Scratch Org
+      - name: Install package in Scratch Org
+        if: env.SFDX_AUTH_URL != ''
+        env:
+          DOCGEN_PACKAGE_VERSION: ${{ steps.package-version.outputs.package }}
+        run: |
+          sf package install \
+            --package "${DOCGEN_PACKAGE_VERSION}" \
+            --target-org ciorg \
+            --wait 20 \
+            --publish-wait 20 \
+            --apex-compile package \
+            --no-prompt
+
+      - name: Deploy supplemental metadata to Scratch Org
         if: env.SFDX_AUTH_URL != ''
         run: |
-          sf project deploy start --source-dir force-app --wait 10
+          # Deploy custom metadata records and test-only metadata without connected apps.
+          sf project deploy start \
+            --source-dir force-app/unpackaged/default/customMetadata \
+            --target-org ciorg \
+            --wait 10
+
+          sf project deploy start \
+            --source-dir force-app/test \
+            --target-org ciorg \
+            --wait 10
 
       - name: Run Apex tests with coverage
         if: env.SFDX_AUTH_URL != ''
         run: |
-          sf apex run test --test-level RunLocalTests --code-coverage --result-format json --output-dir coverage-apex --wait 10
-          sf apex run test --test-level RunLocalTests --code-coverage --result-format human --wait 10 > apex-test-results.txt
+          sf apex run test --test-level RunLocalTests --code-coverage --result-format json --output-dir coverage-apex --target-org ciorg --wait 10
+          sf apex run test --test-level RunLocalTests --code-coverage --result-format human --target-org ciorg --wait 10 > apex-test-results.txt
           cat apex-test-results.txt
 
       - name: Upload Apex test results

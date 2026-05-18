@@ -68,6 +68,15 @@ fi
 
 echo "✓ Salesforce CLI version: $(sf version)"
 
+if ! command -v node &> /dev/null; then
+    echo "❌ Error: Node.js is not installed"
+    echo "Install it with: https://nodejs.org/"
+    exit 1
+fi
+
+DOCGEN_PACKAGE_VERSION="$(node scripts/latest-package-version.js)"
+echo "✓ Latest package alias from sfdx-project.json: $DOCGEN_PACKAGE_VERSION"
+
 # Check if Dev Hub is authenticated
 if ! sf org list --all | grep -q "DevHub"; then
     echo "⚠️  Warning: No Dev Hub org found with alias 'DevHub'"
@@ -136,16 +145,31 @@ else
     echo "⚠️  Warning: Could not extract SFDX_AUTH_URL from scratch org"
 fi
 
-# Deploy metadata
+# Install package and supplemental metadata
 echo ""
-echo "📤 Deploying main metadata to scratch org..."
-sf project deploy start --source-dir force-app/main --wait 10
+echo "📦 Installing Docgen unlocked package: $DOCGEN_PACKAGE_VERSION"
+sf package install \
+  --package "$DOCGEN_PACKAGE_VERSION" \
+  --target-org "$ORG_ALIAS" \
+  --wait 20 \
+  --publish-wait 20 \
+  --apex-compile package \
+  --no-prompt
 
-echo "✓ Main metadata deployed successfully"
+echo "✓ Package installed successfully"
+
+echo ""
+echo "📤 Deploying supported-object custom metadata..."
+sf project deploy start \
+  --source-dir force-app/unpackaged/default/customMetadata \
+  --target-org "$ORG_ALIAS" \
+  --wait 10
+
+echo "✓ Custom metadata deployed successfully"
 
 echo ""
 echo "📤 Deploying test metadata to scratch org..."
-sf project deploy start --source-dir force-app/test --wait 10
+sf project deploy start --source-dir force-app/test --target-org "$ORG_ALIAS" --wait 10
 
 echo "✓ Test metadata deployed successfully"
 
@@ -238,7 +262,7 @@ if [ -n "$TEMPLATE_ID" ]; then
 
         # Redeploy test metadata with updated flexipage
         echo "📤 Redeploying test metadata with updated template ID..."
-        sf project deploy start --source-dir force-app/test --wait 10
+        sf project deploy start --source-dir force-app/test --target-org "$ORG_ALIAS" --wait 10
 
         echo "✓ Test flexipage updated and redeployed with template ID: $TEMPLATE_ID"
     else
@@ -309,7 +333,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ Scratch org setup complete!"
 echo ""
 echo "Configured components:"
-echo "  ✓ Metadata deployed (main + test)"
+echo "  ✓ Package installed ($DOCGEN_PACKAGE_VERSION)"
+echo "  ✓ Supplemental metadata deployed (customMetadata + test)"
 echo "  ✓ Permission set assigned (Docgen_User)"
 echo "  ✓ External Credential configured with AAD"
 echo "  ✓ Custom Settings pointing to CI Named Credential"
