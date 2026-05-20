@@ -53,7 +53,11 @@ export interface CorrelationContext {
 export interface DocgenOptions {
   storeMergedDocx: boolean;
   returnDocxToBrowser: boolean;
+  readOnlyWord?: boolean;
+  watermarkText?: string | null;
 }
+
+export type DocgenOutputFormat = 'PDF' | 'DOCX' | 'PPTX';
 
 /**
  * Parent record IDs for ContentDocumentLink creation
@@ -147,7 +151,7 @@ export interface DocgenRequest {
 
   // Common fields
   outputFileName: string;
-  outputFormat: 'PDF' | 'DOCX';
+  outputFormat: DocgenOutputFormat;
   locale: string;
   timezone: string;
   options: DocgenOptions;
@@ -218,6 +222,8 @@ export interface MergeOptions {
   locale: string;
   timezone: string;
   imageAllowlist?: string[];
+  readOnlyWord?: boolean;
+  watermarkText?: string | null;
 }
 
 /**
@@ -414,6 +420,15 @@ export interface QueuedDocument {
   Id: string;
   Status__c: 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
   RequestJSON__c: string;
+  RequestJSON02__c?: string | null;
+  RequestJSON03__c?: string | null;
+  RequestJSON04__c?: string | null;
+  RequestJSON05__c?: string | null;
+  RequestJSON06__c?: string | null;
+  RequestJSON07__c?: string | null;
+  RequestJSON08__c?: string | null;
+  RequestJSON09__c?: string | null;
+  RequestJSON10__c?: string | null;
   CorrelationId__c: string;
   Template__c: string | null; // Nullable for composite documents
   Attempts__c: number;

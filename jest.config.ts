@@ -5,6 +5,7 @@ const config: Config.InitialOptions = {
   testEnvironment: 'node',
   roots: ['<rootDir>/test'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
+  testPathIgnorePatterns: ['<rootDir>/test/.*\\.integration\\.test\\.ts$'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },

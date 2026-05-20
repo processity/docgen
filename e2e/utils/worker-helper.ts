@@ -38,7 +38,7 @@ export class WorkerHelper {
   constructor(
     private page: Page,
     private orgHelper: ScratchOrgHelper,
-    private backendUrl: string
+    _backendUrl: string
   ) {}
 
   /**

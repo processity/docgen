@@ -2,7 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "rootDir": ".",
+    "rootDir": "..",
     "noEmit": true,
     "paths": {
       "@fixtures/*": ["./fixtures/*"],

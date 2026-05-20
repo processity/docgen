@@ -13,7 +13,7 @@ jobs:
   e2e-tests:
     name: Setup Org, Deploy Backend, and Run E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment: ci
 
     steps:
@@ -325,6 +325,16 @@ jobs:
           echo "Last response:"
           cat /tmp/readyz-response.json 2>/dev/null || echo "No response captured"
           exit 1
+
+      - name: Configure CI Named Credential URL
+        run: |
+          ./scripts/configure-named-credential.sh "${{ steps.create-org.outputs.org_alias }}" "${BACKEND_URL}"
+
+      - name: Verify Salesforce Named Credential callout
+        run: |
+          sf apex run \
+            --file scripts/TestNamedCredentialCallout.apex \
+            --target-org ${{ steps.create-org.outputs.org_alias }}
 
       - name: Run Playwright E2E tests
         run: npm run test:e2e

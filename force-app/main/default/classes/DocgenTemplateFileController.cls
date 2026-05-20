@@ -1,6 +1,6 @@
 /**
  * Controller for DocgenTemplateFileManager LWC
- * Manages template DOCX files and version history for both Docgen_Template__c and Composite_Document__c
+ * Manages template DOCX/PPTX files and version history for both Docgen_Template__c and Composite_Document__c
  */
 public with sharing class DocgenTemplateFileController {
 
@@ -53,12 +53,12 @@ public with sharing class DocgenTemplateFileController {
     }
 
     /**
-     * Get all DOCX files linked to a record
+     * Get all DOCX/PPTX files linked to a record
      * Returns ContentVersion records with file metadata
      * Works with both Docgen_Template__c and Composite_Document__c
      *
      * @param recordId Record Id (can be either object type)
-     * @return List of ContentVersion records (DOCX only)
+     * @return List of ContentVersion records (DOCX/PPTX only)
      */
     @AuraEnabled
     public static List<ContentVersion> getTemplateFiles(Id recordId) {
@@ -80,7 +80,7 @@ public with sharing class DocgenTemplateFileController {
                 documentIds.add(link.ContentDocumentId);
             }
 
-            // Get all versions of these documents (DOCX only)
+            // Get all versions of these documents (DOCX/PPTX only)
             // Return all versions, not just latest, so user can see history
             List<ContentVersion> versions = [
                 SELECT Id, Title, FileExtension, VersionNumber,
@@ -88,7 +88,7 @@ public with sharing class DocgenTemplateFileController {
                        ContentSize, IsLatest
                 FROM ContentVersion
                 WHERE ContentDocumentId IN :documentIds
-                AND FileExtension = 'docx'
+                AND FileExtension IN ('docx', 'pptx')
                 ORDER BY ContentDocumentId, VersionNumber DESC
             ];
 

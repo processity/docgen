@@ -79,6 +79,45 @@ private class ContentDocumentLinkHelperTest {
         Assert.areEqual('AllUsers', links[0].Visibility, 'Visibility should be AllUsers');
     }
 
+    @isTest
+    static void testCreateLinksFromSegmentedRequestJSON() {
+        Id templateId = createTestTemplate();
+        Account acc = DocgenTestDataFactory.createAccount('Segmented Request Account');
+        ContentVersion cv = createTestContentVersion('Segmented Request Document');
+
+        String padding = '';
+        for (Integer i = 0; i < 1400; i++) {
+            padding += 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+        }
+        String requestJSON = '{"padding":"' + padding + '","parents":{"AccountId":"' + acc.Id + '"}}';
+
+        Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
+            RequestHash__c = 'sha256:segmented123',
+            Status__c = 'SUCCEEDED',
+            OutputFormat__c = 'PDF',
+            OutputFileId__c = cv.Id
+        );
+        DocgenEnvelopeService.setRequestJSONSegments(doc, requestJSON);
+        insert doc;
+
+        doc = [SELECT Id, OutputFileId__c, MergedDocxFileId__c, RequestJSON__c
+               FROM Generated_Document__c WHERE Id = :doc.Id];
+
+        Test.startTest();
+        ContentDocumentLinkHelper.createLinksFromGeneratedDocuments(new List<Generated_Document__c>{doc});
+        Test.stopTest();
+
+        List<ContentDocumentLink> links = [
+            SELECT ContentDocumentId, LinkedEntityId
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :acc.Id
+        ];
+
+        Assert.areEqual(1, links.size(), 'Should reconstruct request JSON segments before linking parents');
+    }
+
     /**
      * Test: Create links for multiple parents (Account, Opportunity, Contact)
      */

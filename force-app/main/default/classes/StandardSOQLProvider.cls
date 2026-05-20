@@ -46,13 +46,14 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         Map<String, Set<String>> nestedRelationshipMap = extractSubqueryRelationshipsNested(template.SOQL__c);
         // Top-level relationships are the keys of the map
         Set<String> topLevelRelationships = nestedRelationshipMap.keySet();
+        Set<String> topLevelFields = extractTopLevelSelectedFields(template.SOQL__c);
 
         if (returnMultiple) {
             // Return ALL records in a records array (for composite documents)
-            return buildMultiRecordData(results, locale, timezone, topLevelRelationships, nestedRelationshipMap);
+            return buildMultiRecordData(results, locale, timezone, topLevelRelationships, nestedRelationshipMap, topLevelFields);
         } else {
             // Legacy behavior: return only first record
-            return buildSingleRecordData(results, recordId, locale, timezone, topLevelRelationships, nestedRelationshipMap);
+            return buildSingleRecordData(results, recordId, locale, timezone, topLevelRelationships, nestedRelationshipMap, topLevelFields);
         }
     }
 
@@ -66,7 +67,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String locale,
         String timezone,
         Set<String> queriedChildRelationships,
-        Map<String, Set<String>> nestedRelationshipMap
+        Map<String, Set<String>> nestedRelationshipMap,
+        Set<String> queriedScalarFields
     ) {
         if (results.isEmpty()) {
             throw new IllegalArgumentException('No records found for recordId: ' + recordId);
@@ -81,7 +83,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String objectType = record.getSObjectType().getDescribe().getName();
 
         // Process the record (scalars, parents, and child subqueries)
-        Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap);
+        Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap, queriedScalarFields);
 
         data.put(objectType, processedRecord);
         return data;
@@ -199,6 +201,80 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         return extractSubqueryRelationshipsNested(soql).keySet();
     }
 
+    @TestVisible
+    private static Set<String> extractTopLevelSelectedFields(String soql) {
+        Set<String> fields = new Set<String>();
+        if (String.isBlank(soql)) return fields;
+
+        String lower = soql.toLowerCase();
+        Integer selectIndex = lower.indexOf('select');
+        if (selectIndex < 0) return fields;
+
+        Integer selectStart = selectIndex + 6;
+        Integer fromIndex = findTopLevelFromIndex(soql, selectStart);
+        if (fromIndex < 0) return fields;
+
+        for (String item : splitTopLevelSelectItems(soql.substring(selectStart, fromIndex))) {
+            String fieldName = item == null ? null : item.trim();
+            if (String.isBlank(fieldName)) continue;
+            String fieldLower = fieldName.toLowerCase();
+            if (fieldName.startsWith('(') || fieldName.contains('(') || fieldName.contains('.') || fieldLower.startsWith('typeof ')) {
+                continue;
+            }
+
+            List<String> parts = fieldName.split('\\s+');
+            if (!parts.isEmpty() && !String.isBlank(parts[0])) {
+                fields.add(parts[0]);
+            }
+        }
+
+        return fields;
+    }
+
+    private static Integer findTopLevelFromIndex(String soql, Integer startIndex) {
+        String lower = soql.toLowerCase();
+        Integer depth = 0;
+
+        for (Integer i = startIndex; i + 4 <= soql.length(); i++) {
+            String ch = soql.substring(i, i + 1);
+            if (ch == '(') {
+                depth++;
+            } else if (ch == ')') {
+                depth--;
+            } else if (depth == 0 && lower.substring(i, i + 4) == 'from') {
+                Boolean isWordStart = (i == 0 || !soql.substring(i - 1, i).isAlpha());
+                Boolean isWordEnd = (i + 4 >= soql.length() || !soql.substring(i + 4, i + 5).isAlpha());
+                if (isWordStart && isWordEnd) {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    private static List<String> splitTopLevelSelectItems(String selectClause) {
+        List<String> items = new List<String>();
+        if (selectClause == null) return items;
+
+        Integer depth = 0;
+        Integer itemStart = 0;
+        for (Integer i = 0; i < selectClause.length(); i++) {
+            String ch = selectClause.substring(i, i + 1);
+            if (ch == '(') {
+                depth++;
+            } else if (ch == ')') {
+                depth--;
+            } else if (ch == ',' && depth == 0) {
+                items.add(selectClause.substring(itemStart, i));
+                itemStart = i + 1;
+            }
+        }
+
+        items.add(selectClause.substring(itemStart));
+        return items;
+    }
+
     /**
      * Build data for multiple records
      * Returns {"records": [...]} structure for template iteration
@@ -208,12 +284,13 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String locale,
         String timezone,
         Set<String> queriedChildRelationships,
-        Map<String, Set<String>> nestedRelationshipMap
+        Map<String, Set<String>> nestedRelationshipMap,
+        Set<String> queriedScalarFields
     ) {
         // Process ALL records (not just the first one)
         List<Object> processedRecords = new List<Object>();
         for (SObject record : results) {
-            Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap);
+            Map<String, Object> processedRecord = processRecord(record, locale, timezone, queriedChildRelationships, nestedRelationshipMap, queriedScalarFields);
             processedRecords.add(processedRecord);
         }
 
@@ -238,7 +315,8 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         String locale,
         String timezone,
         Set<String> queriedChildRelationships,
-        Map<String, Set<String>> nestedRelationshipMap
+        Map<String, Set<String>> nestedRelationshipMap,
+        Set<String> queriedScalarFields
     ) {
         Map<String, Object> out = new Map<String, Object>();
         if (record == null) return out;
@@ -255,6 +333,15 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             if (!String.isBlank(relName)) childRelNames.add(relName);
         }
 
+        Set<String> parentRelNames = new Set<String>();
+        for (String fieldName : fieldMap.keySet()) {
+            Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();
+            if (fieldDescribe.getType() == Schema.DisplayType.Reference) {
+                String relName = fieldDescribe.getRelationshipName();
+                if (!String.isBlank(relName)) parentRelNames.add(relName);
+            }
+        }
+
         // 1) Scalars & parent relationships that were actually queried.
         //    IMPORTANT: skip child relationship names here; they are not fields and record.get(<child>) throws.
         for (String key : populated.keySet()) {
@@ -265,7 +352,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             // Parent relationship present (value is an SObject)
             if (val instanceof SObject) {
                 // Parent relationships don't have child subqueries in SOQL, so pass empty set
-                out.put(key, processRecord((SObject) val, locale, timezone, new Set<String>(), nestedRelationshipMap));
+                out.put(key, processRecord((SObject) val, locale, timezone, new Set<String>(), nestedRelationshipMap, new Set<String>()));
                 continue;
             }
 
@@ -277,7 +364,23 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             }
         }
 
-        // 2) Child relationships (only when sub-queried in SOQL at THIS level)
+        // 2) Queried parent relationships that are null do not appear in populated fields.
+        for (String relName : parentRelNames) {
+            if (out.containsKey(relName)) continue;
+
+            try {
+                SObject parentRecord = record.getSObject(relName);
+                if (parentRecord == null) {
+                    out.put(relName, new Map<String, Object>());
+                } else {
+                    out.put(relName, processRecord(parentRecord, locale, timezone, new Set<String>(), nestedRelationshipMap, new Set<String>()));
+                }
+            } catch (Exception e) {
+                // Relationship was not queried.
+            }
+        }
+
+        // 3) Child relationships (only when sub-queried in SOQL at THIS level)
         for (String relName : childRelNames) {
             // Check if this child relationship was queried at THIS level of the hierarchy
             Boolean wasQueried = queriedChildRelationships != null && queriedChildRelationships.contains(relName);
@@ -316,28 +419,30 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             if (children != null) {
                 for (SObject child : children) {
                     // Recursive call - pass ONLY the nested relationships for this child type
-                    processed.add(processRecord(child, locale, timezone, nestedRels, nestedRelationshipMap));
+                    processed.add(processRecord(child, locale, timezone, nestedRels, nestedRelationshipMap, new Set<String>()));
                 }
             }
             out.put(relName, processed);
         }
 
-        // 3) (Optional) Add empty __formatted for queried-but-null scalars.
-        //    Only consider true fields on this sObject to avoid relationship names.
-        for (String fieldName : fieldMap.keySet()) {
+        // 4) Include top-level queried-but-null scalar fields.
+        //    Use the SELECT list so unqueried fields are not emitted.
+        Set<String> scalarFields = queriedScalarFields == null ? new Set<String>() : queriedScalarFields;
+        for (String fieldName : scalarFields) {
             if (out.containsKey(fieldName)) continue;
+            if (!fieldMap.containsKey(fieldName)) continue;
             Object v;
             try {
-                v = record.get(fieldName); // returns null if not queried or null; safe for real fields
+                v = record.get(fieldName);
             } catch (Exception e) {
                 continue;
             }
             if (v == null) {
                 Schema.DisplayType t = fieldMap.get(fieldName).getDescribe().getType();
+                out.put(fieldName, null);
                 if (t == Schema.DisplayType.Date || t == Schema.DisplayType.DateTime ||
                     t == Schema.DisplayType.Currency || t == Schema.DisplayType.Percent ||
-                    t == Schema.DisplayType.Double   || t == Schema.DisplayType.Integer) {
-                    out.put(fieldName, null);
+                    t == Schema.DisplayType.Double || t == Schema.DisplayType.Integer) {
                     out.put(fieldName + '__formatted', '');
                 }
             }
@@ -351,7 +456,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     private Map<String, Object> processRecord(SObject record, String locale, String timezone) {
-        return processRecord(record, locale, timezone, new Set<String>(), new Map<String, Set<String>>());
+        return processRecord(record, locale, timezone, new Set<String>(), new Map<String, Set<String>>(), new Set<String>());
     }
 
     /**
@@ -359,7 +464,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      */
     @TestVisible
     private Map<String, Object> processRecord(SObject record, String locale, String timezone, Set<String> queriedChildRelationships) {
-        return processRecord(record, locale, timezone, queriedChildRelationships, new Map<String, Set<String>>());
+        return processRecord(record, locale, timezone, queriedChildRelationships, new Map<String, Set<String>>(), new Set<String>());
     }
     
 

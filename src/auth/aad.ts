@@ -33,7 +33,7 @@ export class AADJWTVerifier {
     this.audience = config.audience;
 
     // Extract tenant ID from issuer URL
-    const tenantMatch = config.issuer.match(/login\.microsoftonline\.com\/([^\/]+)/);
+    const tenantMatch = config.issuer.match(/login\.microsoftonline\.com\/([^/]+)/);
     this.tenantId = tenantMatch ? tenantMatch[1] : '';
 
     // Support both v1.0 and v2.0 token formats

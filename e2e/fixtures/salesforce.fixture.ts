@@ -203,11 +203,6 @@ async function enableApexDebugLogging(): Promise<void> {
       `SELECT Id, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = 'USER_DEBUG'`
     );
 
-    // Calculate expiration (2 hours from now)
-    const expirationDate = new Date();
-    expirationDate.setHours(expirationDate.getHours() + 2);
-    const expirationDateStr = expirationDate.toISOString().replace('T', ' ').replace('.000Z', '');
-
     if (existingTraceFlags.length > 0) {
       console.log('Debug logging already enabled for user');
       // Could update expiration if needed
@@ -263,32 +258,6 @@ Then check logs at: Setup > Debug Logs
 
   } catch (error) {
     console.log('⚠️  Could not enable Apex debug logging:', error);
-  }
-}
-
-/**
- * Activate the test flexipage as org default for Account
- * This makes the docgenButton component visible on Account record pages
- */
-async function activateTestFlexipage(): Promise<void> {
-  try {
-    // Query for the flexipage
-    const flexipageQuery = `SELECT Id, DeveloperName FROM FlexiPage WHERE DeveloperName = 'Account_Docgen_Test' LIMIT 1`;
-    const flexipages = await querySalesforce(flexipageQuery);
-
-    if (flexipages.length === 0) {
-      console.log('⚠️  Warning: Test flexipage not found, tests may fail');
-      return;
-    }
-
-    const flexipageId = flexipages[0].Id;
-    console.log(`✓ Found test flexipage: ${flexipageId}`);
-
-    // Note: FlexiPage activation requires UI metadata API which is complex
-    // For now, we'll document that tests need manual activation or use a different approach
-    // Alternative: Use Lightning App Builder API or setup script with metadata deployment
-  } catch (error) {
-    console.log('⚠️  Could not activate flexipage:', error);
   }
 }
 

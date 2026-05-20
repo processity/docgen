@@ -99,7 +99,7 @@ describe('c-docgen-button', () => {
     element.recordId = '0011234567890ABC';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generate.mockResolvedValue(mockDownloadUrl);
+    generate.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -127,7 +127,7 @@ describe('c-docgen-button', () => {
     element.recordId = '0011234567890ABC';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generate.mockResolvedValue(mockDownloadUrl);
+    generate.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -152,7 +152,7 @@ describe('c-docgen-button', () => {
     element.successMessage = 'PDF generated successfully!';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generate.mockResolvedValue(mockDownloadUrl);
+    generate.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -184,7 +184,7 @@ describe('c-docgen-button', () => {
     element.recordId = '0011234567890ABC';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generate.mockResolvedValue(mockDownloadUrl);
+    generate.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 

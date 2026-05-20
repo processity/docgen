@@ -29,7 +29,9 @@ try {
         System.debug(LoggingLevel.INFO, '✅ Named Credential is working correctly!');
         System.debug(LoggingLevel.INFO, '✅ Backend is reachable and healthy');
     } else {
-        System.debug(LoggingLevel.WARN, '⚠️  Unexpected status code: ' + res.getStatusCode());
+        throw new IllegalArgumentException(
+            'Named Credential callout returned HTTP ' + res.getStatusCode() + ': ' + res.getBody()
+        );
     }
 
 } catch (Exception e) {
@@ -42,4 +44,5 @@ try {
     System.debug(LoggingLevel.ERROR, '2. Named Credential URL not set correctly');
     System.debug(LoggingLevel.ERROR, '3. Remote site settings need to be configured');
     System.debug(LoggingLevel.ERROR, '4. Backend is not accessible');
+    throw e;
 }

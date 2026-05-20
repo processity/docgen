@@ -23,7 +23,7 @@ import type {
 import { SalesforceUploadError, DocgenError, buildSalesforceError } from '../errors';
 
 /**
- * Upload a file (PDF or DOCX) to Salesforce as a ContentVersion
+ * Upload a file (PDF, DOCX, or PPTX) to Salesforce as a ContentVersion
  *
  * @param buffer - File content as Buffer
  * @param fileName - Full filename with extension (e.g., "Invoice_12345.pdf")
@@ -40,7 +40,7 @@ export async function uploadContentVersion(
   options?: CorrelationOptions
 ): Promise<{ contentVersionId: string; contentDocumentId: string }> {
   // Extract title from filename (remove extension)
-  const title = fileName.replace(/\.(pdf|docx)$/i, '');
+  const title = fileName.replace(/\.(pdf|docx|pptx)$/i, '');
 
   // Prepare ContentVersion creation payload
   const payload: ContentVersionCreateRequest = {

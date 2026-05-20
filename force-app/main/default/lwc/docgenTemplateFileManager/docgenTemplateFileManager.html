@@ -30,7 +30,7 @@
                     <!-- File Upload -->
                     <div class="slds-m-bottom_medium">
                         <lightning-file-upload
-                            label="Upload New Template File (DOCX only)"
+                            label="Upload New Template File (DOCX or PPTX)"
                             name="templateFile"
                             accept={acceptedFormats}
                             record-id={recordId}
@@ -50,7 +50,7 @@
                         <div class="slds-m-top_large">
                             <h3 class="slds-text-heading_small slds-m-bottom_small">File Versions</h3>
                             <p class="slds-text-body_small slds-m-bottom_medium slds-text-color_weak">
-                                All DOCX files attached to this record. Click "Use This Version" to set the active template.
+                                All DOCX and PPTX files attached to this record. Click "Use This Version" to set the active template.
                             </p>
 
                             <table class="slds-table slds-table_bordered slds-table_cell-buffer">
@@ -138,7 +138,7 @@
                         <div class="slds-text-align_center slds-m-top_large">
                             <lightning-icon icon-name="doctype:word" size="large"></lightning-icon>
                             <p class="slds-m-top_small slds-text-color_weak">
-                                No template files uploaded yet. Use the upload button above to add a DOCX template.
+                                No template files uploaded yet. Use the upload button above to add a DOCX or PPTX template.
                             </p>
                         </div>
                     </template>

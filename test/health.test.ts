@@ -1,7 +1,7 @@
 import { describe, expect, it, jest, beforeAll, afterAll, beforeEach } from '@jest/globals';
-import supertest from 'supertest';
 import { FastifyInstance } from 'fastify';
 import { build } from '../src/server';
+import { resetSalesforceAuth } from '../src/sf';
 
 // Mock the secrets module for Key Vault connectivity tests
 jest.mock('../src/config/secrets');
@@ -13,8 +13,44 @@ describe('Health Endpoints', () => {
   const mockCheckKeyVaultConnectivity = checkKeyVaultConnectivity as jest.MockedFunction<
     typeof checkKeyVaultConnectivity
   >;
+  const originalDependencyEnv = {
+    SF_DOMAIN: process.env.SF_DOMAIN,
+    SF_USERNAME: process.env.SF_USERNAME,
+    SF_CLIENT_ID: process.env.SF_CLIENT_ID,
+    SF_PRIVATE_KEY: process.env.SF_PRIVATE_KEY,
+    SF_PRIVATE_KEY_PATH: process.env.SF_PRIVATE_KEY_PATH,
+    SFDX_AUTH_URL: process.env.SFDX_AUTH_URL,
+    ISSUER: process.env.ISSUER,
+    AUDIENCE: process.env.AUDIENCE,
+    JWKS_URI: process.env.JWKS_URI,
+  };
+
+  function clearDependencyEnv() {
+    delete process.env.SF_DOMAIN;
+    delete process.env.SF_USERNAME;
+    delete process.env.SF_CLIENT_ID;
+    delete process.env.SF_PRIVATE_KEY;
+    delete process.env.SF_PRIVATE_KEY_PATH;
+    delete process.env.SFDX_AUTH_URL;
+    delete process.env.ISSUER;
+    delete process.env.AUDIENCE;
+    delete process.env.JWKS_URI;
+    resetSalesforceAuth();
+  }
+
+  function restoreDependencyEnv() {
+    for (const [key, value] of Object.entries(originalDependencyEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    resetSalesforceAuth();
+  }
 
   beforeAll(async () => {
+    clearDependencyEnv();
     app = await build();
     await app.ready();
   });
@@ -27,11 +63,30 @@ describe('Health Endpoints', () => {
 
   afterAll(async () => {
     await app.close();
+    restoreDependencyEnv();
   });
+
+  async function get(url: string, headers?: Record<string, string>) {
+    const response = await app.inject({ method: 'GET', url, headers });
+    return {
+      status: response.statusCode,
+      body: response.json(),
+      headers: response.headers,
+    };
+  }
+
+  async function postRaw(url: string, payload: string, headers?: Record<string, string>) {
+    const response = await app.inject({ method: 'POST', url, payload, headers });
+    return {
+      status: response.statusCode,
+      body: response.json(),
+      headers: response.headers,
+    };
+  }
 
   describe('GET /healthz', () => {
     it('should return 200 with status ok', async () => {
-      const response = await supertest(app.server).get('/healthz');
+      const response = await get('/healthz');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ status: 'ok' });
@@ -39,7 +94,7 @@ describe('Health Endpoints', () => {
     });
 
     it('should include correlation ID in response headers', async () => {
-      const response = await supertest(app.server).get('/healthz');
+      const response = await get('/healthz');
 
       expect(response.status).toBe(200);
       expect(response.headers['x-correlation-id']).toBeDefined();
@@ -51,9 +106,7 @@ describe('Health Endpoints', () => {
     it('should propagate provided correlation ID in header', async () => {
       const customId = 'health-check-trace-id-123';
 
-      const response = await supertest(app.server)
-        .get('/healthz')
-        .set('x-correlation-id', customId);
+      const response = await get('/healthz', { 'x-correlation-id': customId });
 
       expect(response.status).toBe(200);
       expect(response.headers['x-correlation-id']).toBe(customId);
@@ -63,7 +116,7 @@ describe('Health Endpoints', () => {
       // Make multiple requests to ensure consistency
       const requests = Array(3)
         .fill(null)
-        .map(() => supertest(app.server).get('/healthz'));
+        .map(() => get('/healthz'));
       const responses = await Promise.all(requests);
 
       responses.forEach((response) => {
@@ -76,7 +129,7 @@ describe('Health Endpoints', () => {
   describe('GET /readyz', () => {
     it('should return 200 with ready true when dependencies are healthy', async () => {
       // For now, readyz will return true by default since we have no external dependencies yet
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('ready');
@@ -85,7 +138,7 @@ describe('Health Endpoints', () => {
     });
 
     it('should include correlation ID in response headers', async () => {
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(200);
       expect(response.headers['x-correlation-id']).toBeDefined();
@@ -97,7 +150,7 @@ describe('Health Endpoints', () => {
     it('should return 503 with ready false when dependencies are unhealthy', async () => {
       // This test will be expanded when we add actual dependency checks
       // For now, we test the endpoint structure
-      const response = await supertest(app.server).get('/readyz?force_unhealthy=true');
+      const response = await get('/readyz?force_unhealthy=true');
 
       // Initially this will pass with 200, but the structure allows for 503
       expect([200, 503]).toContain(response.status);
@@ -107,7 +160,7 @@ describe('Health Endpoints', () => {
 
   describe('Invalid Routes', () => {
     it('should return 404 for non-existent routes', async () => {
-      const response = await supertest(app.server).get('/non-existent-route');
+      const response = await get('/non-existent-route');
 
       expect(response.status).toBe(404);
     });
@@ -116,10 +169,9 @@ describe('Health Endpoints', () => {
   describe('Error Handler', () => {
     it('should handle errors with proper format including correlation ID', async () => {
       // Trigger an error by sending invalid JSON
-      const response = await supertest(app.server)
-        .post('/generate')
-        .set('Content-Type', 'application/json')
-        .send('this is not valid json');
+      const response = await postRaw('/generate', 'this is not valid json', {
+        'content-type': 'application/json',
+      });
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('error');
@@ -131,10 +183,9 @@ describe('Health Endpoints', () => {
     });
 
     it('should return ValidationError for invalid input', async () => {
-      const response = await supertest(app.server)
-        .post('/generate')
-        .set('Content-Type', 'application/json')
-        .send('not json');
+      const response = await postRaw('/generate', 'not json', {
+        'content-type': 'application/json',
+      });
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('ValidationError');
@@ -152,7 +203,7 @@ describe('Health Endpoints', () => {
 
       mockCheckKeyVaultConnectivity.mockResolvedValue(true);
 
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('checks');
@@ -172,7 +223,7 @@ describe('Health Endpoints', () => {
 
       mockCheckKeyVaultConnectivity.mockResolvedValue(true);
 
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(200);
       expect(response.body.ready).toBe(true);
@@ -192,7 +243,7 @@ describe('Health Endpoints', () => {
 
       mockCheckKeyVaultConnectivity.mockResolvedValue(false);
 
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(503);
       expect(response.body.ready).toBe(false);
@@ -210,7 +261,7 @@ describe('Health Endpoints', () => {
       process.env.NODE_ENV = 'development';
       process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
 
-      const response = await supertest(app.server).get('/readyz');
+      const response = await get('/readyz');
 
       expect(response.status).toBe(200);
       expect(mockCheckKeyVaultConnectivity).not.toHaveBeenCalled();
@@ -227,7 +278,7 @@ describe('Health Endpoints', () => {
       process.env.NODE_ENV = 'production';
       delete process.env.KEY_VAULT_URI;
 
-      await supertest(app.server).get('/readyz');
+      await get('/readyz');
 
       expect(mockCheckKeyVaultConnectivity).not.toHaveBeenCalled();
 

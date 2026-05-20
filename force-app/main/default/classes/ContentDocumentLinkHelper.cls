@@ -4,13 +4,13 @@
  * generation is successful and files need to be linked to parent records.
  *
  * The class dynamically handles linking to ANY Salesforce object type
- * based on the parents field in the RequestJSON__c.
+ * based on the parents field in the segmented request JSON fields.
  */
 public with sharing class ContentDocumentLinkHelper {
 
     /**
      * Creates ContentDocumentLink records for successfully generated documents.
-     * Parses the RequestJSON__c field to extract parent IDs and creates links
+     * Reconstructs request JSON segments to extract parent IDs and creates links
      * to all specified parent records.
      *
      * @param generatedDocs List of Generated_Document__c records to process
@@ -48,19 +48,22 @@ public with sharing class ContentDocumentLinkHelper {
 
         // Query ContentDocumentIds from ContentVersions
         Map<Id, Id> contentVersionToDocumentMap = getContentDocumentIds(contentVersionIds);
+        Map<Id, Generated_Document__c> requestJSONDocs = getRequestJSONSegments(generatedDocs);
 
         // Prepare ContentDocumentLinks to insert
         List<ContentDocumentLink> linksToInsert = new List<ContentDocumentLink>();
 
         // Process each Generated Document
         for (Generated_Document__c doc : generatedDocs) {
-            if (String.isBlank(doc.RequestJSON__c)) {
+            Generated_Document__c requestDoc = requestJSONDocs.containsKey(doc.Id) ? requestJSONDocs.get(doc.Id) : doc;
+            String requestJSON = DocgenEnvelopeService.reconstructRequestJSON(requestDoc);
+            if (String.isBlank(requestJSON)) {
                 continue; // No request data to process
             }
 
             try {
-                // Parse the RequestJSON to extract parents
-                Map<String, Object> envelope = (Map<String, Object>) JSON.deserializeUntyped(doc.RequestJSON__c);
+                // Parse the request JSON to extract parents
+                Map<String, Object> envelope = (Map<String, Object>) JSON.deserializeUntyped(requestJSON);
                 Map<String, Object> parents = (Map<String, Object>) envelope.get('parents');
 
                 if (parents == null || parents.isEmpty()) {
@@ -120,6 +123,27 @@ public with sharing class ContentDocumentLinkHelper {
         }
 
         return versionToDocumentMap;
+    }
+
+    private static Map<Id, Generated_Document__c> getRequestJSONSegments(List<Generated_Document__c> generatedDocs) {
+        Set<Id> docIds = new Set<Id>();
+        for (Generated_Document__c doc : generatedDocs) {
+            if (doc.Id != null) {
+                docIds.add(doc.Id);
+            }
+        }
+
+        if (docIds.isEmpty()) {
+            return new Map<Id, Generated_Document__c>();
+        }
+
+        return new Map<Id, Generated_Document__c>([
+            SELECT Id, RequestJSON__c, RequestJSON02__c, RequestJSON03__c, RequestJSON04__c,
+                   RequestJSON05__c, RequestJSON06__c, RequestJSON07__c, RequestJSON08__c,
+                   RequestJSON09__c, RequestJSON10__c
+            FROM Generated_Document__c
+            WHERE Id IN :docIds
+        ]);
     }
 
     /**
