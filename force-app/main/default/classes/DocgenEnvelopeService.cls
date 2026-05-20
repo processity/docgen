@@ -99,7 +99,13 @@ public with sharing class DocgenEnvelopeService {
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
         String optionsJson = JSON.serialize(env.options);
-        env.requestHash = computeHash(env.templateId, env.outputFormat, dataJson, env.outputFileName, optionsJson);
+        env.requestHash = computeHash(
+            env.templateId,
+            env.outputFormat,
+            dataJson,
+            getOutputFileNameForHash(template, env.outputFileName),
+            optionsJson
+        );
 
         return env;
     }
@@ -420,7 +426,7 @@ public with sharing class DocgenEnvelopeService {
             outputFormat,
             recordIdsJson,
             dataJson,
-            env.outputFileName,
+            null,
             optionsJson
         );
 
@@ -615,6 +621,13 @@ public with sharing class DocgenEnvelopeService {
         String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
         String sanitizedTemplateName = templateName == null ? 'Template' : templateName.replaceAll('[^a-zA-Z0-9]', '_');
         return objectType + '_' + sanitizedTemplateName + '_' + timestamp + '.' + extension;
+    }
+
+    private static String getOutputFileNameForHash(Docgen_Template__c template, String outputFileName) {
+        if (template != null && String.isNotBlank(template.Output_File_Name_Field__c)) {
+            return outputFileName;
+        }
+        return null;
     }
 
     @TestVisible
