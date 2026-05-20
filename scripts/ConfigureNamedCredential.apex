@@ -23,34 +23,31 @@ try {
         throw new IllegalArgumentException('Backend URL must start with https://');
     }
 
-    // Create named credential input
+    // Create named credential input.
+    // ConnectApi.NamedCredentials.updateNamedCredential takes the developer name
+    // as the method argument; NamedCredentialInput carries the replacement config.
     ConnectApi.NamedCredentialInput ncInput = new ConnectApi.NamedCredentialInput();
-    ncInput.namedCredential = 'Docgen_Node_API_CI';
+    ncInput.developerName = 'Docgen_Node_API_CI';
+    ncInput.masterLabel = 'Docgen Node API (CI)';
+    ncInput.type = ConnectApi.NamedCredentialType.SecuredEndpoint;
+    ncInput.calloutUrl = backendUrl;
 
-    // Set URL parameter
-    List<ConnectApi.NamedCredentialParameterInput> parameters = new List<ConnectApi.NamedCredentialParameterInput>();
+    ConnectApi.NamedCredentialCalloutOptionsInput calloutOptions = new ConnectApi.NamedCredentialCalloutOptionsInput();
+    calloutOptions.allowMergeFieldsInBody = false;
+    calloutOptions.allowMergeFieldsInHeader = false;
+    calloutOptions.generateAuthorizationHeader = true;
+    ncInput.calloutOptions = calloutOptions;
 
-    ConnectApi.NamedCredentialParameterInput urlParam = new ConnectApi.NamedCredentialParameterInput();
-    urlParam.parameterName = 'Url';
-    urlParam.parameterType = ConnectApi.NamedCredentialParameterType.Url;
-    urlParam.parameterValue = backendUrl;
-    parameters.add(urlParam);
-
-    // Set External Credential parameter
-    ConnectApi.NamedCredentialParameterInput authParam = new ConnectApi.NamedCredentialParameterInput();
-    authParam.parameterName = 'ExternalCredential';
-    authParam.parameterType = ConnectApi.NamedCredentialParameterType.Authentication;
-    authParam.externalCredential = 'Docgen_AAD_Credential_CI';
-    parameters.add(authParam);
-
-    ncInput.parameters = parameters;
+    ConnectApi.ExternalCredentialInput externalCredential = new ConnectApi.ExternalCredentialInput();
+    externalCredential.developerName = 'Docgen_AAD_Credential_CI';
+    ncInput.externalCredentials = new List<ConnectApi.ExternalCredentialInput>{ externalCredential };
 
     // Check if Named Credential exists
     Boolean exists = namedCredentialExists('Docgen_Node_API_CI');
 
     if (exists) {
         System.debug(LoggingLevel.INFO, 'Named Credential exists - updating URL');
-        ConnectApi.NamedCredentials.updateNamedCredential(ncInput);
+        ConnectApi.NamedCredentials.updateNamedCredential('Docgen_Node_API_CI', ncInput);
     } else {
         System.debug(LoggingLevel.INFO, 'Named Credential does not exist - creating with URL');
         ConnectApi.NamedCredentials.createNamedCredential(ncInput);
