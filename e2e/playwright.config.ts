@@ -1,4 +1,13 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
+
+const reporter: ReporterDescription[] = [
+  ['html', { outputFolder: './playwright-report' }],
+  ['list'],
+];
+
+if (process.env.CI) {
+  reporter.push(['github']);
+}
 
 /**
  * Playwright configuration for Salesforce E2E tests
@@ -23,11 +32,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
 
   /* Reporter to use */
-  reporter: [
-    ['html', { outputFolder: './playwright-report' }],
-    ['list'],
-    ...(process.env.CI ? [['github' as const]] : []),
-  ],
+  reporter,
 
   /* Shared settings for all the projects below */
   use: {

@@ -22,7 +22,8 @@ export interface BatchJobInfo {
 }
 
 export interface BatchEnqueueConfig {
-  templateId: string;
+  templateId?: string;
+  compositeDocId?: string;
   recordIds: string[];
   outputFormat: 'PDF' | 'DOCX';
   parentField?: string; // e.g., 'Account__c', 'Contact__c', 'Lead__c'
@@ -80,6 +81,10 @@ Id jobId = Database.executeBatch(batch, ${batchSize});
 System.debug('Batch Job ID: ' + jobId);
       `.trim();
     } else {
+      if (!config.templateId) {
+        throw new Error('templateId is required for single-template batch enqueue');
+      }
+
       // Single-template batch (original behavior)
       apexCode = `
 // Create batch instance with configuration
