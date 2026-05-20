@@ -1,9 +1,31 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { FastifyInstance } from 'fastify';
 import nock from 'nock';
+import { generateKeyPairSync } from 'crypto';
 import { build } from '../src/server';
 import type { DocgenRequest, DocgenResponse } from '../src/types';
 import { createTestDocxBuffer, createTestDocxWithContent } from './helpers/test-docx';
+import { createTestPptxBuffer } from './helpers/test-pptx';
+
+jest.mock('../src/convert/soffice', () => {
+  const actual = jest.requireActual('../src/convert/soffice');
+  return {
+    ...actual,
+    convertDocxToPdf: jest.fn(async () => Buffer.from('%PDF-1.4\n%docgen-test\n')),
+  };
+});
+
+const { privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: {
+    type: 'spki',
+    format: 'pem',
+  },
+  privateKeyEncoding: {
+    type: 'pkcs8',
+    format: 'pem',
+  },
+});
 
 describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
   let app: FastifyInstance;
@@ -22,10 +44,8 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
     process.env.SF_DOMAIN = 'test.salesforce.com';
     process.env.SF_USERNAME = 'test@example.com';
     process.env.SF_CLIENT_ID = 'test-client-id';
-    // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
-    if (!process.env.SF_PRIVATE_KEY) {
-      process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-    }
+    process.env.SF_PRIVATE_KEY = privateKey;
+    delete process.env.SF_PRIVATE_KEY_PATH;
 
     // Set up persistent Salesforce auth mock for all tests
     nock('https://login.salesforce.com')
@@ -211,6 +231,75 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
           Name: 'Jane Smith',
           Account: { Name: 'Test Account' },
           GeneratedDate__formatted: '5 Nov 2025',
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: request,
+      });
+
+      if (response.statusCode !== 200) {
+        console.log('Response body:', response.body);
+      }
+      expect(response.statusCode).toBe(200);
+
+      const body: DocgenResponse = JSON.parse(response.body);
+      expect(body.contentVersionId).toBe(testContentVersionId);
+    });
+
+    it('should successfully generate a PPTX document', async () => {
+      const testTemplateId = '068000000000103AAA';
+      const testContentVersionId = '068000000000104AAA';
+      const testContentDocumentId = '069000000000102AAA';
+      const testPptxBuffer = await createTestPptxBuffer();
+
+      nock('https://login.salesforce.com')
+        .post('/services/oauth2/token')
+        .reply(200, {
+          access_token: 'test-access-token',
+          instance_url: 'https://test.salesforce.com',
+        });
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${testTemplateId}/VersionData`)
+        .reply(200, testPptxBuffer);
+
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.Title).toBe('test-output');
+          expect(body.PathOnClient).toBe('test-output.pptx');
+          expect(body.VersionData).toBeTruthy();
+          return true;
+        })
+        .reply(201, {
+          id: testContentVersionId,
+          success: true,
+          errors: [],
+        });
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/query`)
+        .query(true)
+        .reply(200, {
+          records: [{
+            ContentDocumentId: testContentDocumentId,
+          }],
+        });
+
+      const request: DocgenRequest = {
+        templateId: testTemplateId,
+        outputFileName: 'test-output.pptx',
+        outputFormat: 'PPTX',
+        locale: 'en-US',
+        timezone: 'America/New_York',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: true,
+        },
+        data: {
+          Account: { Name: 'Test Account' },
         },
       };
 

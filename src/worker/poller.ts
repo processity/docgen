@@ -4,6 +4,7 @@ import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
 import { mergeTemplate, concatenateDocx } from '../templates';
+import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import {
   uploadContentVersion,
@@ -29,6 +30,18 @@ import type {
 
 const logger = pino();
 let config: AppConfig;
+const REQUEST_JSON_SEGMENT_FIELDS = [
+  'RequestJSON__c',
+  'RequestJSON02__c',
+  'RequestJSON03__c',
+  'RequestJSON04__c',
+  'RequestJSON05__c',
+  'RequestJSON06__c',
+  'RequestJSON07__c',
+  'RequestJSON08__c',
+  'RequestJSON09__c',
+  'RequestJSON10__c',
+] as const;
 
 // Helper to ensure config is loaded
 function getConfig(): AppConfig {
@@ -280,7 +293,10 @@ export class PollerService {
 
       // Query for QUEUED documents that are not locked or have expired locks
       const soql = `
-        SELECT Id, Status__c, RequestJSON__c, Attempts__c, CorrelationId__c,
+        SELECT Id, Status__c, RequestJSON__c, RequestJSON02__c, RequestJSON03__c,
+               RequestJSON04__c, RequestJSON05__c, RequestJSON06__c, RequestJSON07__c,
+               RequestJSON08__c, RequestJSON09__c, RequestJSON10__c,
+               Attempts__c, CorrelationId__c,
                Template__c, RequestHash__c, CreatedDate
         FROM Generated_Document__c
         WHERE Status__c = 'QUEUED'
@@ -338,7 +354,7 @@ export class PollerService {
     log.info('Processing document');
 
     const startTime = Date.now(); // Track start time for metrics
-    const request: DocgenRequest = JSON.parse(doc.RequestJSON__c); // Parse once for the whole function
+    const request: DocgenRequest = JSON.parse(reconstructRequestJson(doc)); // Parse once for the whole function
 
     try {
       // Initialize Salesforce API and template service
@@ -352,7 +368,8 @@ export class PollerService {
       // Detect composite vs single-template document
       const isComposite = !!request.compositeDocumentId;
 
-      let mergedDocx: Buffer;
+      let mergedDocx: Buffer | null = null;
+      let mergedPptx: Buffer | null = null;
 
       if (isComposite) {
         // COMPOSITE DOCUMENT PROCESSING
@@ -370,12 +387,26 @@ export class PollerService {
           );
 
           log.debug('Merging composite template with full data');
-          mergedDocx = await mergeTemplate(templateBuffer, request.data, {
-            locale: request.locale,
-            timezone: request.timezone,
-            imageAllowlist: getConfig().imageAllowlist,
-          });
+          if (request.outputFormat === 'PPTX') {
+            mergedPptx = await mergePptxTemplate(templateBuffer, request.data, {
+              locale: request.locale,
+              timezone: request.timezone,
+              imageAllowlist: getConfig().imageAllowlist,
+              ...request.options,
+            });
+          } else {
+            mergedDocx = await mergeTemplate(templateBuffer, request.data, {
+              locale: request.locale,
+              timezone: request.timezone,
+              imageAllowlist: getConfig().imageAllowlist,
+              ...request.options,
+            });
+          }
         } else {
+          if (request.outputFormat === 'PPTX') {
+            throw new ValidationError('PPTX output is not supported for Concatenate Templates strategy', { correlationId: doc.CorrelationId__c });
+          }
+
           // Strategy 2: Concatenate Templates
           log.debug({ templateCount: request.templates?.length }, 'Processing concatenate templates strategy');
 
@@ -408,6 +439,7 @@ export class PollerService {
                 locale: request.locale,
                 timezone: request.timezone,
                 imageAllowlist: getConfig().imageAllowlist,
+                ...request.options,
               }
             );
 
@@ -435,24 +467,36 @@ export class PollerService {
         );
 
         log.debug('Merging template');
-        mergedDocx = await mergeTemplate(templateBuffer, request.data, {
-          locale: request.locale,
-          timezone: request.timezone,
-          imageAllowlist: getConfig().imageAllowlist,
-        });
+        if (request.outputFormat === 'PPTX') {
+          mergedPptx = await mergePptxTemplate(templateBuffer, request.data, {
+            locale: request.locale,
+            timezone: request.timezone,
+            imageAllowlist: getConfig().imageAllowlist,
+            ...request.options,
+          });
+        } else {
+          mergedDocx = await mergeTemplate(templateBuffer, request.data, {
+            locale: request.locale,
+            timezone: request.timezone,
+            imageAllowlist: getConfig().imageAllowlist,
+            ...request.options,
+          });
+        }
       }
 
       // Convert to PDF if needed
       let outputBuffer: Buffer;
       if (request.outputFormat === 'PDF') {
         log.debug('Converting DOCX to PDF');
-        outputBuffer = await convertDocxToPdf(mergedDocx, {
+        outputBuffer = await convertDocxToPdf(mergedDocx!, {
           timeout: getConfig().conversionTimeout,
           workdir: getConfig().conversionWorkdir,
           correlationId: doc.CorrelationId__c,
         });
+      } else if (request.outputFormat === 'PPTX') {
+        outputBuffer = mergedPptx!;
       } else {
-        outputBuffer = mergedDocx;
+        outputBuffer = mergedDocx!;
       }
 
       // Upload file
@@ -473,7 +517,7 @@ export class PollerService {
         log.debug('Uploading merged DOCX');
         const docxFileName = request.outputFileName.replace(/\.pdf$/i, '.docx');
         const docxUpload = await uploadContentVersion(
-          mergedDocx,
+          mergedDocx!,
           docxFileName,
           sfApi,
           { correlationId: doc.CorrelationId__c }
@@ -666,6 +710,13 @@ export class PollerService {
     }
   }
 
+}
+
+function reconstructRequestJson(doc: QueuedDocument): string {
+  return REQUEST_JSON_SEGMENT_FIELDS
+    .map((fieldName) => doc[fieldName])
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join('');
 }
 
 // Singleton instance

@@ -360,6 +360,28 @@ private class StandardSOQLProviderTest {
     }
 
     @isTest
+    static void testBuildDataWithNullParentRelationship() {
+        Opportunity opp = DocgenTestDataFactory.createOpportunity('No Account Deal', null);
+
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Opportunity with Null Account',
+            'Opportunity',
+            'SELECT Id, Name, Account.Name FROM Opportunity WHERE Id = :recordId'
+        );
+
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+
+        Test.startTest();
+        Map<String, Object> data = provider.buildData(opp.Id, template, 'en-GB', 'Europe/London');
+        Test.stopTest();
+
+        Map<String, Object> oppData = (Map<String, Object>) data.get('Opportunity');
+        Assert.isTrue(oppData.containsKey('Account'), 'Queried null parent relationship should be present');
+        Map<String, Object> accountData = (Map<String, Object>) oppData.get('Account');
+        Assert.isTrue(accountData.isEmpty(), 'Queried null parent relationship should be an empty map');
+    }
+
+    @isTest
     static void testFormatCurrencyVeryLarge() {
         // Given: Very large currency value (15 digits)
         Decimal value = 999999999999.99;
@@ -450,8 +472,10 @@ private class StandardSOQLProviderTest {
         Assert.isNotNull(data, 'Data map should not be null');
         Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
         Assert.areEqual('Minimal Account', accountData.get('Name'), 'Name should be populated');
-        // All other fields are null - key behavior is no exception thrown
-        Assert.isTrue(true, 'Successfully processed record with all null optional fields');
+        Assert.isTrue(accountData.containsKey('Phone'), 'Queried null text fields should be emitted');
+        Assert.isNull(accountData.get('Phone'), 'Queried null text field value should be null');
+        Assert.isTrue(accountData.containsKey('BillingStreet'), 'Queried null address fields should be emitted');
+        Assert.isNull(accountData.get('BillingStreet'), 'Queried null address field value should be null');
     }
 
     @isTest

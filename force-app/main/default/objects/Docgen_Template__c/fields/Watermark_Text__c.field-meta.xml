@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Watermark_Text__c</fullName>
+    <description>Static watermark text to add when the optional watermark condition field evaluates true.</description>
+    <externalId>false</externalId>
+    <label>Watermark Text</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

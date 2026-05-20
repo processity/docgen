@@ -3,6 +3,8 @@ import type { MergeOptions } from '../types';
 // import { ImageAllowlist } from '../utils/image-allowlist'; // TODO: Use for image URL validation
 import { createLogger } from '../utils/logger';
 import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
+import { preprocessDocxTemplate, postProcessMergedDocx } from './docx-postprocess';
+import { prepareRichTextData } from './rich-text';
 
 const logger = createLogger('templates:merge');
 
@@ -52,11 +54,17 @@ export async function mergeTemplate(
     // Initialize image allowlist for validation (if needed in future)
     // const imageAllowlist = new ImageAllowlist(options.imageAllowlist || []);
 
+    const literalXmlDelimiter = '||';
+    const { template: preprocessedTemplate, context: postProcessContext } =
+      await preprocessDocxTemplate(template, data);
+    const preparedData = prepareRichTextData(data, literalXmlDelimiter);
+
     // Merge using docx-templates
     const result = await createReport({
-      template,
-      data,
+      template: preprocessedTemplate,
+      data: preparedData,
       cmdDelimiter: ['{{', '}}'], // Handlebars-style delimiters
+      literalXmlDelimiter,
 
       // Image resolver function
       // Handles both base64 and external URLs
@@ -69,17 +77,22 @@ export async function mergeTemplate(
       processLineBreaks: true,
       noSandbox: false, // Important: keep sandbox for security
     });
+    const mergedDocx = await postProcessMergedDocx(
+      Buffer.from(result),
+      postProcessContext,
+      options
+    );
 
     logger.info(
       {
         templateSize: template.length,
-        resultSize: result.byteLength || result.length,
+        resultSize: mergedDocx.length,
         locale: options.locale,
       },
       'Template merge complete'
     );
 
-    return Buffer.from(result);
+    return mergedDocx;
   } catch (error) {
     logger.error({ error, data: Object.keys(data) }, 'Template merge failed');
 

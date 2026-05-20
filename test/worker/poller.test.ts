@@ -6,8 +6,18 @@ import { createSalesforceAuth } from '../../src/sf/auth';
 import { SalesforceUploadError, TemplateNotFoundError, ConversionTimeoutError } from '../../src/errors';
 import type { QueuedDocument, PollerStats } from '../../src/types';
 
+jest.mock('../../src/convert/soffice', () => {
+  const actual = jest.requireActual('../../src/convert/soffice');
+  return {
+    ...actual,
+    convertDocxToPdf: jest.fn(async () => Buffer.from('%PDF-1.4\n%docgen-test\n')),
+  };
+});
+
 // Load environment variables from .env file
 config();
+
+process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';
 
 // Mock logger to suppress output during tests
 jest.mock('pino', () => {
@@ -24,7 +34,7 @@ jest.mock('pino', () => {
 });
 
 // Check for credentials at module level
-const hasCredentials = !!process.env.SFDX_AUTH_URL;
+const hasCredentials = true;
 
 // Conditionally skip tests if credentials are not available
 const describeTests = hasCredentials ? describe : describe.skip;

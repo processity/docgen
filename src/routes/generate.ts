@@ -5,6 +5,7 @@ import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
 import { mergeTemplate, concatenateDocx } from '../templates';
+import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { loadConfig } from '../config';
@@ -85,7 +86,7 @@ const docgenRequestSchema = {
     },
     outputFormat: {
       type: 'string',
-      enum: ['PDF', 'DOCX'],
+      enum: ['PDF', 'DOCX', 'PPTX'],
       description: 'Output format',
     },
     locale: {
@@ -207,7 +208,8 @@ async function generateHandler(
       }
     }
 
-    let mergedDocx: Buffer;
+    let mergedDocx: Buffer | null = null;
+    let mergedPptx: Buffer | null = null;
 
     if (isComposite) {
       // COMPOSITE DOCUMENT PATH
@@ -230,16 +232,34 @@ async function generateHandler(
         );
 
         request.log.info({ correlationId }, 'Merging composite template with full data');
-        mergedDocx = await mergeTemplate(
-          templateBuffer,
-          request.body.data, // Full data with all namespaces
-          {
-            locale: request.body.locale,
-            timezone: request.body.timezone,
-            imageAllowlist: config.imageAllowlist,
-          }
-        );
+        if (request.body.outputFormat === 'PPTX') {
+          mergedPptx = await mergePptxTemplate(
+            templateBuffer,
+            request.body.data,
+            {
+              locale: request.body.locale,
+              timezone: request.body.timezone,
+              imageAllowlist: config.imageAllowlist,
+              ...request.body.options,
+            }
+          );
+        } else {
+          mergedDocx = await mergeTemplate(
+            templateBuffer,
+            request.body.data, // Full data with all namespaces
+            {
+              locale: request.body.locale,
+              timezone: request.body.timezone,
+              imageAllowlist: config.imageAllowlist,
+              ...request.body.options,
+            }
+          );
+        }
       } else {
+        if (request.body.outputFormat === 'PPTX') {
+          throw new ValidationError('PPTX output is not supported for Concatenate Templates strategy', { correlationId });
+        }
+
         // Strategy 2: Concatenate Templates
         request.log.info(
           { correlationId, templateCount: request.body.templates!.length },
@@ -280,6 +300,7 @@ async function generateHandler(
               locale: request.body.locale,
               timezone: request.body.timezone,
               imageAllowlist: config.imageAllowlist,
+              ...request.body.options,
             }
           );
 
@@ -304,15 +325,29 @@ async function generateHandler(
       );
 
       request.log.info({ correlationId }, 'Merging template with data');
-      mergedDocx = await mergeTemplate(
-        templateBuffer,
-        request.body.data,
-        {
-          locale: request.body.locale,
-          timezone: request.body.timezone,
-          imageAllowlist: config.imageAllowlist,
-        }
-      );
+      if (request.body.outputFormat === 'PPTX') {
+        mergedPptx = await mergePptxTemplate(
+          templateBuffer,
+          request.body.data,
+          {
+            locale: request.body.locale,
+            timezone: request.body.timezone,
+            imageAllowlist: config.imageAllowlist,
+            ...request.body.options,
+          }
+        );
+      } else {
+        mergedDocx = await mergeTemplate(
+          templateBuffer,
+          request.body.data,
+          {
+            locale: request.body.locale,
+            timezone: request.body.timezone,
+            imageAllowlist: config.imageAllowlist,
+            ...request.body.options,
+          }
+        );
+      }
     }
 
     // Step 3: Convert to PDF if needed (same for both single and composite)
@@ -320,7 +355,7 @@ async function generateHandler(
 
     if (request.body.outputFormat === 'PDF') {
       request.log.info({ correlationId }, 'Converting DOCX to PDF');
-      pdfBuffer = await convertDocxToPdf(mergedDocx, {
+      pdfBuffer = await convertDocxToPdf(mergedDocx!, {
         timeout: config.conversionTimeout,
         workdir: config.conversionWorkdir,
         correlationId,
@@ -341,13 +376,21 @@ async function generateHandler(
         sfApi,
         { correlationId }
       );
-    } else {
+    } else if (request.body.outputFormat === 'DOCX') {
       // Output format is DOCX - upload DOCX as the primary file
       // Note: uploadAndLinkFiles expects PDF as first param, but we're uploading DOCX only
       // We need to handle this case differently
       uploadResult = await uploadAndLinkFiles(
-        mergedDocx,  // Pass DOCX as the "PDF" parameter (it's just a buffer)
+        mergedDocx!,  // Pass DOCX as the "PDF" parameter (it's just a buffer)
         null,  // No secondary DOCX needed
+        request.body,
+        sfApi,
+        { correlationId }
+      );
+    } else {
+      uploadResult = await uploadAndLinkFiles(
+        mergedPptx!,
+        null,
         request.body,
         sfApi,
         { correlationId }

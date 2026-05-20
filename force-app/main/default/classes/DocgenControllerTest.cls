@@ -391,7 +391,8 @@ private class DocgenControllerTest {
         Docgen_Template__c template = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   ReturnMultipleRecords__c
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   Watermark_Text__c, Watermark_Condition_Field__c
             FROM Docgen_Template__c
             LIMIT 1
         ];

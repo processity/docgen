@@ -59,7 +59,7 @@ public with sharing class DocgenController {
      *
      * @param templateId ID of the Docgen_Template__c record
      * @param recordId ID of the source record (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format (PDF or DOCX)
+     * @param outputFormat Output format (PDF, DOCX, or PPTX)
      * @return GenerateResult containing either downloadUrl (success) or errorMessage (failure)
      */
     @AuraEnabled
@@ -133,7 +133,7 @@ public with sharing class DocgenController {
      *
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds JSON string of record IDs (e.g., '{"accountId":"001xxx","contactId":"003xxx"}')
-     * @param outputFormat Output format (PDF or DOCX)
+     * @param outputFormat Output format (PDF, DOCX, or PPTX)
      * @return Download URL for the generated document
      * @throws AuraHandledException on validation or generation failures
      */
@@ -302,7 +302,8 @@ public with sharing class DocgenController {
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   ReturnMultipleRecords__c
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   Watermark_Text__c, Watermark_Condition_Field__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
@@ -378,7 +379,7 @@ public with sharing class DocgenController {
      *
      * @param compositeDocId Composite_Document__c ID
      * @param recordIds Map of variable names to record IDs
-     * @param outputFormat Output format (PDF or DOCX)
+     * @param outputFormat Output format (PDF, DOCX, or PPTX)
      * @param correlationId Correlation ID for tracking
      * @return Envelope for Node API request
      */
@@ -423,7 +424,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Composite_Document__c = compositeDocId;
         doc.RequestHash__c = envelope.requestHash;
-        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
+        DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
         doc.Status__c = 'PROCESSING';
         doc.OutputFormat__c = envelope.outputFormat;
         doc.Attempts__c = 0;
@@ -500,7 +501,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Template__c = templateId;
         doc.RequestHash__c = envelope.requestHash;
-        doc.RequestJSON__c = DocgenEnvelopeService.toJSON(envelope);
+        DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
         doc.Status__c = 'PROCESSING';
         doc.OutputFormat__c = envelope.outputFormat;
         doc.Attempts__c = 0;
@@ -886,7 +887,7 @@ public with sharing class DocgenController {
             'requestedBy' => UserInfo.getUserId(),
             'failedEarly' => true
         };
-        doc.RequestJSON__c = JSON.serializePretty(requestInfo);
+        DocgenEnvelopeService.setRequestJSONSegments(doc, JSON.serializePretty(requestInfo));
 
         // Set parent lookup dynamically based on object configuration
         if (recordId != null) {
@@ -928,7 +929,7 @@ public with sharing class DocgenController {
             'requestedBy' => UserInfo.getUserId(),
             'failedEarly' => true
         };
-        doc.RequestJSON__c = JSON.serializePretty(requestInfo);
+        DocgenEnvelopeService.setRequestJSONSegments(doc, JSON.serializePretty(requestInfo));
 
         // Try to set parent lookup from composite document's primary parent
         if (compositeDocId != null && String.isNotBlank(recordIdsJson)) {

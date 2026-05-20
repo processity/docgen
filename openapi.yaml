@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Salesforce Document Generation API
   description: |
-    Node.js service for generating PDF and DOCX documents from Salesforce data using docx-templates.
+    Node.js service for generating PDF, DOCX, and PPTX documents from Salesforce data.
 
     **Key Features:**
     - Interactive generation (LWC → Apex → Node)
@@ -545,7 +545,7 @@ components:
         templateId:
           type: string
           description: |
-            Salesforce ContentVersionId (18 chars) of the DOCX template.
+            Salesforce ContentVersionId (18 chars) of the DOCX or PPTX template.
             Template is cached immutably by this ID.
           example: '068xx000000abcdXXX'
         outputFileName:
@@ -559,8 +559,9 @@ components:
           enum:
             - PDF
             - DOCX
+            - PPTX
           description: |
-            Output format. PDF requires LibreOffice conversion. DOCX returns the merged template as-is.
+            Output format. PDF requires LibreOffice DOCX conversion. DOCX and PPTX return the merged template as-is.
         locale:
           type: string
           description: |
@@ -655,7 +656,7 @@ components:
           type: string
           format: uri
           description: |
-            Salesforce ContentVersion download URL. Opens the generated PDF/DOCX in the browser.
+            Salesforce ContentVersion download URL. Opens the generated PDF/DOCX/PPTX in the browser.
             Format: `https://<SF_DOMAIN>/sfc/servlet.shepherd/version/download/<ContentVersionId>`
           example: 'https://example.my.salesforce.com/sfc/servlet.shepherd/version/download/068xx000000abcdXXX'
         contentVersionId:

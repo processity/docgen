@@ -3,6 +3,21 @@
  * Composes data from providers, computes RequestHash, and builds JSON payload
  */
 public with sharing class DocgenEnvelopeService {
+    @TestVisible
+    private static final Integer REQUEST_JSON_SEGMENT_LENGTH = 131072;
+    private static final List<String> REQUEST_JSON_FIELD_NAMES = new List<String>{
+        'RequestJSON__c',
+        'RequestJSON02__c',
+        'RequestJSON03__c',
+        'RequestJSON04__c',
+        'RequestJSON05__c',
+        'RequestJSON06__c',
+        'RequestJSON07__c',
+        'RequestJSON08__c',
+        'RequestJSON09__c',
+        'RequestJSON10__c'
+    };
+    private static final Set<String> OUTPUT_FORMATS_WITH_EXTENSIONS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
 
     /**
      * Envelope structure matching TypeScript DocgenRequest interface
@@ -39,7 +54,7 @@ public with sharing class DocgenEnvelopeService {
      *
      * @param recordId Source record ID
      * @param template Template configuration
-     * @param outputFormat PDF or DOCX
+     * @param outputFormat PDF, DOCX, or PPTX
      * @param locale Locale for formatting (e.g., 'en-GB')
      * @param timezone Timezone for datetime formatting
      * @return Complete envelope ready for Node API
@@ -68,6 +83,12 @@ public with sharing class DocgenEnvelopeService {
         // Get data from appropriate provider
         DocgenDataProvider provider = getProvider(template);
         env.data = provider.buildData(recordId, template, locale, timezone);
+        env.options.put('readOnlyWord', getReadOnlyWordOption(recordId, env.data));
+        String objectType = recordId.getSObjectType().getDescribe().getName();
+        String watermarkText = resolveWatermarkText(template, env.data, objectType);
+        if (String.isNotBlank(watermarkText)) {
+            env.options.put('watermarkText', watermarkText);
+        }
 
         // Extract parent IDs
         env.parents = extractParentIds(recordId, env.data);
@@ -77,7 +98,8 @@ public with sharing class DocgenEnvelopeService {
 
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
-        env.requestHash = computeHash(env.templateId, env.outputFormat, dataJson);
+        String optionsJson = JSON.serialize(env.options);
+        env.requestHash = computeHash(env.templateId, env.outputFormat, dataJson, env.outputFileName, optionsJson);
 
         return env;
     }
@@ -87,7 +109,7 @@ public with sharing class DocgenEnvelopeService {
      * Format: sha256:{templateId}|{outputFormat}|{dataChecksum}
      *
      * @param templateId ContentVersionId of template
-     * @param outputFormat PDF or DOCX
+     * @param outputFormat PDF, DOCX, or PPTX
      * @param dataJson Serialized data object
      * @return Hash string with sha256: prefix
      */
@@ -99,6 +121,31 @@ public with sharing class DocgenEnvelopeService {
         Blob hash = Crypto.generateDigest('SHA-256', Blob.valueOf(input));
 
         // Convert to hex and prepend prefix
+        return 'sha256:' + EncodingUtil.convertToHex(hash);
+    }
+
+    /**
+     * Compute SHA-256 hash for idempotency including output-affecting options.
+     *
+     * @param templateId ContentVersionId of template
+     * @param outputFormat PDF, DOCX, or PPTX
+     * @param dataJson Serialized data object
+     * @param outputFileName Resolved output filename
+     * @param optionsJson Serialized options object
+     * @return Hash string with sha256: prefix
+     */
+    public static String computeHash(
+        String templateId,
+        String outputFormat,
+        String dataJson,
+        String outputFileName,
+        String optionsJson
+    ) {
+        String input = templateId + '|' + outputFormat + '|' +
+            String.valueOf(outputFileName) + '|' + String.valueOf(optionsJson) + '|' + dataJson;
+
+        Blob hash = Crypto.generateDigest('SHA-256', Blob.valueOf(input));
+
         return 'sha256:' + EncodingUtil.convertToHex(hash);
     }
 
@@ -146,6 +193,53 @@ public with sharing class DocgenEnvelopeService {
         }
 
         return JSON.serialize(jsonMap);
+    }
+
+    public static void setRequestJSONSegments(Generated_Document__c doc, String requestJSON) {
+        if (doc == null) {
+            throw new IllegalArgumentException('Generated document cannot be null');
+        }
+
+        for (String fieldName : REQUEST_JSON_FIELD_NAMES) {
+            doc.put(fieldName, null);
+        }
+
+        if (requestJSON == null) {
+            return;
+        }
+
+        Integer maxLength = REQUEST_JSON_SEGMENT_LENGTH * REQUEST_JSON_FIELD_NAMES.size();
+        if (requestJSON.length() > maxLength) {
+            throw new IllegalArgumentException('Request JSON exceeds segmented storage capacity');
+        }
+
+        Integer start = 0;
+        Integer segmentIndex = 0;
+        while (start < requestJSON.length()) {
+            Integer endIndex = start + REQUEST_JSON_SEGMENT_LENGTH;
+            if (endIndex > requestJSON.length()) {
+                endIndex = requestJSON.length();
+            }
+            doc.put(REQUEST_JSON_FIELD_NAMES[segmentIndex], requestJSON.substring(start, endIndex));
+            start = endIndex;
+            segmentIndex++;
+        }
+    }
+
+    public static String reconstructRequestJSON(Generated_Document__c doc) {
+        if (doc == null) {
+            return null;
+        }
+
+        List<String> segments = new List<String>();
+        for (String fieldName : REQUEST_JSON_FIELD_NAMES) {
+            String segment = getStringFieldValue(doc, fieldName);
+            if (segment != null) {
+                segments.add(segment);
+            }
+        }
+
+        return segments.isEmpty() ? null : String.join(segments, '');
     }
 
     /**
@@ -230,7 +324,7 @@ public with sharing class DocgenEnvelopeService {
     }
 
     /**
-     * Generate output filename (placeholder support for future enhancement)
+     * Generate output filename from configured data path, or fallback to timestamp naming.
      */
     @TestVisible
     private static String generateOutputFileName(
@@ -239,13 +333,19 @@ public with sharing class DocgenEnvelopeService {
         Map<String, Object> data,
         String outputFormat
     ) {
-        // For now, generate simple filename
-        // Future: Support placeholders like "Quote_{{Opportunity.Name}}.pdf"
         String objectType = recordId.getSObjectType().getDescribe().getName();
-        String extension = outputFormat.toLowerCase();
-        String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
+        String configuredPath = template.Output_File_Name_Field__c;
+        if (String.isNotBlank(configuredPath)) {
+            Object configuredValue = resolveSimpleFieldPath(data, configuredPath, objectType);
+            if (configuredValue != null) {
+                String configuredFileName = sanitizeFileName(String.valueOf(configuredValue));
+                if (String.isNotBlank(configuredFileName)) {
+                    return enforceOutputExtension(configuredFileName, outputFormat);
+                }
+            }
+        }
 
-        return objectType + '_' + template.Name.replaceAll('[^a-zA-Z0-9]', '_') + '_' + timestamp + '.' + extension;
+        return generateTimestampFileName(objectType, template.Name, outputFormat);
     }
 
     // ========== T-20: Composite Document Support ==========
@@ -255,7 +355,7 @@ public with sharing class DocgenEnvelopeService {
      *
      * @param compositeDocId Composite document ID
      * @param recordIds Map of variable names to record IDs (e.g., {"accountId": "001xxx", "contactId": "003xxx"})
-     * @param outputFormat PDF or DOCX
+     * @param outputFormat PDF, DOCX, or PPTX
      * @param locale Locale for formatting (e.g., 'en-GB')
      * @param timezone Timezone for datetime formatting
      * @return Complete envelope ready for Node API
@@ -292,6 +392,7 @@ public with sharing class DocgenEnvelopeService {
             locale,
             timezone
         );
+        env.options.put('readOnlyWord', getReadOnlyWordOptionFromData(env.data));
 
         // Handle template strategy
         if (composite.Template_Strategy__c == 'Own Template') {
@@ -313,7 +414,15 @@ public with sharing class DocgenEnvelopeService {
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
         String recordIdsJson = JSON.serialize(recordIds);
-        env.requestHash = computeCompositeHash(compositeDocId, outputFormat, recordIdsJson, dataJson);
+        String optionsJson = JSON.serialize(env.options);
+        env.requestHash = computeCompositeHash(
+            compositeDocId,
+            outputFormat,
+            recordIdsJson,
+            dataJson,
+            env.outputFileName,
+            optionsJson
+        );
 
         return env;
     }
@@ -466,6 +575,26 @@ public with sharing class DocgenEnvelopeService {
     }
 
     /**
+     * Compute SHA-256 hash for composite document idempotency including output-affecting options.
+     */
+    @TestVisible
+    private static String computeCompositeHash(
+        String compositeDocId,
+        String outputFormat,
+        String recordIdsJson,
+        String dataJson,
+        String outputFileName,
+        String optionsJson
+    ) {
+        String input = compositeDocId + '|' + outputFormat + '|' + recordIdsJson + '|' +
+            String.valueOf(outputFileName) + '|' + String.valueOf(optionsJson) + '|' + dataJson;
+
+        Blob hash = Crypto.generateDigest('SHA-256', Blob.valueOf(input));
+
+        return 'sha256:' + EncodingUtil.convertToHex(hash);
+    }
+
+    /**
      * Generate output filename for composite document
      * Format: Composite_{Name}_{timestamp}.{ext}
      */
@@ -479,5 +608,184 @@ public with sharing class DocgenEnvelopeService {
         String sanitizedName = composite.Name.replaceAll('[^a-zA-Z0-9]', '_');
 
         return 'Composite_' + sanitizedName + '_' + timestamp + '.' + extension;
+    }
+
+    private static String generateTimestampFileName(String objectType, String templateName, String outputFormat) {
+        String extension = getOutputExtension(outputFormat);
+        String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
+        String sanitizedTemplateName = templateName == null ? 'Template' : templateName.replaceAll('[^a-zA-Z0-9]', '_');
+        return objectType + '_' + sanitizedTemplateName + '_' + timestamp + '.' + extension;
+    }
+
+    @TestVisible
+    private static Object resolveSimpleFieldPath(Map<String, Object> data, String fieldPath, String primaryObjectName) {
+        if (data == null || String.isBlank(fieldPath)) {
+            return null;
+        }
+
+        String trimmedPath = fieldPath.trim();
+        if (!trimmedPath.contains('.')) {
+            if (data.containsKey(trimmedPath)) {
+                return data.get(trimmedPath);
+            }
+
+            if (String.isNotBlank(primaryObjectName) && data.get(primaryObjectName) instanceof Map<String, Object>) {
+                Map<String, Object> primaryData = (Map<String, Object>) data.get(primaryObjectName);
+                if (primaryData.containsKey(trimmedPath)) {
+                    return primaryData.get(trimmedPath);
+                }
+            }
+
+            if (data.size() == 1) {
+                for (Object value : data.values()) {
+                    if (value instanceof Map<String, Object>) {
+                        Map<String, Object> nestedData = (Map<String, Object>) value;
+                        if (nestedData.containsKey(trimmedPath)) {
+                            return nestedData.get(trimmedPath);
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        Object currentValue = data;
+        for (String part : trimmedPath.split('\\.')) {
+            if (String.isBlank(part)) {
+                return null;
+            }
+            if (!(currentValue instanceof Map<String, Object>)) {
+                return null;
+            }
+
+            Map<String, Object> currentMap = (Map<String, Object>) currentValue;
+            if (!currentMap.containsKey(part)) {
+                return null;
+            }
+            currentValue = currentMap.get(part);
+        }
+
+        return currentValue;
+    }
+
+    private static String sanitizeFileName(String fileName) {
+        if (String.isBlank(fileName)) {
+            return null;
+        }
+
+        String sanitized = fileName.trim();
+        sanitized = sanitized.replaceAll('[\\\\/:*?"<>|]+', '_');
+        sanitized = sanitized.replaceAll('[\\r\\n\\t]+', ' ');
+        sanitized = sanitized.replaceAll('\\s+', ' ');
+        sanitized = sanitized.replaceAll('^\\.+', '');
+        sanitized = sanitized.replaceAll('\\.+$', '');
+        return sanitized.trim();
+    }
+
+    private static String enforceOutputExtension(String fileName, String outputFormat) {
+        String sanitized = sanitizeFileName(fileName);
+        if (String.isBlank(sanitized)) {
+            return null;
+        }
+
+        String lowerName = sanitized.toLowerCase();
+        for (String format : OUTPUT_FORMATS_WITH_EXTENSIONS) {
+            String existingExtension = '.' + format.toLowerCase();
+            if (lowerName.endsWith(existingExtension)) {
+                sanitized = sanitized.substring(0, sanitized.length() - existingExtension.length());
+                break;
+            }
+        }
+
+        if (String.isBlank(sanitized)) {
+            return null;
+        }
+        return sanitized + '.' + getOutputExtension(outputFormat);
+    }
+
+    private static String getOutputExtension(String outputFormat) {
+        if (String.isBlank(outputFormat)) {
+            return 'pdf';
+        }
+        return outputFormat.trim().toLowerCase();
+    }
+
+    private static String resolveWatermarkText(Docgen_Template__c template, Map<String, Object> data, String primaryObjectName) {
+        if (template == null || String.isBlank(template.Watermark_Text__c)) {
+            return null;
+        }
+
+        if (String.isNotBlank(template.Watermark_Condition_Field__c)) {
+            Object conditionValue = resolveSimpleFieldPath(data, template.Watermark_Condition_Field__c, primaryObjectName);
+            if (!isTruthy(conditionValue)) {
+                return null;
+            }
+        }
+
+        return template.Watermark_Text__c.trim();
+    }
+
+    private static Boolean isTruthy(Object value) {
+        Boolean booleanValue = toBoolean(value);
+        if (booleanValue != null) {
+            return booleanValue;
+        }
+        if (value instanceof String) {
+            String stringValue = ((String) value).trim();
+            return stringValue != '' && stringValue != '0';
+        }
+        return value != null;
+    }
+
+    private static Boolean getReadOnlyWordOption(Id recordId, Map<String, Object> data) {
+        if (recordId == null || recordId.getSObjectType().getDescribe().getName() != 'Case') {
+            return false;
+        }
+
+        Boolean dataValue = getReadOnlyWordOptionFromData(data);
+        if (dataValue != null) {
+            return dataValue;
+        }
+
+        Schema.SObjectType caseType = Schema.getGlobalDescribe().get('Case');
+        if (caseType == null || !caseType.getDescribe().fields.getMap().containsKey('Standard_Template__c')) {
+            return false;
+        }
+
+        List<SObject> cases = Database.query('SELECT Standard_Template__c FROM Case WHERE Id = :recordId LIMIT 1');
+        if (cases.isEmpty()) {
+            return false;
+        }
+        return (Boolean) cases[0].get('Standard_Template__c');
+    }
+
+    private static Boolean getReadOnlyWordOptionFromData(Map<String, Object> data) {
+        Object value = resolveSimpleFieldPath(data, 'Case.Standard_Template__c', 'Case');
+        return toBoolean(value);
+    }
+
+    private static Boolean toBoolean(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof String) {
+            String stringValue = ((String) value).trim().toLowerCase();
+            if (stringValue == 'true') return true;
+            if (stringValue == 'false') return false;
+        }
+        return null;
+    }
+
+    private static String getStringFieldValue(SObject record, String fieldName) {
+        try {
+            Object value = record.get(fieldName);
+            return value == null ? null : String.valueOf(value);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

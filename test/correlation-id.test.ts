@@ -1,9 +1,30 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import type { FastifyInstance } from 'fastify';
 import nock from 'nock';
+import { generateKeyPairSync } from 'crypto';
 import { build } from '../src/server';
 import { generateCorrelationId } from '../src/utils/correlation-id';
 import { createTestDocxBuffer } from './helpers/test-docx';
+
+const { privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: {
+    type: 'spki',
+    format: 'pem',
+  },
+  privateKeyEncoding: {
+    type: 'pkcs8',
+    format: 'pem',
+  },
+});
+
+jest.mock('../src/convert/soffice', () => {
+  const actual = jest.requireActual('../src/convert/soffice');
+  return {
+    ...actual,
+    convertDocxToPdf: jest.fn(async () => Buffer.from('%PDF-1.4\n%docgen-test\n')),
+  };
+});
 
 describe('Correlation ID', () => {
   describe('generateCorrelationId', () => {
@@ -65,10 +86,8 @@ describe('Correlation ID', () => {
       process.env.SF_DOMAIN = 'test.salesforce.com';
       process.env.SF_USERNAME = 'test@example.com';
       process.env.SF_CLIENT_ID = 'test-client-id';
-      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
-      if (!process.env.SF_PRIVATE_KEY) {
-        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-      }
+      process.env.SF_PRIVATE_KEY = privateKey;
+      delete process.env.SF_PRIVATE_KEY_PATH;
 
       // Pre-generate test DOCX buffer
       testDocxBuffer = await createTestDocxBuffer();
@@ -416,10 +435,8 @@ describe('Correlation ID', () => {
       process.env.SF_DOMAIN = 'test.salesforce.com';
       process.env.SF_USERNAME = 'test@example.com';
       process.env.SF_CLIENT_ID = 'test-client-id';
-      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
-      if (!process.env.SF_PRIVATE_KEY) {
-        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-      }
+      process.env.SF_PRIVATE_KEY = privateKey;
+      delete process.env.SF_PRIVATE_KEY_PATH;
 
       // Pre-generate test DOCX buffer
       testDocxBuffer = await createTestDocxBuffer();
@@ -626,10 +643,8 @@ describe('Correlation ID', () => {
       process.env.SF_DOMAIN = 'test.salesforce.com';
       process.env.SF_USERNAME = 'test@example.com';
       process.env.SF_CLIENT_ID = 'test-client-id';
-      // Use SF_PRIVATE_KEY from environment if set (CI), otherwise use local key path
-      if (!process.env.SF_PRIVATE_KEY) {
-        process.env.SF_PRIVATE_KEY_PATH = './keys/server.key';
-      }
+      process.env.SF_PRIVATE_KEY = privateKey;
+      delete process.env.SF_PRIVATE_KEY_PATH;
 
       // Pre-generate test DOCX buffer
       testDocxBuffer = await createTestDocxBuffer();

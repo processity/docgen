@@ -39,6 +39,7 @@
  * @see CompositeDocgenDataProvider
  */
 public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, Database.Stateful {
+    private static final Set<String> VALID_OUTPUT_FORMATS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
 
     // State variables - Single Template
     private Id templateId;
@@ -62,7 +63,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor
      * @param templateId ID of the Docgen_Template__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
      * @throws QueryException if template not found
      */
     public BatchDocgenEnqueue(Id templateId, List<Id> recordIds, String outputFormat) {
@@ -79,15 +80,14 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
             throw new IllegalArgumentException('recordIds cannot be null or empty');
         }
 
-        if (outputFormat != 'PDF' && outputFormat != 'DOCX') {
-            throw new IllegalArgumentException('outputFormat must be PDF or DOCX');
-        }
+        validateOutputFormat(outputFormat);
 
         // Load template (will throw QueryException if not found)
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   ReturnMultipleRecords__c
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   Watermark_Text__c, Watermark_Condition_Field__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
@@ -104,7 +104,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor for Composite Documents
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
      * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
      * @throws QueryException if composite not found
      */
@@ -121,7 +121,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor for Composite Documents with Additional Static RecordIds
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF' or 'DOCX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
      * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
      * @param additionalRecordIds Static IDs shared across all batch records (e.g., {'termsId': termRecord.Id})
      * @throws QueryException if composite not found
@@ -149,9 +149,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
             throw new IllegalArgumentException('recordIds cannot be null or empty');
         }
 
-        if (outputFormat != 'PDF' && outputFormat != 'DOCX') {
-            throw new IllegalArgumentException('outputFormat must be PDF or DOCX');
-        }
+        validateOutputFormat(outputFormat);
 
         if (String.isBlank(recordIdFieldName)) {
             throw new IllegalArgumentException('recordIdFieldName cannot be blank');
@@ -226,9 +224,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                     );
                 }
 
-                // Serialize envelope to JSON and truncate if needed
+                // Serialize envelope to JSON and store across request segments if needed
                 String requestJSON = DocgenEnvelopeService.toJSON(envelope);
-                requestJSON = truncateIfNeeded(requestJSON);
 
                 // Generate correlation ID (for Generated_Document__c tracking only)
                 String correlationId = generateCorrelationId();
@@ -236,13 +233,14 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                 // Create Generated_Document__c record
                 Generated_Document__c doc = new Generated_Document__c(
                     Status__c = 'QUEUED',
-                    RequestJSON__c = requestJSON,
                     RequestHash__c = envelope.requestHash,
                     CorrelationId__c = correlationId,
                     OutputFormat__c = this.outputFormat,
                     Priority__c = 0, // Default priority
-                    Attempts__c = 0  // Start with 0 attempts
+                    Attempts__c = 0,  // Start with 0 attempts
+                    RequestedBy__c = UserInfo.getUserId()
                 );
+                DocgenEnvelopeService.setRequestJSONSegments(doc, requestJSON);
 
                 // Set Template__c or Composite_Document__c based on mode
                 if (isComposite) {
@@ -406,25 +404,10 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         return recordIdsMap;
     }
 
-    /**
-     * Truncate JSON string if it exceeds RequestJSON__c field limit (131KB)
-     * @param json JSON string to truncate
-     * @return Truncated JSON with [TRUNCATED] marker if necessary
-     */
-    private String truncateIfNeeded(String json) {
-        final Integer MAX_SIZE = 131072; // 131KB in bytes (RequestJSON__c field limit)
-
-        if (String.isBlank(json)) {
-            return json;
+    private static void validateOutputFormat(String outputFormat) {
+        if (!VALID_OUTPUT_FORMATS.contains(outputFormat)) {
+            throw new IllegalArgumentException('outputFormat must be PDF, DOCX, or PPTX');
         }
-
-        if (json.length() > MAX_SIZE) {
-            String truncatedMarker = '[TRUNCATED]';
-            Integer truncateAt = MAX_SIZE - truncatedMarker.length();
-            return json.substring(0, truncateAt) + truncatedMarker;
-        }
-
-        return json;
     }
 
     /**

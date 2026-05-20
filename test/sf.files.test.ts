@@ -138,6 +138,39 @@ describe('Salesforce File Upload & Linking (T-12)', () => {
       expect(result.contentVersionId).toBe(contentVersionId);
     });
 
+    it('should strip PPTX extension for ContentVersion title', async () => {
+      const contentVersionId = '068xx000000pptxXXX';
+
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.Title).toBe('Deck');
+          expect(body.PathOnClient).toBe('Deck.pptx');
+          return true;
+        })
+        .reply(201, {
+          id: contentVersionId,
+          success: true,
+          errors: [],
+        });
+
+      nock('https://test.salesforce.com')
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          records: [
+            {
+              Id: contentVersionId,
+              ContentDocumentId: '069xx000000pptxYYY',
+            },
+          ],
+          totalSize: 1,
+        });
+
+      const result = await uploadContentVersion(Buffer.from('pptx'), 'Deck.pptx', api);
+
+      expect(result.contentVersionId).toBe(contentVersionId);
+    });
+
     it('should retry on 5xx error and succeed', async () => {
       const contentVersionId = '068xx000000retryXXX';
 

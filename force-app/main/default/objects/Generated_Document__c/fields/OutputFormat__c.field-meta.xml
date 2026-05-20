@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>OutputFormat__c</fullName>
-    <description>Desired output file format. PDF is standard; DOCX may be used for further manual editing.</description>
+    <description>Desired output file format. PDF is standard; DOCX and PPTX may be used for editable outputs.</description>
     <externalId>false</externalId>
     <label>Output Format</label>
     <required>true</required>
@@ -20,6 +20,11 @@
                 <fullName>DOCX</fullName>
                 <default>false</default>
                 <label>DOCX</label>
+            </value>
+            <value>
+                <fullName>PPTX</fullName>
+                <default>false</default>
+                <label>PPTX</label>
             </value>
         </valueSetDefinition>
     </valueSet>

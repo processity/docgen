@@ -1,5 +1,4 @@
 import { config as dotenvConfig } from 'dotenv';
-import supertest from 'supertest';
 import nock from 'nock';
 import { build } from '../../src/server';
 import { loadConfig } from '../../src/config';
@@ -9,16 +8,13 @@ import type { FastifyInstance } from 'fastify';
 
 // Load environment variables
 dotenvConfig();
+process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';
 
 // Config will be loaded in beforeAll
 let appConfig: Awaited<ReturnType<typeof loadConfig>>;
 
-// Use conditional describe to skip entire suite if no credentials
-const describeIfCredentials = process.env.SFDX_AUTH_URL ? describe : describe.skip;
-
-describeIfCredentials('Worker Routes', () => {
+describe('Worker Routes', () => {
   let app: FastifyInstance;
-  let request: ReturnType<typeof supertest>;
 
   beforeAll(async () => {
     // Load config first
@@ -31,7 +27,6 @@ describeIfCredentials('Worker Routes', () => {
 
     app = await build();
     await app.ready();
-    request = supertest(app.server);
   });
 
   afterAll(async () => {
@@ -70,14 +65,21 @@ describeIfCredentials('Worker Routes', () => {
     nock.cleanAll();
   });
 
+  async function get(url: string, token?: string) {
+    const headers = token ? { authorization: `Bearer ${token}` } : undefined;
+    const response = await app.inject({ method: 'GET', url, headers });
+    return {
+      status: response.statusCode,
+      body: response.json(),
+      headers: response.headers,
+    };
+  }
+
   describe('GET /worker/status', () => {
     it('should return current poller status', async () => {
       const token = await generateValidJWT();
 
-      const response = await request
-        .get('/worker/status')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
+      const response = await get('/worker/status', token);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('isRunning');
@@ -91,10 +93,7 @@ describeIfCredentials('Worker Routes', () => {
       const token = await generateValidJWT();
 
       // Note: In production, poller auto-starts. In tests, it may not be running.
-      const response = await request
-        .get('/worker/status')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
+      const response = await get('/worker/status', token);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('isRunning');
@@ -102,7 +101,7 @@ describeIfCredentials('Worker Routes', () => {
     });
 
     it('should require AAD authentication', async () => {
-      const response = await request.get('/worker/status').send();
+      const response = await get('/worker/status');
 
       expect(response.status).toBe(401);
     });
@@ -112,10 +111,7 @@ describeIfCredentials('Worker Routes', () => {
     it('should return detailed poller statistics', async () => {
       const token = await generateValidJWT();
 
-      const response = await request
-        .get('/worker/stats')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
+      const response = await get('/worker/stats', token);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('isRunning');
@@ -131,10 +127,7 @@ describeIfCredentials('Worker Routes', () => {
     it('should show zero counts for new poller', async () => {
       const token = await generateValidJWT();
 
-      const response = await request
-        .get('/worker/stats')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
+      const response = await get('/worker/stats', token);
 
       expect(response.status).toBe(200);
       expect(response.body.totalProcessed).toBe(0);
@@ -144,7 +137,7 @@ describeIfCredentials('Worker Routes', () => {
     });
 
     it('should require AAD authentication', async () => {
-      const response = await request.get('/worker/stats').send();
+      const response = await get('/worker/stats');
 
       expect(response.status).toBe(401);
     });
@@ -152,8 +145,8 @@ describeIfCredentials('Worker Routes', () => {
 
   describe('Authentication enforcement', () => {
     it('should reject requests with missing Authorization header', async () => {
-      const statusResponse = await request.get('/worker/status').send();
-      const statsResponse = await request.get('/worker/stats').send();
+      const statusResponse = await get('/worker/status');
+      const statsResponse = await get('/worker/stats');
 
       expect(statusResponse.status).toBe(401);
       expect(statsResponse.status).toBe(401);
@@ -162,16 +155,13 @@ describeIfCredentials('Worker Routes', () => {
     it('should reject requests with malformed token', async () => {
       const token = 'not.a.valid.jwt';
 
-      const statusResponse = await request
-        .get('/worker/status')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
+      const statusResponse = await get('/worker/status', token);
 
       expect(statusResponse.status).toBe(401);
     });
 
     it('should include correlation ID in error responses', async () => {
-      const response = await request.get('/worker/status').send();
+      const response = await get('/worker/status');
 
       expect(response.status).toBe(401);
       expect(response.body).toHaveProperty('correlationId');
@@ -180,7 +170,7 @@ describeIfCredentials('Worker Routes', () => {
 
   describe('Error handling', () => {
     it('should return proper error structure', async () => {
-      const response = await request.get('/worker/status').send();
+      const response = await get('/worker/status');
 
       expect(response.status).toBe(401);
       expect(response.body).toHaveProperty('error');

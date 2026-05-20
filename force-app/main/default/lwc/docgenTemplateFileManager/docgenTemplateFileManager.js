@@ -99,10 +99,11 @@ export default class DocgenTemplateFileManager extends LightningElement {
             const file = uploadedFiles[0];
 
             // Check file extension
-            if (!file.name.toLowerCase().endsWith('.docx')) {
+            const lowerFileName = file.name.toLowerCase();
+            if (!lowerFileName.endsWith('.docx') && !lowerFileName.endsWith('.pptx')) {
                 this.showToast(
                     'Invalid File Type',
-                    'Only DOCX files are supported for templates',
+                    'Only DOCX and PPTX files are supported for templates',
                     'error'
                 );
                 return;
@@ -274,7 +275,7 @@ export default class DocgenTemplateFileManager extends LightningElement {
     }
 
     get acceptedFormats() {
-        return ['.docx'];
+        return ['.docx', '.pptx'];
     }
 
     get hasFiles() {
@@ -283,8 +284,8 @@ export default class DocgenTemplateFileManager extends LightningElement {
 
     get componentTitle() {
         if (this.recordMetadata.objectType === 'Composite_Document__c') {
-            return 'Combined DOCX File';
+            return 'Combined Template File';
         }
-        return 'Template DOCX Files';
+        return 'Template Files';
     }
 }

@@ -54,7 +54,7 @@ private class BatchDocgenEnqueueTest {
 
         // Assert
         List<Generated_Document__c> docs = [
-            SELECT Id, Status__c, RequestHash__c, RequestJSON__c, Account__c, Template__c, OutputFormat__c
+            SELECT Id, Status__c, RequestHash__c, RequestJSON__c, Account__c, Template__c, OutputFormat__c, RequestedBy__c
             FROM Generated_Document__c
             ORDER BY CreatedDate
         ];
@@ -67,6 +67,7 @@ private class BatchDocgenEnqueueTest {
             System.assertNotEquals(null, doc.RequestJSON__c, 'RequestJSON should be populated');
             System.assertEquals(template.Id, doc.Template__c, 'Template should be set');
             System.assertEquals('PDF', doc.OutputFormat__c, 'OutputFormat should be PDF');
+            System.assertEquals(UserInfo.getUserId(), doc.RequestedBy__c, 'RequestedBy should be the enqueueing user');
             System.assertNotEquals(null, doc.Account__c, 'Account lookup should be set');
         }
     }
@@ -312,6 +313,39 @@ private class BatchDocgenEnqueueTest {
         ];
 
         System.assertEquals('DOCX', doc.OutputFormat__c, 'OutputFormat should be DOCX');
+    }
+
+    /**
+     * Test: PPTX output format supported
+     * Given outputFormat = 'PPTX'
+     * When batch executes
+     * Then Generated_Document__c.OutputFormat__c = 'PPTX'
+     */
+    @isTest
+    static void testPptxOutputFormat() {
+        // Arrange
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        List<Account> accounts = [SELECT Id FROM Account LIMIT 1];
+        List<Id> recordIds = new List<Id>{accounts[0].Id};
+
+        // Act
+        Test.startTest();
+        BatchDocgenEnqueue batch = new BatchDocgenEnqueue(
+            template.Id,
+            recordIds,
+            'PPTX'
+        );
+        Database.executeBatch(batch, 200);
+        Test.stopTest();
+
+        // Assert
+        Generated_Document__c doc = [
+            SELECT OutputFormat__c
+            FROM Generated_Document__c
+            LIMIT 1
+        ];
+
+        System.assertEquals('PPTX', doc.OutputFormat__c, 'OutputFormat should be PPTX');
     }
 
     /**

@@ -1,0 +1,201 @@
+name: Deploy to UAT
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Optional Docker image tag. Defaults to the selected commit SHA.
+        required: false
+        type: string
+      run_smoke_tests:
+        description: Run /healthz and /readyz checks after deployment.
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uat-deployment
+  cancel-in-progress: true
+
+env:
+  AZURE_SUBSCRIPTION_ID: e6890ad9-401e-4696-bee4-c50fe72aa287
+  RESOURCE_GROUP: docgen-uat-rg
+  APP_NAME: docgen-uat
+  ACR_NAME: docgenuat
+  IMAGE_REPOSITORY: docgen-api
+
+jobs:
+  deploy:
+    name: Build and Update UAT
+    runs-on: ubuntu-latest
+    environment: uat
+    outputs:
+      app_url: ${{ steps.get-url.outputs.app_url }}
+      image_uri: ${{ steps.image.outputs.image_uri }}
+      image_tag: ${{ steps.image.outputs.image_tag }}
+      previous_revision: ${{ steps.current.outputs.previous_revision }}
+      new_revision: ${{ steps.wait-revision.outputs.new_revision }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+      - name: Resolve image
+        id: image
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="${GITHUB_SHA}"
+          fi
+
+          IMAGE_URI="${ACR_NAME}.azurecr.io/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "Using image: ${IMAGE_URI}"
+
+      - name: Validate UAT resources
+        run: |
+          az group show --name "$RESOURCE_GROUP" --output none
+          az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --output none
+          az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none
+          echo "UAT resources found: ${RESOURCE_GROUP}/${APP_NAME}, ACR ${ACR_NAME}"
+
+      - name: Login to UAT ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.image_uri }}
+            ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_REPOSITORY }}:uat-latest
+          cache-from: type=registry,ref=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_REPOSITORY }}:buildcache,mode=max
+          build-args: |
+            NODE_ENV=production
+
+      - name: Get current active revision
+        id: current
+        run: |
+          CURRENT_REVISION=$(az containerapp revision list \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "[?properties.active==\`true\`].name | [0]" \
+            -o tsv)
+
+          echo "previous_revision=${CURRENT_REVISION}" >> "$GITHUB_OUTPUT"
+          echo "Current active revision: ${CURRENT_REVISION}"
+
+      - name: Update UAT Container App
+        run: |
+          az containerapp update \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.image.outputs.image_uri }}" \
+            --output none
+
+      - name: Wait for new revision
+        id: wait-revision
+        run: |
+          echo "Waiting for UAT revision to become healthy..."
+
+          MAX_ATTEMPTS=30
+          SLEEP_SECONDS=10
+          ATTEMPT=0
+
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            REVISION_JSON=$(az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "[?properties.active==\`true\`] | [0].{name:name,provisioningState:properties.provisioningState,healthState:properties.healthState,runningState:properties.runningState}" \
+              -o json)
+
+            REVISION_NAME=$(echo "$REVISION_JSON" | jq -r '.name // empty')
+            PROVISIONING_STATE=$(echo "$REVISION_JSON" | jq -r '.provisioningState // empty')
+            HEALTH_STATE=$(echo "$REVISION_JSON" | jq -r '.healthState // empty')
+            RUNNING_STATE=$(echo "$REVISION_JSON" | jq -r '.runningState // empty')
+
+            echo "Attempt $((ATTEMPT + 1))/${MAX_ATTEMPTS}: ${REVISION_NAME} provisioning=${PROVISIONING_STATE} health=${HEALTH_STATE} running=${RUNNING_STATE}"
+
+            if [ "$PROVISIONING_STATE" = "Provisioned" ] && [ "$HEALTH_STATE" = "Healthy" ]; then
+              echo "new_revision=${REVISION_NAME}" >> "$GITHUB_OUTPUT"
+              echo "UAT revision is healthy: ${REVISION_NAME}"
+              exit 0
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "Timed out waiting for UAT revision to become healthy"
+          exit 1
+
+      - name: Get UAT URL
+        id: get-url
+        run: |
+          APP_FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv)
+
+          APP_URL="https://${APP_FQDN}"
+          echo "app_url=${APP_URL}" >> "$GITHUB_OUTPUT"
+          echo "UAT URL: ${APP_URL}"
+
+  smoke-tests:
+    name: UAT Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: ${{ inputs.run_smoke_tests }}
+    environment: uat
+
+    steps:
+      - name: Test /healthz
+        run: |
+          APP_URL="${{ needs.deploy.outputs.app_url }}"
+          HTTP_CODE=$(curl -s -o /tmp/healthz.json -w "%{http_code}" "${APP_URL}/healthz")
+          cat /tmp/healthz.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Health check failed with status ${HTTP_CODE}"
+            exit 1
+          fi
+
+      - name: Test /readyz
+        run: |
+          APP_URL="${{ needs.deploy.outputs.app_url }}"
+          HTTP_CODE=$(curl -s -o /tmp/readyz.json -w "%{http_code}" "${APP_URL}/readyz")
+          cat /tmp/readyz.json
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Readiness check failed with status ${HTTP_CODE}"
+            exit 1
+          fi
+
+          jq -e '.ready == true' /tmp/readyz.json
+
+      - name: Summary
+        run: |
+          echo "UAT deployment succeeded"
+          echo "URL: ${{ needs.deploy.outputs.app_url }}"
+          echo "Image: ${{ needs.deploy.outputs.image_uri }}"
+          echo "Revision: ${{ needs.deploy.outputs.new_revision }}"

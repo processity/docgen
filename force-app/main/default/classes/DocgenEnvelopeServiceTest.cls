@@ -169,6 +169,7 @@ private class DocgenEnvelopeServiceTest {
         Assert.isNotNull(env.parents, 'Parents should not be null');
         Assert.areEqual(cs.Id, env.parents.get('CaseId'), 'CaseId should be set');
         Assert.areEqual(acc.Id, env.parents.get('AccountId'), 'AccountId should be set from Case');
+        Assert.areEqual(false, env.options.get('readOnlyWord'), 'readOnlyWord should default to false when Standard_Template__c is unavailable');
     }
 
     @isTest
@@ -420,6 +421,56 @@ private class DocgenEnvelopeServiceTest {
             env.outputFileName.contains('.pdf'),
             'Filename should have meaningful content or extension'
         );
+    }
+
+    @isTest
+    static void testOutputFileNameFromConfiguredField() {
+        Account acc = DocgenTestDataFactory.createAccount('Acme Contract.docx');
+
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Configured File Name Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000019AAA',
+            false,
+            false,
+            false
+        );
+        template.Output_File_Name_Field__c = 'Account.Name';
+        update template;
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            acc.Id,
+            template,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        Assert.areEqual('Acme Contract.pdf', env.outputFileName, 'Configured file name should enforce the requested extension');
+    }
+
+    @isTest
+    static void testRequestJSONSegmentsRoundTrip() {
+        String padding = '';
+        for (Integer i = 0; i < 1400; i++) {
+            padding += 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+        }
+        String requestJSON = '{"parents":{"AccountId":"001000000000001AAA"},"padding":"' + padding + '"}';
+        Generated_Document__c doc = new Generated_Document__c();
+
+        Test.startTest();
+        DocgenEnvelopeService.setRequestJSONSegments(doc, requestJSON);
+        String reconstructed = DocgenEnvelopeService.reconstructRequestJSON(doc);
+        Test.stopTest();
+
+        Assert.areEqual(131072, doc.RequestJSON__c.length(), 'Segment 1 should use the original RequestJSON__c field limit');
+        Assert.isNotNull(doc.RequestJSON02__c, 'Segment 2 should be populated for large request JSON');
+        Assert.areEqual(requestJSON, reconstructed, 'Segment reconstruction should preserve the full request JSON');
     }
 
     @isTest

@@ -2,7 +2,7 @@ const { jestConfig } = require('@salesforce/sfdx-lwc-jest/config');
 
 module.exports = {
   ...jestConfig,
-  modulePathsToSearch: ['<rootDir>/force-app/main/default/lwc'],
+  modulePaths: ['<rootDir>/force-app/main/default/lwc'],
   testMatch: ['**/__tests__/**/*.test.js'],
   collectCoverageFrom: [
     'force-app/main/default/lwc/**/*.js',
