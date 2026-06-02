@@ -10,6 +10,8 @@
  */
 @IsTest
 public class DocgenTestDataFactory {
+    private static String defaultLeadStatus;
+
 
     /**
      * Container for test scenario data
@@ -126,6 +128,7 @@ public class DocgenTestDataFactory {
             BillingCity = 'San Francisco',
             AnnualRevenue = 1000000
         );
+        applyAccountCountry(acc);
         insertWithDuplicateBypass(acc);
         return acc;
     }
@@ -138,11 +141,13 @@ public class DocgenTestDataFactory {
     public static List<Account> createAccounts(Integer count) {
         List<Account> accounts = new List<Account>();
         for (Integer i = 1; i <= count; i++) {
-            accounts.add(new Account(
+            Account acc = new Account(
                 Name = 'Test Account ' + i,
                 BillingCity = 'San Francisco',
                 AnnualRevenue = 100000 * i
-            ));
+            );
+            applyAccountCountry(acc);
+            accounts.add(acc);
         }
         insertWithDuplicateBypass(accounts);
         return accounts;
@@ -227,8 +232,9 @@ public class DocgenTestDataFactory {
             LastName = lastName,
             Company = company,
             Email = firstName.toLowerCase() + '.' + lastName.toLowerCase() + '@example.com',
-            Status = 'Open - Not Contacted'
+            Status = getDefaultLeadStatus()
         );
+        applyLeadCountry(ld);
         insertWithDuplicateBypass(ld);
         return ld;
     }
@@ -241,13 +247,15 @@ public class DocgenTestDataFactory {
     public static List<Lead> createLeads(Integer count) {
         List<Lead> leads = new List<Lead>();
         for (Integer i = 1; i <= count; i++) {
-            leads.add(new Lead(
+            Lead ld = new Lead(
                 FirstName = 'Test',
                 LastName = 'Lead ' + i,
                 Company = 'Test Company ' + i,
                 Email = 'test.lead' + i + '@example.com',
-                Status = 'Open - Not Contacted'
-            ));
+                Status = getDefaultLeadStatus()
+            );
+            applyLeadCountry(ld);
+            leads.add(ld);
         }
         insertWithDuplicateBypass(leads);
         return leads;
@@ -604,11 +612,13 @@ public class DocgenTestDataFactory {
         String suffix = index > 0 ? ' ' + index : '';
 
         if (objectApiName == 'Account') {
-            return new Account(
+            Account acc = new Account(
                 Name = 'Test Account' + suffix,
                 BillingCity = 'San Francisco',
                 AnnualRevenue = 1000000
             );
+            applyAccountCountry(acc);
+            return acc;
         } else if (objectApiName == 'Contact') {
             return new Contact(
                 FirstName = 'Test',
@@ -616,16 +626,19 @@ public class DocgenTestDataFactory {
                 Email = 'test' + index + '@example.com'
             );
         } else if (objectApiName == 'Lead') {
-            return new Lead(
+            Lead ld = new Lead(
                 FirstName = 'Test',
                 LastName = 'Lead' + suffix,
                 Company = 'Test Company' + suffix,
                 Email = 'testlead' + index + '@example.com',
-                Status = 'Open - Not Contacted'
+                Status = getDefaultLeadStatus()
             );
+            applyLeadCountry(ld);
+            return ld;
         } else if (objectApiName == 'Opportunity') {
             // Need an Account for Opportunity (bypass duplicate rules)
             Account acc = new Account(Name = 'Test Account for Opp' + suffix);
+            applyAccountCountry(acc);
             insertWithDuplicateBypass(acc);
 
             return new Opportunity(
@@ -638,6 +651,7 @@ public class DocgenTestDataFactory {
         } else if (objectApiName == 'Case') {
             // Optionally link to Account (bypass duplicate rules)
             Account acc = new Account(Name = 'Test Account for Case' + suffix);
+            applyAccountCountry(acc);
             insertWithDuplicateBypass(acc);
 
             return new Case(
@@ -858,6 +872,47 @@ public class DocgenTestDataFactory {
     // =========================================================================
     // DUPLICATE RULE BYPASS HELPER
     // =========================================================================
+
+    private static void applyAccountCountry(Account acc) {
+        if (acc == null) {
+            return;
+        }
+
+        Map<String, Schema.SObjectField> accountFields = Account.SObjectType.getDescribe().fields.getMap();
+        if (accountFields.containsKey('BillingCountryCode')) {
+            acc.put('BillingCountryCode', 'JP');
+        } else {
+            acc.BillingCountry = 'Japan';
+        }
+    }
+
+    private static void applyLeadCountry(Lead ld) {
+        if (ld == null) {
+            return;
+        }
+
+        Map<String, Schema.SObjectField> leadFields = Lead.SObjectType.getDescribe().fields.getMap();
+        if (leadFields.containsKey('CountryCode')) {
+            ld.put('CountryCode', 'JP');
+        } else {
+            ld.Country = 'Japan';
+        }
+    }
+
+    private static String getDefaultLeadStatus() {
+        if (defaultLeadStatus != null) {
+            return defaultLeadStatus;
+        }
+
+        List<LeadStatus> statuses = [
+            SELECT MasterLabel
+            FROM LeadStatus
+            WHERE IsDefault = true
+            LIMIT 1
+        ];
+        defaultLeadStatus = statuses.isEmpty() ? 'Open - Not Contacted' : statuses[0].MasterLabel;
+        return defaultLeadStatus;
+    }
 
     /**
      * Insert a record while bypassing duplicate rules.

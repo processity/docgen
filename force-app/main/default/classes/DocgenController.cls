@@ -551,14 +551,19 @@ public with sharing class DocgenController {
             Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
             String contentVersionId = (String) body.get('contentVersionId');
             String responseCorrelationId = (String) body.get('correlationId');
+            String docxContentVersionId = getOptionalString(body, 'docxContentVersionId');
 
             // Update record to SUCCEEDED
             // Note: CorrelationId__c was already set during insert and should not be modified
-            update new Generated_Document__c(
+            Generated_Document__c updateDoc = new Generated_Document__c(
                 Id = doc.Id,
                 Status__c = 'SUCCEEDED',
                 OutputFileId__c = contentVersionId
             );
+            if (String.isNotBlank(docxContentVersionId)) {
+                updateDoc.MergedDocxFileId__c = docxContentVersionId;
+            }
+            update updateDoc;
 
             // Build and return download URL
             return buildDownloadUrl(contentVersionId);
@@ -615,13 +620,18 @@ public with sharing class DocgenController {
                 }
 
                 String contentVersionId = (String) contentVersionIdObj;
+                String docxContentVersionId = getOptionalString(body, 'docxContentVersionId');
 
                 // Update record to SUCCEEDED
-                update new Generated_Document__c(
+                Generated_Document__c updateDoc = new Generated_Document__c(
                     Id = doc.Id,
                     Status__c = 'SUCCEEDED',
                     OutputFileId__c = contentVersionId
                 );
+                if (String.isNotBlank(docxContentVersionId)) {
+                    updateDoc.MergedDocxFileId__c = docxContentVersionId;
+                }
+                update updateDoc;
 
                 // Return success result
                 return successResult(
@@ -647,6 +657,14 @@ public with sharing class DocgenController {
             String userMessage = buildUserErrorMessage(errorDetails);
             return errorResult(userMessage, correlationId, doc.Id);
         }
+    }
+
+    private static String getOptionalString(Map<String, Object> body, String key) {
+        if (body == null || !body.containsKey(key)) {
+            return null;
+        }
+        Object value = body.get(key);
+        return value instanceof String ? (String) value : null;
     }
 
     /**

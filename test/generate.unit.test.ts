@@ -249,6 +249,90 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body.contentVersionId).toBe(testContentVersionId);
     });
 
+    it('should return stored merged DOCX ContentVersion ID when requested', async () => {
+      const testTemplateId = '068000000000105AAA';
+      const pdfContentVersionId = '068000000000106AAA';
+      const pdfContentDocumentId = '069000000000106AAA';
+      const docxContentVersionId = '068000000000107AAA';
+      const docxContentDocumentId = '069000000000107AAA';
+      const testDocxBuffer = await createTestDocxBuffer();
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${testTemplateId}/VersionData`)
+        .reply(200, testDocxBuffer);
+
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.PathOnClient).toBe('test-output.pdf');
+          return true;
+        })
+        .reply(201, {
+          id: pdfContentVersionId,
+          success: true,
+          errors: [],
+        });
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/query`)
+        .query((query) => typeof query.q === 'string' && query.q.includes(pdfContentVersionId))
+        .reply(200, {
+          records: [{
+            ContentDocumentId: pdfContentDocumentId,
+          }],
+        });
+
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.PathOnClient).toBe('test-output.docx');
+          return true;
+        })
+        .reply(201, {
+          id: docxContentVersionId,
+          success: true,
+          errors: [],
+        });
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/query`)
+        .query((query) => typeof query.q === 'string' && query.q.includes(docxContentVersionId))
+        .reply(200, {
+          records: [{
+            ContentDocumentId: docxContentDocumentId,
+          }],
+        });
+
+      const request: DocgenRequest = {
+        templateId: testTemplateId,
+        outputFileName: 'test-output.pdf',
+        outputFormat: 'PDF',
+        locale: 'en-US',
+        timezone: 'America/New_York',
+        options: {
+          storeMergedDocx: true,
+          returnDocxToBrowser: false,
+        },
+        data: {
+          Account: { Name: 'Test Account' },
+          GeneratedDate__formatted: '2 Jun 2026',
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: request,
+      });
+
+      if (response.statusCode !== 200) {
+        console.log('Response body:', response.body);
+      }
+      expect(response.statusCode).toBe(200);
+
+      const body: DocgenResponse = JSON.parse(response.body);
+      expect(body.contentVersionId).toBe(pdfContentVersionId);
+      expect(body.docxContentVersionId).toBe(docxContentVersionId);
+    });
+
     it('should successfully generate a PPTX document', async () => {
       const testTemplateId = '068000000000103AAA';
       const testContentVersionId = '068000000000104AAA';

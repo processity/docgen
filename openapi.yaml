@@ -240,6 +240,7 @@ paths:
               example:
                 downloadUrl: 'https://example.my.salesforce.com/sfc/servlet.shepherd/version/download/068xx000000abcdXXX'
                 contentVersionId: '068xx000000abcdXXX'
+                docxContentVersionId: '068xx000000docxYYY'
                 correlationId: '12345678-1234-4567-89ab-123456789012'
         '202':
           description: Request accepted for processing (async/batch mode)
@@ -664,6 +665,11 @@ components:
           description: |
             Salesforce ContentVersionId (18 chars) of the uploaded file. Can be used for subsequent operations.
           example: '068xx000000abcdXXX'
+        docxContentVersionId:
+          type: string
+          description: |
+            Optional Salesforce ContentVersionId of the stored merged DOCX file when `storeMergedDocx` is true.
+          example: '068xx000000docxYYY'
         correlationId:
           type: string
           format: uuid

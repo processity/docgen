@@ -164,6 +164,7 @@ export interface DocgenRequest {
 export interface DocgenResponse {
   downloadUrl: string;
   contentVersionId: string;
+  docxContentVersionId?: string;
   correlationId: string;
 }
 

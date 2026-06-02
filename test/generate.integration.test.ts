@@ -283,8 +283,12 @@ describeIntegration('POST /generate - Integration Tests with Real Salesforce', (
       expect(pdfResult.records).toHaveLength(1);
       expect(pdfResult.records[0].FileExtension).toBe('pdf');
 
-      // There should also be a DOCX file created around the same time
-      // Note: We can't easily verify this without tracking both IDs in the response
+      expect(body.docxContentVersionId).toMatch(/^[a-zA-Z0-9]{18}$/);
+      const docxQuery = `SELECT Id, Title, FileExtension FROM ContentVersion WHERE Id = '${body.docxContentVersionId}' LIMIT 1`;
+      const docxResult = await sfApi.get(`/services/data/v59.0/query?q=${encodeURIComponent(docxQuery)}`);
+      expect(docxResult.records).toHaveLength(1);
+      expect(docxResult.records[0].FileExtension).toBe('docx');
+
       console.log('Generated PDF with stored DOCX:', body.downloadUrl);
     });
 
