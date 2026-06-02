@@ -283,7 +283,7 @@ export class PollerService {
   async fetchQueuedDocuments(): Promise<QueuedDocument[]> {
     try {
       const sfAuth = getSalesforceAuth();
-      if (!sfAuth || !getConfig().sfDomain) {
+      if (!sfAuth) {
         throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
@@ -322,7 +322,7 @@ export class PollerService {
   async lockDocument(documentId: string): Promise<boolean> {
     try {
       const sfAuth = getSalesforceAuth();
-      if (!sfAuth || !getConfig().sfDomain) {
+      if (!sfAuth) {
         throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
@@ -359,7 +359,7 @@ export class PollerService {
     try {
       // Initialize Salesforce API and template service
       const sfAuth = getSalesforceAuth();
-      if (!sfAuth || !getConfig().sfDomain) {
+      if (!sfAuth) {
         throw new MissingConfigurationError('Salesforce authentication', { correlationId: doc.CorrelationId__c });
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
@@ -606,7 +606,7 @@ export class PollerService {
   ): Promise<void> {
     try {
       const sfAuth = getSalesforceAuth();
-      if (!sfAuth || !getConfig().sfDomain) {
+      if (!sfAuth) {
         throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
@@ -641,7 +641,7 @@ export class PollerService {
 
     try {
       const sfAuth = getSalesforceAuth();
-      if (!sfAuth || !getConfig().sfDomain) {
+      if (!sfAuth) {
         throw new MissingConfigurationError('Salesforce authentication');
       }
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
