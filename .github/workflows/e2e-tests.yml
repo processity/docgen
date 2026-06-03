@@ -292,16 +292,40 @@ jobs:
         id: org-info
         run: |
           # Get org info (org is already authenticated and set as default)
-          sf org display --json > org-info.json
+          sf org display \
+            --verbose \
+            --json \
+            --target-org "${{ steps.create-org.outputs.org_alias }}" \
+            > org-info.json
 
           # Extract credentials and set as environment variables
           INSTANCE_URL=$(jq -r '.result.instanceUrl' org-info.json)
           ACCESS_TOKEN=$(jq -r '.result.accessToken' org-info.json)
           USERNAME=$(jq -r '.result.username' org-info.json)
+          ORG_ID=$(jq -r '.result.id // empty' org-info.json)
+
+          if [ -z "$INSTANCE_URL" ] || [ "$INSTANCE_URL" = "null" ] || [ "$INSTANCE_URL" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org instance URL"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
+
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ] || [ "$ACCESS_TOKEN" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org access token"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
+
+          if [ -z "$USERNAME" ] || [ "$USERNAME" = "null" ] || [ "$USERNAME" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org username"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
 
           echo "SF_INSTANCE_URL=$INSTANCE_URL" >> $GITHUB_ENV
           echo "SF_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
           echo "SF_USERNAME=$USERNAME" >> $GITHUB_ENV
+          echo "SF_ORG_ID=$ORG_ID" >> $GITHUB_ENV
 
           echo "Instance URL: $INSTANCE_URL"
           echo "Username: $USERNAME"

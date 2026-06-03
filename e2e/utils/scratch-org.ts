@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import axios from 'axios';
 
 const execAsync = promisify(exec);
 
@@ -10,18 +11,69 @@ export interface ScratchOrgInfo {
   orgId: string;
 }
 
+function isMissingOrgValue(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === '' || normalized === 'undefined' || normalized === 'null';
+}
+
+function shellArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function getScratchOrgInfoFromEnv(): ScratchOrgInfo | null {
+  const instanceUrl = process.env.SF_INSTANCE_URL;
+  const accessToken = process.env.SF_ACCESS_TOKEN;
+  const username = process.env.SF_USERNAME;
+
+  if (
+    isMissingOrgValue(instanceUrl) ||
+    isMissingOrgValue(accessToken) ||
+    isMissingOrgValue(username)
+  ) {
+    return null;
+  }
+
+  return {
+    instanceUrl: instanceUrl!.replace(/\/$/, ''),
+    accessToken: accessToken!,
+    username: username!,
+    orgId: process.env.SF_ORG_ID || '',
+  };
+}
+
+interface RestCreateResponse {
+  success?: boolean;
+  id?: string;
+}
+
+function getResponseData(error: unknown): unknown {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return undefined;
+  }
+
+  return (error as { response?: { data?: unknown } }).response?.data;
+}
+
 /**
  * Get information about the current default scratch org
  * Uses `sf org display --json` to fetch credentials
  */
 export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
   try {
+    const envOrgInfo = getScratchOrgInfoFromEnv();
+    if (envOrgInfo) {
+      return envOrgInfo;
+    }
+
     // Get org info from SFDX CLI
     // Use SF_FORMAT_JSON=true to ensure clean JSON output without colors
     // In CI, use SF_USERNAME env var if available to explicitly target the org
     const targetOrg = process.env.SF_USERNAME;
-    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
-    const { stdout, stderr } = await execAsync(`sf org display${targetOrgFlag} --json`, {
+    const targetOrgFlag = targetOrg ? ` --target-org ${shellArg(targetOrg)}` : '';
+    const { stdout, stderr } = await execAsync(`sf org display${targetOrgFlag} --verbose --json`, {
       env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' }
     });
 
@@ -41,17 +93,21 @@ export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
     const result = orgData.result;
 
     // Check if we have the required fields
-    if (!result.instanceUrl || !result.accessToken || !result.username) {
+    if (
+      isMissingOrgValue(result.instanceUrl) ||
+      isMissingOrgValue(result.accessToken) ||
+      isMissingOrgValue(result.username)
+    ) {
       throw new Error(
-        'Missing required org information. Make sure a scratch org is set as default.'
+        `Missing required org information. Result keys: ${Object.keys(result).join(', ')}`
       );
     }
 
     return {
-      instanceUrl: result.instanceUrl,
+      instanceUrl: result.instanceUrl.replace(/\/$/, ''),
       accessToken: result.accessToken,
       username: result.username,
-      orgId: result.id,
+      orgId: result.id || '',
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -124,29 +180,21 @@ async function createRecordViaRestAPI(
 ): Promise<string> {
   const orgInfo = await getScratchOrgInfo();
 
-  // Write JSON to temp file
-  const fs = require('fs');
-  const tempFile = `/tmp/sf-record-rest-${Date.now()}.json`;
-  fs.writeFileSync(tempFile, JSON.stringify(fields));
-
   try {
     const url = `${orgInfo.instanceUrl}/services/data/v65.0/sobjects/${objectType}`;
 
-    const command = `curl -X POST "${url}" \\
-      -H "Authorization: Bearer ${orgInfo.accessToken}" \\
-      -H "Content-Type: application/json" \\
-      -d @${tempFile}`;
+    const axiosConfig: Parameters<typeof axios.post>[2] & { maxBodyLength?: number } = {
+      headers: {
+        Authorization: `Bearer ${orgInfo.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 30000,
+      maxBodyLength: Infinity,
+    };
 
-    const { stdout } = await execAsync(command, {
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large responses
-    });
+    const response = await axios.post(url, fields, axiosConfig);
 
-    const result = JSON.parse(stdout);
-
-    // Clean up temp file
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
+    const result = response.data as RestCreateResponse;
 
     if (!result.success || !result.id) {
       throw new Error(`REST API creation failed: ${JSON.stringify(result)}`);
@@ -154,10 +202,9 @@ async function createRecordViaRestAPI(
 
     return result.id;
   } catch (error) {
-    // Clean up temp file on error
-    const fs = require('fs');
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
+    const responseData = getResponseData(error);
+    if (responseData) {
+      throw new Error(`REST API creation failed: ${JSON.stringify(responseData)}`);
     }
     throw error;
   }
