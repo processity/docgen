@@ -180,10 +180,11 @@ populate_secrets() {
     log_info "Populating CI Key Vault secrets..."
 
     # Set SF private key
-    cat "$CI_SF_PRIVATE_KEY_PATH" | az keyvault secret set \
+    az keyvault secret set \
       --vault-name "$KEY_VAULT_NAME" \
       --name SF-PRIVATE-KEY \
-      --value @/dev/stdin \
+      --file "$CI_SF_PRIVATE_KEY_PATH" \
+      --encoding utf-8 \
       --output none
 
     # Set SF client ID

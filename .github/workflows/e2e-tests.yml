@@ -192,12 +192,16 @@ jobs:
           echo "🔐 Populating CI Key Vault secrets..."
 
           KEY_VAULT_NAME="docgen-ci-kv"
+          SECRET_DIR="${RUNNER_TEMP}/docgen-ci-secrets"
+          mkdir -p "${SECRET_DIR}"
 
           # Set SF private key (for Node -> Salesforce JWT Bearer flow)
-          echo "${{ secrets.CI_SF_PRIVATE_KEY }}" | az keyvault secret set \
+          printf '%s' "${{ secrets.CI_SF_PRIVATE_KEY }}" > "${SECRET_DIR}/sf-private-key.pem"
+          az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
             --name SF-PRIVATE-KEY \
-            --value @/dev/stdin \
+            --file "${SECRET_DIR}/sf-private-key.pem" \
+            --encoding utf-8 \
             --output none
 
           # Set SF client ID (Connected App)
@@ -222,17 +226,30 @@ jobs:
             --output none
 
           # Set SFDX Auth URL (from earlier scratch org creation)
-          SFDX_AUTH_URL=$(sf org display --verbose --json | jq -r '.result.sfdxAuthUrl')
+          sf org display \
+            --verbose \
+            --json \
+            --target-org "${{ steps.create-org.outputs.org_alias }}" \
+            > "${SECRET_DIR}/scratch-org-display.json"
+
+          SFDX_AUTH_URL=$(jq -r '.result.sfdxAuthUrl' "${SECRET_DIR}/scratch-org-display.json")
 
           if [ -z "$SFDX_AUTH_URL" ] || [ "$SFDX_AUTH_URL" = "null" ]; then
             echo "❌ Failed to extract SFDX Auth URL from org"
             exit 1
           fi
 
-          echo "$SFDX_AUTH_URL" | az keyvault secret set \
+          if [[ ! "$SFDX_AUTH_URL" =~ ^force://[^:]+:[^:]*:[^@]+@.+$ ]]; then
+            echo "❌ Extracted SFDX Auth URL has an unexpected format"
+            exit 1
+          fi
+
+          printf '%s' "$SFDX_AUTH_URL" > "${SECRET_DIR}/sfdx-auth-url.txt"
+          az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
             --name SFDX-AUTH-URL \
-            --value @/dev/stdin \
+            --file "${SECRET_DIR}/sfdx-auth-url.txt" \
+            --encoding utf-8 \
             --output none
 
           # Set Azure Monitor connection string
@@ -247,6 +264,7 @@ jobs:
             --output none
 
           echo "✅ CI Key Vault secrets populated (including scratch org SFDX Auth URL)"
+          rm -f "${SECRET_DIR}/sf-private-key.pem" "${SECRET_DIR}/sfdx-auth-url.txt" "${SECRET_DIR}/scratch-org-display.json"
 
       - name: Restart Container App to pick up all secrets
         run: |
