@@ -396,13 +396,6 @@ describe('Salesforce SFDX Auth URL Authentication', () => {
       expect(() => new SalesforceAuth(config)).toThrow(/Invalid (format|SFDX Auth URL|Missing required components)/i);
     });
 
-    it('should handle SFDX Auth URL with special characters in refresh token', () => {
-      const sfdxAuthUrl = 'force://PlatformCLI::5Aep861!@#$%^&*()_+token@test.salesforce.com';
-      const config = { sfdxAuthUrl };
-
-      expect(() => new SalesforceAuth(config)).not.toThrow();
-    });
-
     it('should strip trailing slash from instance URL', () => {
       const sfdxAuthUrl = 'force://PlatformCLI::token@test.salesforce.com/';
       const config = { sfdxAuthUrl };
@@ -472,6 +465,27 @@ describe('Salesforce SFDX Auth URL Authentication', () => {
       await authWithSecret.getAccessToken();
 
       expect(requestBody.client_secret).toBe('my-secret');
+    });
+
+    it('should preserve @ and : characters in refresh token', async () => {
+      const refreshToken = '5Aep861!@#$%^&*()_+token:segment';
+      const authWithSpecialToken = new SalesforceAuth({
+        sfdxAuthUrl: `force://PlatformCLI::${refreshToken}@test.salesforce.com`,
+      });
+      let requestBody: any;
+
+      nock('https://test.salesforce.com')
+        .post('/services/oauth2/token', (body) => {
+          requestBody = body;
+          return true;
+        })
+        .reply(200, MOCK_REFRESH_TOKEN_RESPONSE);
+
+      await authWithSpecialToken.getAccessToken();
+
+      expect(requestBody.client_id).toBe('PlatformCLI');
+      expect(requestBody.refresh_token).toBe(refreshToken);
+      expect(requestBody.client_secret).toBeUndefined();
     });
 
     it('should cache tokens from refresh token flow', async () => {

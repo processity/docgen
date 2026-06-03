@@ -116,15 +116,36 @@ export class SalesforceAuth {
    * Example: force://PlatformCLI::!refreshToken123@test.salesforce.com
    */
   private parseSfdxAuthUrl(authUrl: string): ParsedSfdxAuthUrl {
-    const match = authUrl.match(/^force:\/\/([^:]+):([^:]*):([^@]+)@(.+)$/);
-
-    if (!match) {
+    if (!authUrl.startsWith('force://')) {
       throw new Error(
         'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
       );
     }
 
-    const [, clientId, clientSecret, refreshToken, instanceUrl] = match;
+    const authParts = authUrl.slice('force://'.length);
+    const instanceSeparatorIndex = authParts.lastIndexOf('@');
+    if (instanceSeparatorIndex < 0) {
+      throw new Error(
+        'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
+      );
+    }
+
+    const credentials = authParts.slice(0, instanceSeparatorIndex);
+    const instanceUrl = authParts.slice(instanceSeparatorIndex + 1);
+    const firstColonIndex = credentials.indexOf(':');
+    const secondColonIndex = firstColonIndex >= 0
+      ? credentials.indexOf(':', firstColonIndex + 1)
+      : -1;
+
+    if (firstColonIndex <= 0 || secondColonIndex < 0) {
+      throw new Error(
+        'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
+      );
+    }
+
+    const clientId = credentials.slice(0, firstColonIndex);
+    const clientSecret = credentials.slice(firstColonIndex + 1, secondColonIndex);
+    const refreshToken = credentials.slice(secondColonIndex + 1);
 
     if (!clientId || !refreshToken || !instanceUrl) {
       throw new Error('Missing required components in SFDX Auth URL');
