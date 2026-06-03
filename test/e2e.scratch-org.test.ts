@@ -1,9 +1,12 @@
-import axios from 'axios';
+import { execFile } from 'child_process';
 import { createRecord, getScratchOrgInfo } from '../e2e/utils/scratch-org';
 
-jest.mock('axios');
+jest.mock('child_process', () => ({
+  exec: jest.fn(),
+  execFile: jest.fn(),
+}));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+const mockedExecFile = execFile as jest.MockedFunction<typeof execFile>;
 
 describe('E2E scratch org utilities', () => {
   const originalEnv = process.env;
@@ -34,19 +37,19 @@ describe('E2E scratch org utilities', () => {
     });
   });
 
-  it('should create ContentVersion records through Axios without shelling the token', async () => {
-    mockedAxios.post.mockResolvedValueOnce({
-      data: {
+  it('should create ContentVersion records through Salesforce CLI REST auth', async () => {
+    mockedExecFile.mockImplementationOnce(((
+      _command: string,
+      _args: string[],
+      _options: unknown,
+      callback: (error: Error | null, stdout: string, stderr: string) => void
+    ) => {
+      callback(null, JSON.stringify({
         success: true,
         id: '068xx0000000001AAA',
-      },
-      status: 201,
-      statusText: 'Created',
-      headers: {},
-      config: {
-        url: 'https://scratch.example.my.salesforce.com/services/data/v65.0/sobjects/ContentVersion',
-      },
-    });
+      }), '');
+      return {} as ReturnType<typeof execFile>;
+    }) as typeof execFile);
 
     const recordId = await createRecord('ContentVersion', {
       Title: 'Template',
@@ -55,19 +58,25 @@ describe('E2E scratch org utilities', () => {
     });
 
     expect(recordId).toBe('068xx0000000001AAA');
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://scratch.example.my.salesforce.com/services/data/v65.0/sobjects/ContentVersion',
-      {
-        Title: 'Template',
-        PathOnClient: 'template.docx',
-        VersionData: 'base64-content',
-      },
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'sf',
+      expect.arrayContaining([
+        'api',
+        'request',
+        'rest',
+        '/services/data/v65.0/sobjects/ContentVersion',
+        '--method',
+        'POST',
+        '--target-org',
+        'test-user@example.com',
+      ]),
       expect.objectContaining({
-        headers: {
-          Authorization: 'Bearer 00Dxx!token$with-special-chars',
-          'Content-Type': 'application/json',
-        },
-      })
+        env: expect.not.objectContaining({
+          SF_ACCESS_TOKEN: expect.any(String),
+          SF_INSTANCE_URL: expect.any(String),
+        }),
+      }),
+      expect.any(Function)
     );
   });
 });

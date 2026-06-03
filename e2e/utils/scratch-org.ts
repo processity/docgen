@@ -1,6 +1,5 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import axios from 'axios';
 
 const execAsync = promisify(exec);
 
@@ -47,14 +46,37 @@ function getScratchOrgInfoFromEnv(): ScratchOrgInfo | null {
 interface RestCreateResponse {
   success?: boolean;
   id?: string;
+  errors?: unknown[];
 }
 
-function getResponseData(error: unknown): unknown {
-  if (typeof error !== 'object' || error === null || !('response' in error)) {
-    return undefined;
-  }
+function execFileCommand(
+  command: string,
+  args: string[],
+  options: Parameters<typeof execFile>[2]
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(Object.assign(error, { stdout, stderr }));
+        return;
+      }
 
-  return (error as { response?: { data?: unknown } }).response?.data;
+      resolve({
+        stdout: stdout.toString(),
+        stderr: stderr.toString(),
+      });
+    });
+  });
+}
+
+function getSfCliEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.SF_ACCESS_TOKEN;
+  delete env.SF_INSTANCE_URL;
+  delete env.SF_ORG_ID;
+  env.SF_FORMAT_JSON = 'true';
+  env.SF_DISABLE_COLORS = 'true';
+  return env;
 }
 
 /**
@@ -178,23 +200,40 @@ async function createRecordViaRestAPI(
   objectType: string,
   fields: Record<string, any>
 ): Promise<string> {
-  const orgInfo = await getScratchOrgInfo();
+  // Write JSON to temp file. Use the Salesforce CLI REST command so auth stays
+  // inside the CLI org connection instead of manually passing a bearer token.
+  const fs = require('fs');
+  const tempFile = `/tmp/sf-record-rest-${Date.now()}-${Math.random().toString(36).substring(7)}.json`;
+  fs.writeFileSync(tempFile, JSON.stringify(fields));
 
   try {
-    const url = `${orgInfo.instanceUrl}/services/data/v65.0/sobjects/${objectType}`;
+    const targetOrg = process.env.SF_USERNAME;
+    const args = [
+      'api',
+      'request',
+      'rest',
+      `/services/data/v65.0/sobjects/${objectType}`,
+      '--body',
+      `@${tempFile}`,
+      '--method',
+      'POST',
+    ];
 
-    const axiosConfig: Parameters<typeof axios.post>[2] & { maxBodyLength?: number } = {
-      headers: {
-        Authorization: `Bearer ${orgInfo.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30000,
-      maxBodyLength: Infinity,
-    };
+    if (targetOrg) {
+      args.push('--target-org', targetOrg);
+    }
 
-    const response = await axios.post(url, fields, axiosConfig);
+    const { stdout, stderr } = await execFileCommand('sf', args, {
+      env: getSfCliEnv(),
+      maxBuffer: 10 * 1024 * 1024,
+    });
 
-    const result = response.data as RestCreateResponse;
+    if (stderr) {
+      console.error('SF CLI stderr (REST):', stderr);
+    }
+
+    const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '').trim();
+    const result = JSON.parse(cleanStdout) as RestCreateResponse;
 
     if (!result.success || !result.id) {
       throw new Error(`REST API creation failed: ${JSON.stringify(result)}`);
@@ -202,11 +241,19 @@ async function createRecordViaRestAPI(
 
     return result.id;
   } catch (error) {
-    const responseData = getResponseData(error);
-    if (responseData) {
-      throw new Error(`REST API creation failed: ${JSON.stringify(responseData)}`);
+    const stdout = error instanceof Error ? (error as any).stdout || '' : '';
+    const stderr = error instanceof Error ? (error as any).stderr || '' : '';
+    const stderrInfo = stderr ? `\nStderr: ${stderr}` : '';
+    const stdoutInfo = stdout ? `\nStdout: ${stdout}` : '';
+
+    if (error instanceof Error) {
+      throw new Error(`REST API creation failed: ${error.message}${stdoutInfo}${stderrInfo}`);
     }
     throw error;
+  } finally {
+    if (fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile);
+    }
   }
 }
 
