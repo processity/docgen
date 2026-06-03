@@ -526,6 +526,82 @@ describe('Config', () => {
     });
   });
 
+  describe('Salesforce Access Token Configuration', () => {
+    it('should load direct Salesforce access token config from environment variables', async () => {
+      process.env.SF_ACCESS_TOKEN = 'env-access-token';
+      process.env.SF_INSTANCE_URL = 'https://scratch.example.my.salesforce.com';
+
+      const config = await loadConfig();
+
+      expect(config.sfAccessToken).toBe('env-access-token');
+      expect(config.sfInstanceUrl).toBe('https://scratch.example.my.salesforce.com');
+    });
+
+    it('should load direct Salesforce access token config from Key Vault in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+
+      mockLoadSecretsFromKeyVault.mockResolvedValue({
+        sfAccessToken: 'kv-access-token',
+        sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+      });
+
+      const config = await loadConfig();
+
+      expect(config.sfAccessToken).toBe('kv-access-token');
+      expect(config.sfInstanceUrl).toBe('https://scratch.example.my.salesforce.com');
+    });
+
+    it('should accept production config with direct access token only', () => {
+      const config: AppConfig = {
+        port: 8080,
+        nodeEnv: 'production',
+        logLevel: 'info',
+        azureTenantId: 'tenant-id',
+        clientId: 'client-id',
+        keyVaultUri: 'https://vault.azure.net/',
+        issuer: 'https://login.microsoftonline.com/tenant-id/v2.0',
+        audience: 'api://client-id',
+        jwksUri: 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys',
+        sfAccessToken: 'scratch-access-token',
+        sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+        conversionTimeout: 60000,
+        conversionWorkdir: '/tmp',
+        conversionMaxConcurrent: 8,
+        poller: {
+          intervalMs: 15000,
+          idleIntervalMs: 60000,
+          batchSize: 20,
+          lockTtlMs: 120000,
+          maxAttempts: 3,
+        },
+        enableTelemetry: true,
+      };
+
+      expect(() => validateConfig(config)).not.toThrow();
+    });
+
+    it('should load and validate production config with direct access token auth from env', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.SF_ACCESS_TOKEN = 'scratch-access-token';
+      process.env.SF_INSTANCE_URL = 'https://scratch.example.my.salesforce.com';
+      process.env.AZURE_TENANT_ID = 'tenant-id';
+      process.env.CLIENT_ID = 'client-id';
+      process.env.KEY_VAULT_URI = 'https://vault.azure.net/';
+      process.env.ISSUER = 'https://login.microsoftonline.com/tenant-id/v2.0';
+      process.env.AUDIENCE = 'api://client-id';
+      process.env.JWKS_URI = 'https://login.microsoftonline.com/tenant-id/discovery/v2.0/keys';
+
+      mockLoadSecretsFromKeyVault.mockResolvedValue({});
+
+      const config = await loadConfig();
+
+      expect(() => validateConfig(config)).not.toThrow();
+      expect(config.sfAccessToken).toBe('scratch-access-token');
+      expect(config.sfInstanceUrl).toBe('https://scratch.example.my.salesforce.com');
+    });
+  });
+
   describe('SFDX Auth URL Configuration', () => {
     it('should load sfdxAuthUrl from environment variable', async () => {
       process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';

@@ -332,6 +332,59 @@ describe('Salesforce JWT Bearer Authentication', () => {
   });
 });
 
+describe('Salesforce Direct Access Token Authentication', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+    resetSalesforceAuth();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    resetSalesforceAuth();
+  });
+
+  it('should accept a direct access token and instance URL', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com/',
+    });
+
+    await expect(auth.getAccessToken()).resolves.toBe('scratch-access-token');
+    expect(auth.getInstanceUrl()).toBe('https://scratch.example.my.salesforce.com');
+  });
+
+  it('should cache a direct access token without calling a token endpoint', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+    });
+
+    const token1 = await auth.getAccessToken();
+    const token2 = await auth.getAccessToken();
+
+    expect(token1).toBe('scratch-access-token');
+    expect(token2).toBe(token1);
+    expect(nock.pendingMocks()).toHaveLength(0);
+  });
+
+  it('should prefer direct access token auth over invalid SFDX Auth URL', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+      sfdxAuthUrl: 'not-a-force-url',
+    });
+
+    await expect(auth.getAccessToken()).resolves.toBe('scratch-access-token');
+    expect(auth.getInstanceUrl()).toBe('https://scratch.example.my.salesforce.com');
+  });
+
+  it('should reject incomplete direct access token config without another auth method', () => {
+    expect(() => new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+    })).toThrow(/requires either/i);
+  });
+});
+
 describe('Salesforce SFDX Auth URL Authentication', () => {
   let auth: SalesforceAuth;
 

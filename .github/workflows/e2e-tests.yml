@@ -225,23 +225,34 @@ jobs:
             --value "test.salesforce.com" \
             --output none
 
-          # Set SFDX Auth URL (from earlier scratch org creation)
+          # Set direct scratch org access token auth for the Node backend.
           sf org display \
             --verbose \
             --json \
             --target-org "${{ steps.create-org.outputs.org_alias }}" \
             > "${SECRET_DIR}/scratch-org-display.json"
 
-          node scripts/extract-sfdx-auth-url.js \
-            --create org-create.json \
-            --display "${SECRET_DIR}/scratch-org-display.json" \
-            --out "${SECRET_DIR}/sfdx-auth-url.txt"
+          SF_ACCESS_TOKEN=$(jq -r '.result.accessToken // empty' "${SECRET_DIR}/scratch-org-display.json")
+          SF_INSTANCE_URL=$(jq -r '.result.instanceUrl // empty' "${SECRET_DIR}/scratch-org-display.json")
+
+          if [ -z "$SF_ACCESS_TOKEN" ] || [ -z "$SF_INSTANCE_URL" ]; then
+            echo "❌ Failed to extract scratch org access token or instance URL"
+            jq '{status, resultKeys: (.result | keys)}' "${SECRET_DIR}/scratch-org-display.json"
+            exit 1
+          fi
+
+          printf '%s' "$SF_ACCESS_TOKEN" > "${SECRET_DIR}/sf-access-token.txt"
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-ACCESS-TOKEN \
+            --file "${SECRET_DIR}/sf-access-token.txt" \
+            --encoding utf-8 \
+            --output none
 
           az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
-            --name SFDX-AUTH-URL \
-            --file "${SECRET_DIR}/sfdx-auth-url.txt" \
-            --encoding utf-8 \
+            --name SF-INSTANCE-URL \
+            --value "$SF_INSTANCE_URL" \
             --output none
 
           # Set Azure Monitor connection string
@@ -255,8 +266,8 @@ jobs:
             --value "${APP_INSIGHTS_CONN}" \
             --output none
 
-          echo "✅ CI Key Vault secrets populated (including scratch org SFDX Auth URL)"
-          rm -f "${SECRET_DIR}/sf-private-key.pem" "${SECRET_DIR}/sfdx-auth-url.txt" "${SECRET_DIR}/scratch-org-display.json"
+          echo "✅ CI Key Vault secrets populated (including scratch org access token auth)"
+          rm -f "${SECRET_DIR}/sf-private-key.pem" "${SECRET_DIR}/sf-access-token.txt" "${SECRET_DIR}/scratch-org-display.json"
 
       - name: Restart Container App to pick up all secrets
         run: |
