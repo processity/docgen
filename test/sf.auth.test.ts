@@ -403,6 +403,14 @@ describe('Salesforce SFDX Auth URL Authentication', () => {
       // Should parse successfully (trailing slash removed internally)
       expect(() => new SalesforceAuth(config)).not.toThrow();
     });
+
+    it('should normalize protocol from instance URL', () => {
+      const authWithProtocol = new SalesforceAuth({
+        sfdxAuthUrl: 'force://PlatformCLI::token@https://test.salesforce.com/',
+      });
+
+      expect(authWithProtocol.getInstanceUrl()).toBe('https://test.salesforce.com');
+    });
   });
 
   describe('Refresh Token Flow', () => {

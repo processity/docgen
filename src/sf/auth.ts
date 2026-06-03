@@ -155,7 +155,7 @@ export class SalesforceAuth {
       clientId,
       clientSecret: clientSecret || undefined,
       refreshToken,
-      instanceUrl: instanceUrl.replace(/\/$/, ''), // Remove trailing slash
+      instanceUrl: instanceUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''), // Normalize protocol/trailing slash
     };
   }
 

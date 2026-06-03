@@ -239,8 +239,8 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$SFDX_AUTH_URL" =~ ^force://[^:]+:[^:]*:.+@.+$ ]]; then
-            echo "❌ Extracted SFDX Auth URL has an unexpected format"
+          if [[ "$SFDX_AUTH_URL" != force://* ]]; then
+            echo "❌ Extracted SFDX Auth URL does not use the expected force:// scheme"
             exit 1
           fi
 

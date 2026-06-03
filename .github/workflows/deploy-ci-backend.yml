@@ -183,8 +183,8 @@ jobs:
             echo "Setting SFDX-AUTH-URL from workflow input..."
             SFDX_AUTH_URL="${{ inputs.sfdx_auth_url }}"
 
-            if [[ ! "$SFDX_AUTH_URL" =~ ^force://[^:]+:[^:]*:.+@.+$ ]]; then
-              echo "❌ Provided SFDX Auth URL has an unexpected format"
+            if [[ "$SFDX_AUTH_URL" != force://* ]]; then
+              echo "❌ Provided SFDX Auth URL does not use the expected force:// scheme"
               exit 1
             fi
 
