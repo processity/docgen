@@ -232,19 +232,11 @@ jobs:
             --target-org "${{ steps.create-org.outputs.org_alias }}" \
             > "${SECRET_DIR}/scratch-org-display.json"
 
-          SFDX_AUTH_URL=$(jq -r '.result.sfdxAuthUrl' "${SECRET_DIR}/scratch-org-display.json")
+          node scripts/extract-sfdx-auth-url.js \
+            --create org-create.json \
+            --display "${SECRET_DIR}/scratch-org-display.json" \
+            --out "${SECRET_DIR}/sfdx-auth-url.txt"
 
-          if [ -z "$SFDX_AUTH_URL" ] || [ "$SFDX_AUTH_URL" = "null" ]; then
-            echo "❌ Failed to extract SFDX Auth URL from org"
-            exit 1
-          fi
-
-          if [[ "$SFDX_AUTH_URL" != force://* ]]; then
-            echo "❌ Extracted SFDX Auth URL does not use the expected force:// scheme"
-            exit 1
-          fi
-
-          printf '%s' "$SFDX_AUTH_URL" > "${SECRET_DIR}/sfdx-auth-url.txt"
           az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
             --name SFDX-AUTH-URL \
