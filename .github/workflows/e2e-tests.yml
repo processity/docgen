@@ -192,12 +192,16 @@ jobs:
           echo "🔐 Populating CI Key Vault secrets..."
 
           KEY_VAULT_NAME="docgen-ci-kv"
+          SECRET_DIR="${RUNNER_TEMP}/docgen-ci-secrets"
+          mkdir -p "${SECRET_DIR}"
 
           # Set SF private key (for Node -> Salesforce JWT Bearer flow)
-          echo "${{ secrets.CI_SF_PRIVATE_KEY }}" | az keyvault secret set \
+          printf '%s' "${{ secrets.CI_SF_PRIVATE_KEY }}" > "${SECRET_DIR}/sf-private-key.pem"
+          az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
             --name SF-PRIVATE-KEY \
-            --value @/dev/stdin \
+            --file "${SECRET_DIR}/sf-private-key.pem" \
+            --encoding utf-8 \
             --output none
 
           # Set SF client ID (Connected App)
@@ -221,18 +225,34 @@ jobs:
             --value "test.salesforce.com" \
             --output none
 
-          # Set SFDX Auth URL (from earlier scratch org creation)
-          SFDX_AUTH_URL=$(sf org display --verbose --json | jq -r '.result.sfdxAuthUrl')
+          # Set direct scratch org access token auth for the Node backend.
+          sf org display \
+            --verbose \
+            --json \
+            --target-org "${{ steps.create-org.outputs.org_alias }}" \
+            > "${SECRET_DIR}/scratch-org-display.json"
 
-          if [ -z "$SFDX_AUTH_URL" ] || [ "$SFDX_AUTH_URL" = "null" ]; then
-            echo "❌ Failed to extract SFDX Auth URL from org"
+          SF_ACCESS_TOKEN=$(jq -r '.result.accessToken // empty' "${SECRET_DIR}/scratch-org-display.json")
+          SF_INSTANCE_URL=$(jq -r '.result.instanceUrl // empty' "${SECRET_DIR}/scratch-org-display.json")
+
+          if [ -z "$SF_ACCESS_TOKEN" ] || [ -z "$SF_INSTANCE_URL" ]; then
+            echo "❌ Failed to extract scratch org access token or instance URL"
+            jq '{status, resultKeys: (.result | keys)}' "${SECRET_DIR}/scratch-org-display.json"
             exit 1
           fi
 
-          echo "$SFDX_AUTH_URL" | az keyvault secret set \
+          printf '%s' "$SF_ACCESS_TOKEN" > "${SECRET_DIR}/sf-access-token.txt"
+          az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
-            --name SFDX-AUTH-URL \
-            --value @/dev/stdin \
+            --name SF-ACCESS-TOKEN \
+            --file "${SECRET_DIR}/sf-access-token.txt" \
+            --encoding utf-8 \
+            --output none
+
+          az keyvault secret set \
+            --vault-name ${KEY_VAULT_NAME} \
+            --name SF-INSTANCE-URL \
+            --value "$SF_INSTANCE_URL" \
             --output none
 
           # Set Azure Monitor connection string
@@ -246,7 +266,8 @@ jobs:
             --value "${APP_INSIGHTS_CONN}" \
             --output none
 
-          echo "✅ CI Key Vault secrets populated (including scratch org SFDX Auth URL)"
+          echo "✅ CI Key Vault secrets populated (including scratch org access token auth)"
+          rm -f "${SECRET_DIR}/sf-private-key.pem" "${SECRET_DIR}/sf-access-token.txt" "${SECRET_DIR}/scratch-org-display.json"
 
       - name: Restart Container App to pick up all secrets
         run: |
@@ -271,16 +292,40 @@ jobs:
         id: org-info
         run: |
           # Get org info (org is already authenticated and set as default)
-          sf org display --json > org-info.json
+          sf org display \
+            --verbose \
+            --json \
+            --target-org "${{ steps.create-org.outputs.org_alias }}" \
+            > org-info.json
 
           # Extract credentials and set as environment variables
           INSTANCE_URL=$(jq -r '.result.instanceUrl' org-info.json)
           ACCESS_TOKEN=$(jq -r '.result.accessToken' org-info.json)
           USERNAME=$(jq -r '.result.username' org-info.json)
+          ORG_ID=$(jq -r '.result.id // empty' org-info.json)
+
+          if [ -z "$INSTANCE_URL" ] || [ "$INSTANCE_URL" = "null" ] || [ "$INSTANCE_URL" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org instance URL"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
+
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ] || [ "$ACCESS_TOKEN" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org access token"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
+
+          if [ -z "$USERNAME" ] || [ "$USERNAME" = "null" ] || [ "$USERNAME" = "undefined" ]; then
+            echo "❌ Failed to extract scratch org username"
+            jq '{status, resultKeys: (.result | keys)}' org-info.json
+            exit 1
+          fi
 
           echo "SF_INSTANCE_URL=$INSTANCE_URL" >> $GITHUB_ENV
           echo "SF_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
           echo "SF_USERNAME=$USERNAME" >> $GITHUB_ENV
+          echo "SF_ORG_ID=$ORG_ID" >> $GITHUB_ENV
 
           echo "Instance URL: $INSTANCE_URL"
           echo "Username: $USERNAME"

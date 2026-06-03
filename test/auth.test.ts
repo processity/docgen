@@ -10,6 +10,31 @@ import {
   getMockJWKS,
 } from './helpers/jwt-helper';
 import { build } from '../src/server';
+import { resetSalesforceAuth } from '../src/sf/auth';
+
+const SALESFORCE_ENV_KEYS = [
+  'SF_DOMAIN',
+  'SF_USERNAME',
+  'SF_CLIENT_ID',
+  'SF_PRIVATE_KEY',
+  'SF_PRIVATE_KEY_PATH',
+  'SFDX_AUTH_URL',
+] as const;
+
+function clearSalesforceAuthEnv(): void {
+  resetSalesforceAuth();
+  for (const key of SALESFORCE_ENV_KEYS) {
+    delete process.env[key];
+  }
+}
+
+beforeEach(() => {
+  clearSalesforceAuthEnv();
+});
+
+afterEach(() => {
+  resetSalesforceAuth();
+});
 
 describe('Azure AD JWT Authentication', () => {
   let app: FastifyInstance;
@@ -46,7 +71,9 @@ describe('Azure AD JWT Authentication', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
     nock.cleanAll();
   });
 
@@ -453,7 +480,9 @@ describe('Auth Integration with Health Endpoints', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
     nock.cleanAll();
   });
 

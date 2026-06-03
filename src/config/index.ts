@@ -60,6 +60,9 @@ export async function loadConfig(): Promise<AppConfig> {
     sfPrivateKey: loadPrivateKey(),
     // Salesforce SFDX Auth URL (alternative to JWT Bearer)
     sfdxAuthUrl: process.env.SFDX_AUTH_URL,
+    // Salesforce access token (short-lived CI/scratch org auth)
+    sfAccessToken: process.env.SF_ACCESS_TOKEN,
+    sfInstanceUrl: process.env.SF_INSTANCE_URL,
     // LibreOffice conversion settings (T-11)
     conversionTimeout: parseInt(
       process.env.CONVERSION_TIMEOUT || '60000',
@@ -108,6 +111,12 @@ export async function loadConfig(): Promise<AppConfig> {
     if (kvSecrets.sfdxAuthUrl) {
       config.sfdxAuthUrl = kvSecrets.sfdxAuthUrl;
     }
+    if (kvSecrets.sfAccessToken) {
+      config.sfAccessToken = kvSecrets.sfAccessToken;
+    }
+    if (kvSecrets.sfInstanceUrl) {
+      config.sfInstanceUrl = kvSecrets.sfInstanceUrl;
+    }
   }
 
   return config;
@@ -117,7 +126,7 @@ export async function loadConfig(): Promise<AppConfig> {
  * Validate required configuration for production
  *
  * Note: Salesforce auth validation is handled in SalesforceAuth class.
- * Either JWT Bearer config or SFDX Auth URL is required, but not enforced here.
+ * JWT Bearer config, SFDX Auth URL, or direct access token config is required.
  */
 export function validateConfig(config: AppConfig): void {
   if (config.nodeEnv === 'production') {
@@ -140,10 +149,11 @@ export function validateConfig(config: AppConfig): void {
     // Validate that at least one Salesforce auth method is configured
     const hasJwtConfig = !!(config.sfDomain && config.sfUsername && config.sfClientId && config.sfPrivateKey);
     const hasSfdxConfig = !!config.sfdxAuthUrl;
+    const hasAccessTokenConfig = !!(config.sfAccessToken && config.sfInstanceUrl);
 
-    if (!hasJwtConfig && !hasSfdxConfig) {
+    if (!hasJwtConfig && !hasSfdxConfig && !hasAccessTokenConfig) {
       throw new Error(
-        'Production requires Salesforce authentication: either JWT Bearer config (SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY) or SFDX_AUTH_URL'
+        'Production requires Salesforce authentication: JWT Bearer config (SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY), SFDX_AUTH_URL, or SF_ACCESS_TOKEN with SF_INSTANCE_URL'
       );
     }
   }

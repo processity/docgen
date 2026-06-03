@@ -332,6 +332,59 @@ describe('Salesforce JWT Bearer Authentication', () => {
   });
 });
 
+describe('Salesforce Direct Access Token Authentication', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+    resetSalesforceAuth();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+    resetSalesforceAuth();
+  });
+
+  it('should accept a direct access token and instance URL', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com/',
+    });
+
+    await expect(auth.getAccessToken()).resolves.toBe('scratch-access-token');
+    expect(auth.getInstanceUrl()).toBe('https://scratch.example.my.salesforce.com');
+  });
+
+  it('should cache a direct access token without calling a token endpoint', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+    });
+
+    const token1 = await auth.getAccessToken();
+    const token2 = await auth.getAccessToken();
+
+    expect(token1).toBe('scratch-access-token');
+    expect(token2).toBe(token1);
+    expect(nock.pendingMocks()).toHaveLength(0);
+  });
+
+  it('should prefer direct access token auth over invalid SFDX Auth URL', async () => {
+    const auth = new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+      sfInstanceUrl: 'https://scratch.example.my.salesforce.com',
+      sfdxAuthUrl: 'not-a-force-url',
+    });
+
+    await expect(auth.getAccessToken()).resolves.toBe('scratch-access-token');
+    expect(auth.getInstanceUrl()).toBe('https://scratch.example.my.salesforce.com');
+  });
+
+  it('should reject incomplete direct access token config without another auth method', () => {
+    expect(() => new SalesforceAuth({
+      sfAccessToken: 'scratch-access-token',
+    })).toThrow(/requires either/i);
+  });
+});
+
 describe('Salesforce SFDX Auth URL Authentication', () => {
   let auth: SalesforceAuth;
 
@@ -396,19 +449,20 @@ describe('Salesforce SFDX Auth URL Authentication', () => {
       expect(() => new SalesforceAuth(config)).toThrow(/Invalid (format|SFDX Auth URL|Missing required components)/i);
     });
 
-    it('should handle SFDX Auth URL with special characters in refresh token', () => {
-      const sfdxAuthUrl = 'force://PlatformCLI::5Aep861!@#$%^&*()_+token@test.salesforce.com';
-      const config = { sfdxAuthUrl };
-
-      expect(() => new SalesforceAuth(config)).not.toThrow();
-    });
-
     it('should strip trailing slash from instance URL', () => {
       const sfdxAuthUrl = 'force://PlatformCLI::token@test.salesforce.com/';
       const config = { sfdxAuthUrl };
 
       // Should parse successfully (trailing slash removed internally)
       expect(() => new SalesforceAuth(config)).not.toThrow();
+    });
+
+    it('should normalize protocol from instance URL', () => {
+      const authWithProtocol = new SalesforceAuth({
+        sfdxAuthUrl: 'force://PlatformCLI::token@https://test.salesforce.com/',
+      });
+
+      expect(authWithProtocol.getInstanceUrl()).toBe('https://test.salesforce.com');
     });
   });
 
@@ -472,6 +526,27 @@ describe('Salesforce SFDX Auth URL Authentication', () => {
       await authWithSecret.getAccessToken();
 
       expect(requestBody.client_secret).toBe('my-secret');
+    });
+
+    it('should preserve @ and : characters in refresh token', async () => {
+      const refreshToken = '5Aep861!@#$%^&*()_+token:segment';
+      const authWithSpecialToken = new SalesforceAuth({
+        sfdxAuthUrl: `force://PlatformCLI::${refreshToken}@test.salesforce.com`,
+      });
+      let requestBody: any;
+
+      nock('https://test.salesforce.com')
+        .post('/services/oauth2/token', (body) => {
+          requestBody = body;
+          return true;
+        })
+        .reply(200, MOCK_REFRESH_TOKEN_RESPONSE);
+
+      await authWithSpecialToken.getAccessToken();
+
+      expect(requestBody.client_id).toBe('PlatformCLI');
+      expect(requestBody.refresh_token).toBe(refreshToken);
+      expect(requestBody.client_secret).toBeUndefined();
     });
 
     it('should cache tokens from refresh token flow', async () => {

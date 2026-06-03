@@ -39,6 +39,28 @@ private class DocgenControllerTest {
     }
 
     /**
+     * Mock HTTP callout for successful PDF generation with stored merged DOCX
+     */
+    private class MockDocgenSuccessWithMergedDocxCallout implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(200);
+            res.setStatus('OK');
+            res.setHeader('Content-Type', 'application/json');
+
+            Map<String, Object> responseBody = new Map<String, Object>{
+                'downloadUrl' => 'https://test.my.salesforce.com/sfc/servlet.shepherd/version/download/068XXXXXXXXXXXXXXX',
+                'contentVersionId' => '068XXXXXXXXXXXXXXX',
+                'docxContentVersionId' => '068ZZZZZZZZZZZZZZZ',
+                'correlationId' => 'test-correlation-id-with-docx'
+            };
+            res.setBody(JSON.serialize(responseBody));
+
+            return res;
+        }
+    }
+
+    /**
      * Mock HTTP callout for server error (500)
      */
     private class MockDocgenServerErrorCallout implements HttpCalloutMock {
@@ -191,6 +213,37 @@ private class DocgenControllerTest {
         Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be captured');
         Assert.isNull(doc.Error__c, 'Error__c should be null on success');
         Assert.isNotNull(doc.RequestJSON__c, 'RequestJSON should be stored');
+    }
+
+    /**
+     * Test: Successful PDF generation stores merged DOCX file ID when backend returns it
+     */
+    @isTest
+    static void testGenerateSuccessStoresMergedDocxFileId() {
+        // Given
+        Docgen_Template__c template = [SELECT Id, StoreMergedDocx__c FROM Docgen_Template__c LIMIT 1];
+        template.StoreMergedDocx__c = true;
+        update template;
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessWithMergedDocxCallout());
+
+        // When
+        Test.startTest();
+        DocgenController.GenerateResult result = DocgenController.generate(template.Id, acc.Id, 'PDF');
+        Test.stopTest();
+
+        // Then
+        Assert.isTrue(result.success, 'Result should indicate success');
+        Generated_Document__c doc = [
+            SELECT Status__c, OutputFileId__c, MergedDocxFileId__c
+            FROM Generated_Document__c
+            WHERE Account__c = :acc.Id
+            LIMIT 1
+        ];
+        Assert.areEqual('SUCCEEDED', doc.Status__c, 'Status should be SUCCEEDED');
+        Assert.areEqual('068XXXXXXXXXXXXXXX', doc.OutputFileId__c, 'Primary output file should be stored');
+        Assert.areEqual('068ZZZZZZZZZZZZZZZ', doc.MergedDocxFileId__c, 'Merged DOCX file should be stored');
     }
 
     /**

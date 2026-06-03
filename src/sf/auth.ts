@@ -15,6 +15,9 @@ function isAxiosError(error: unknown): error is { response?: { status: number; d
 }
 
 export interface SalesforceAuthConfig {
+  // Direct access token (short-lived CI/scratch orgs)
+  sfAccessToken?: string;
+  sfInstanceUrl?: string;
   // JWT Bearer Flow fields (production/Connected App)
   sfDomain?: string;
   sfUsername?: string;
@@ -39,10 +42,11 @@ interface ParsedSfdxAuthUrl {
  * Salesforce Authentication
  *
  * Supports two authentication methods:
- * 1. JWT Bearer Flow (production/Connected App) - Server-to-server auth with private key
- * 2. SFDX Auth URL (development/scratch orgs) - Refresh token flow from sf CLI
+ * 1. Direct access token (short-lived CI/scratch orgs)
+ * 2. JWT Bearer Flow (production/Connected App) - Server-to-server auth with private key
+ * 3. SFDX Auth URL (development/scratch orgs) - Refresh token flow from sf CLI
  *
- * SFDX Auth URL takes precedence if both are configured.
+ * Direct access token takes precedence, followed by SFDX Auth URL and then JWT.
  * Caches tokens with TTL and 60-second expiry buffer.
  *
  * References:
@@ -64,10 +68,12 @@ export class SalesforceAuth {
    * Validate required configuration
    *
    * Requires either:
+   * - Direct token: sfAccessToken, sfInstanceUrl
    * - JWT Bearer: sfDomain, sfUsername, sfClientId, sfPrivateKey
    * - SFDX Auth URL: sfdxAuthUrl
    */
   private validateConfig(config: SalesforceAuthConfig): void {
+    const hasAccessTokenConfig = !!(config.sfAccessToken && config.sfInstanceUrl);
     const hasJwtConfig = !!(
       config.sfDomain &&
       config.sfUsername &&
@@ -76,13 +82,19 @@ export class SalesforceAuth {
     );
     const hasSfdxConfig = !!config.sfdxAuthUrl;
 
-    if (!hasJwtConfig && !hasSfdxConfig) {
+    if (!hasAccessTokenConfig && !hasJwtConfig && !hasSfdxConfig) {
       throw new Error(
         'Salesforce authentication requires either:\n' +
-        '  1. JWT Bearer Flow: SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY\n' +
-        '  2. SFDX Auth URL: SFDX_AUTH_URL\n' +
+        '  1. Direct Access Token: SF_ACCESS_TOKEN, SF_INSTANCE_URL\n' +
+        '  2. JWT Bearer Flow: SF_DOMAIN, SF_USERNAME, SF_CLIENT_ID, SF_PRIVATE_KEY\n' +
+        '  3. SFDX Auth URL: SFDX_AUTH_URL\n' +
         'Get SFDX Auth URL via: sf org display --verbose --json | jq -r \'.result.sfdxAuthUrl\''
       );
+    }
+
+    if (hasAccessTokenConfig) {
+      logger.info('Using direct Salesforce access token authentication');
+      return;
     }
 
     if (hasJwtConfig && hasSfdxConfig) {
@@ -116,15 +128,36 @@ export class SalesforceAuth {
    * Example: force://PlatformCLI::!refreshToken123@test.salesforce.com
    */
   private parseSfdxAuthUrl(authUrl: string): ParsedSfdxAuthUrl {
-    const match = authUrl.match(/^force:\/\/([^:]+):([^:]*):([^@]+)@(.+)$/);
-
-    if (!match) {
+    if (!authUrl.startsWith('force://')) {
       throw new Error(
         'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
       );
     }
 
-    const [, clientId, clientSecret, refreshToken, instanceUrl] = match;
+    const authParts = authUrl.slice('force://'.length);
+    const instanceSeparatorIndex = authParts.lastIndexOf('@');
+    if (instanceSeparatorIndex < 0) {
+      throw new Error(
+        'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
+      );
+    }
+
+    const credentials = authParts.slice(0, instanceSeparatorIndex);
+    const instanceUrl = authParts.slice(instanceSeparatorIndex + 1);
+    const firstColonIndex = credentials.indexOf(':');
+    const secondColonIndex = firstColonIndex >= 0
+      ? credentials.indexOf(':', firstColonIndex + 1)
+      : -1;
+
+    if (firstColonIndex <= 0 || secondColonIndex < 0) {
+      throw new Error(
+        'Invalid format. Expected: force://<clientId>:<clientSecret>:<refreshToken>@<instanceUrl>'
+      );
+    }
+
+    const clientId = credentials.slice(0, firstColonIndex);
+    const clientSecret = credentials.slice(firstColonIndex + 1, secondColonIndex);
+    const refreshToken = credentials.slice(secondColonIndex + 1);
 
     if (!clientId || !refreshToken || !instanceUrl) {
       throw new Error('Missing required components in SFDX Auth URL');
@@ -134,7 +167,7 @@ export class SalesforceAuth {
       clientId,
       clientSecret: clientSecret || undefined,
       refreshToken,
-      instanceUrl: instanceUrl.replace(/\/$/, ''), // Remove trailing slash
+      instanceUrl: instanceUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''), // Normalize protocol/trailing slash
     };
   }
 
@@ -205,6 +238,11 @@ export class SalesforceAuth {
       return `https://${this.parsedSfdxAuth.instanceUrl}`;
     }
 
+    // If using direct access token auth, return its instance URL
+    if (this.config.sfInstanceUrl) {
+      return this.config.sfInstanceUrl.replace(/\/$/, '');
+    }
+
     // Fallback to configured domain (for JWT Bearer Flow)
     if (this.config.sfDomain) {
       return `https://${this.config.sfDomain}`;
@@ -217,10 +255,16 @@ export class SalesforceAuth {
    * Fetch new access token from Salesforce
    *
    * Routes to appropriate authentication method:
+   * - Direct access token if configured
    * - SFDX Auth URL (refresh token flow) if configured
    * - JWT Bearer Flow otherwise
    */
   private async fetchAccessToken(): Promise<string> {
+    // Prefer direct access token when configured
+    if (this.config.sfAccessToken && this.config.sfInstanceUrl) {
+      return this.useConfiguredAccessToken();
+    }
+
     // Prefer SFDX Auth URL if configured
     if (this.config.sfdxAuthUrl && this.parsedSfdxAuth) {
       return this.fetchAccessTokenFromRefreshToken();
@@ -228,6 +272,25 @@ export class SalesforceAuth {
 
     // Fallback to JWT Bearer Flow
     return this.fetchAccessTokenViaJwt();
+  }
+
+  /**
+   * Use a pre-issued Salesforce access token.
+   *
+   * This is intended for short-lived CI scratch orgs where the Salesforce CLI
+   * already exposes a valid access token for the org under test.
+   */
+  private async useConfiguredAccessToken(): Promise<string> {
+    const accessToken = this.config.sfAccessToken!;
+    const instanceUrl = this.config.sfInstanceUrl!.replace(/\/$/, '');
+
+    this.cachedToken = {
+      accessToken,
+      expiresAt: Date.now() + 3600 * 1000,
+      instanceUrl,
+    };
+
+    return accessToken;
   }
 
   /**

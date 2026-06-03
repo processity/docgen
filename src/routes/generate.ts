@@ -445,6 +445,9 @@ async function generateHandler(
       contentVersionId: downloadContentVersionId,
       correlationId,
     };
+    if (uploadResult.docxContentVersionId) {
+      response.docxContentVersionId = uploadResult.docxContentVersionId;
+    }
 
     reply.code(200).send(response);
 
@@ -557,6 +560,10 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
               contentVersionId: {
                 type: 'string',
                 description: 'The uploaded file ContentVersion ID',
+              },
+              docxContentVersionId: {
+                type: 'string',
+                description: 'Secondary merged DOCX ContentVersion ID when storeMergedDocx is true',
               },
               correlationId: {
                 type: 'string',

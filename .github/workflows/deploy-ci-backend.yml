@@ -145,12 +145,16 @@ jobs:
           echo "🔐 Populating CI Key Vault secrets..."
 
           KEY_VAULT_NAME="docgen-ci-kv"
+          SECRET_DIR="${RUNNER_TEMP}/docgen-ci-secrets"
+          mkdir -p "${SECRET_DIR}"
 
           # Set SF private key (for Node -> Salesforce JWT Bearer flow)
-          echo "${{ secrets.CI_SF_PRIVATE_KEY }}" | az keyvault secret set \
+          printf '%s' "${{ secrets.CI_SF_PRIVATE_KEY }}" > "${SECRET_DIR}/sf-private-key.pem"
+          az keyvault secret set \
             --vault-name ${KEY_VAULT_NAME} \
             --name SF-PRIVATE-KEY \
-            --value @/dev/stdin \
+            --file "${SECRET_DIR}/sf-private-key.pem" \
+            --encoding utf-8 \
             --output none
 
           # Set SF client ID (Connected App)
@@ -177,10 +181,19 @@ jobs:
           # Set SFDX Auth URL if provided (for scratch org authentication)
           if [ -n "${{ inputs.sfdx_auth_url }}" ]; then
             echo "Setting SFDX-AUTH-URL from workflow input..."
-            echo "${{ inputs.sfdx_auth_url }}" | az keyvault secret set \
+            SFDX_AUTH_URL="${{ inputs.sfdx_auth_url }}"
+
+            if [[ "$SFDX_AUTH_URL" != force://* ]]; then
+              echo "❌ Provided SFDX Auth URL does not use the expected force:// scheme"
+              exit 1
+            fi
+
+            printf '%s' "$SFDX_AUTH_URL" > "${SECRET_DIR}/sfdx-auth-url.txt"
+            az keyvault secret set \
               --vault-name ${KEY_VAULT_NAME} \
               --name SFDX-AUTH-URL \
-              --value @/dev/stdin \
+              --file "${SECRET_DIR}/sfdx-auth-url.txt" \
+              --encoding utf-8 \
               --output none
             echo "✅ SFDX-AUTH-URL secret set"
           else
@@ -199,6 +212,7 @@ jobs:
             --output none
 
           echo "✅ CI Key Vault secrets populated"
+          rm -f "${SECRET_DIR}/sf-private-key.pem" "${SECRET_DIR}/sfdx-auth-url.txt"
 
       - name: Restart Container App (if SFDX Auth URL provided)
         if: inputs.sfdx_auth_url != ''

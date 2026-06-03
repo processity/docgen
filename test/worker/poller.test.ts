@@ -18,6 +18,11 @@ jest.mock('../../src/convert/soffice', () => {
 config();
 
 process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';
+delete process.env.SF_DOMAIN;
+delete process.env.SF_USERNAME;
+delete process.env.SF_CLIENT_ID;
+delete process.env.SF_PRIVATE_KEY;
+delete process.env.SF_PRIVATE_KEY_PATH;
 
 // Mock logger to suppress output during tests
 jest.mock('pino', () => {

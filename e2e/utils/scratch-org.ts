@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
@@ -10,18 +10,92 @@ export interface ScratchOrgInfo {
   orgId: string;
 }
 
+function isMissingOrgValue(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === '' || normalized === 'undefined' || normalized === 'null';
+}
+
+function shellArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function getScratchOrgInfoFromEnv(): ScratchOrgInfo | null {
+  const instanceUrl = process.env.SF_INSTANCE_URL;
+  const accessToken = process.env.SF_ACCESS_TOKEN;
+  const username = process.env.SF_USERNAME;
+
+  if (
+    isMissingOrgValue(instanceUrl) ||
+    isMissingOrgValue(accessToken) ||
+    isMissingOrgValue(username)
+  ) {
+    return null;
+  }
+
+  return {
+    instanceUrl: instanceUrl!.replace(/\/$/, ''),
+    accessToken: accessToken!,
+    username: username!,
+    orgId: process.env.SF_ORG_ID || '',
+  };
+}
+
+interface RestCreateResponse {
+  success?: boolean;
+  id?: string;
+  errors?: unknown[];
+}
+
+function execFileCommand(
+  command: string,
+  args: string[],
+  options: Parameters<typeof execFile>[2]
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(Object.assign(error, { stdout, stderr }));
+        return;
+      }
+
+      resolve({
+        stdout: stdout.toString(),
+        stderr: stderr.toString(),
+      });
+    });
+  });
+}
+
+function getSfCliEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.SF_ACCESS_TOKEN;
+  delete env.SF_INSTANCE_URL;
+  delete env.SF_ORG_ID;
+  env.SF_FORMAT_JSON = 'true';
+  env.SF_DISABLE_COLORS = 'true';
+  return env;
+}
+
 /**
  * Get information about the current default scratch org
  * Uses `sf org display --json` to fetch credentials
  */
 export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
   try {
+    const envOrgInfo = getScratchOrgInfoFromEnv();
+    if (envOrgInfo) {
+      return envOrgInfo;
+    }
+
     // Get org info from SFDX CLI
     // Use SF_FORMAT_JSON=true to ensure clean JSON output without colors
     // In CI, use SF_USERNAME env var if available to explicitly target the org
     const targetOrg = process.env.SF_USERNAME;
-    const targetOrgFlag = targetOrg ? ` --target-org ${targetOrg}` : '';
-    const { stdout, stderr } = await execAsync(`sf org display${targetOrgFlag} --json`, {
+    const targetOrgFlag = targetOrg ? ` --target-org ${shellArg(targetOrg)}` : '';
+    const { stdout, stderr } = await execAsync(`sf org display${targetOrgFlag} --verbose --json`, {
       env: { ...process.env, SF_FORMAT_JSON: 'true', SF_DISABLE_COLORS: 'true' }
     });
 
@@ -41,17 +115,21 @@ export async function getScratchOrgInfo(): Promise<ScratchOrgInfo> {
     const result = orgData.result;
 
     // Check if we have the required fields
-    if (!result.instanceUrl || !result.accessToken || !result.username) {
+    if (
+      isMissingOrgValue(result.instanceUrl) ||
+      isMissingOrgValue(result.accessToken) ||
+      isMissingOrgValue(result.username)
+    ) {
       throw new Error(
-        'Missing required org information. Make sure a scratch org is set as default.'
+        `Missing required org information. Result keys: ${Object.keys(result).join(', ')}`
       );
     }
 
     return {
-      instanceUrl: result.instanceUrl,
+      instanceUrl: result.instanceUrl.replace(/\/$/, ''),
       accessToken: result.accessToken,
       username: result.username,
-      orgId: result.id,
+      orgId: result.id || '',
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -122,31 +200,40 @@ async function createRecordViaRestAPI(
   objectType: string,
   fields: Record<string, any>
 ): Promise<string> {
-  const orgInfo = await getScratchOrgInfo();
-
-  // Write JSON to temp file
+  // Write JSON to temp file. Use the Salesforce CLI REST command so auth stays
+  // inside the CLI org connection instead of manually passing a bearer token.
   const fs = require('fs');
-  const tempFile = `/tmp/sf-record-rest-${Date.now()}.json`;
+  const tempFile = `/tmp/sf-record-rest-${Date.now()}-${Math.random().toString(36).substring(7)}.json`;
   fs.writeFileSync(tempFile, JSON.stringify(fields));
 
   try {
-    const url = `${orgInfo.instanceUrl}/services/data/v65.0/sobjects/${objectType}`;
+    const targetOrg = process.env.SF_USERNAME;
+    const args = [
+      'api',
+      'request',
+      'rest',
+      `/services/data/v65.0/sobjects/${objectType}`,
+      '--body',
+      `@${tempFile}`,
+      '--method',
+      'POST',
+    ];
 
-    const command = `curl -X POST "${url}" \\
-      -H "Authorization: Bearer ${orgInfo.accessToken}" \\
-      -H "Content-Type: application/json" \\
-      -d @${tempFile}`;
+    if (targetOrg) {
+      args.push('--target-org', targetOrg);
+    }
 
-    const { stdout } = await execAsync(command, {
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large responses
+    const { stdout, stderr } = await execFileCommand('sf', args, {
+      env: getSfCliEnv(),
+      maxBuffer: 10 * 1024 * 1024,
     });
 
-    const result = JSON.parse(stdout);
-
-    // Clean up temp file
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
+    if (stderr) {
+      console.error('SF CLI stderr (REST):', stderr);
     }
+
+    const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[mGKHF]/g, '').trim();
+    const result = JSON.parse(cleanStdout) as RestCreateResponse;
 
     if (!result.success || !result.id) {
       throw new Error(`REST API creation failed: ${JSON.stringify(result)}`);
@@ -154,12 +241,19 @@ async function createRecordViaRestAPI(
 
     return result.id;
   } catch (error) {
-    // Clean up temp file on error
-    const fs = require('fs');
+    const stdout = error instanceof Error ? (error as any).stdout || '' : '';
+    const stderr = error instanceof Error ? (error as any).stderr || '' : '';
+    const stderrInfo = stderr ? `\nStderr: ${stderr}` : '';
+    const stdoutInfo = stdout ? `\nStdout: ${stdout}` : '';
+
+    if (error instanceof Error) {
+      throw new Error(`REST API creation failed: ${error.message}${stdoutInfo}${stderrInfo}`);
+    }
+    throw error;
+  } finally {
     if (fs.existsSync(tempFile)) {
       fs.unlinkSync(tempFile);
     }
-    throw error;
   }
 }
 

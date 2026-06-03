@@ -33,6 +33,9 @@ export interface AppConfig {
   sfPrivateKey?: string;
   // Salesforce SFDX Auth URL (alternative to JWT Bearer)
   sfdxAuthUrl?: string;
+  // Salesforce access token (short-lived CI/scratch org auth)
+  sfAccessToken?: string;
+  sfInstanceUrl?: string;
   // LibreOffice conversion settings (T-11)
   conversionTimeout: number;
   conversionWorkdir: string;
@@ -164,6 +167,7 @@ export interface DocgenRequest {
 export interface DocgenResponse {
   downloadUrl: string;
   contentVersionId: string;
+  docxContentVersionId?: string;
   correlationId: string;
 }
 
