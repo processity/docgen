@@ -70,6 +70,10 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('<w:headerReference w:type="default" r:id="');
     expect(headerXml).toContain('<v:shape');
     expect(headerXml).toContain('DocgenWatermark');
+    expect(headerXml).toContain('<v:shapetype id="_x0000_t136"');
+    expect(headerXml).toContain('mso-position-horizontal:center');
+    expect(headerXml).toContain('mso-position-vertical:center');
+    expect(headerXml).toContain('<w10:wrap anchorx="margin" anchory="margin"/>');
     expect(headerXml).toContain('string="DRAFT"');
   });
 
