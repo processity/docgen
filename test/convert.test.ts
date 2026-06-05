@@ -204,6 +204,24 @@ describe('LibreOfficeConverter', () => {
       expect(mockedFsPromises.rm).toHaveBeenCalled();
     });
 
+    it('should report LibreOffice stderr when no PDF output is produced', async () => {
+      mockExecFileAsync.mockResolvedValue({
+        stdout: '',
+        stderr: 'source file could not be loaded\n',
+      });
+      const enoent: any = new Error('missing pdf');
+      enoent.code = 'ENOENT';
+      mockedFsPromises.readFile.mockRejectedValueOnce(enoent);
+
+      const docxBuffer = Buffer.from('mock docx content');
+
+      await expect(
+        converter.convertToPdf(docxBuffer, { correlationId: 'missing-output-test' })
+      ).rejects.toThrow(/LibreOffice did not produce PDF output.*source file could not be loaded/i);
+
+      expect(mockedFsPromises.rm).toHaveBeenCalled();
+    });
+
     it('should track stats correctly', async () => {
       const initialStats = converter.getStats();
       expect(initialStats.totalConversions).toBe(0);

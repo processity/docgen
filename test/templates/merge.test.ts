@@ -3,10 +3,16 @@ import type { MergeOptions } from '../../src/types';
 
 // Mock docx-templates
 jest.mock('docx-templates', () => {
-  return jest.fn().mockImplementation(() => {
+  const createReport = jest.fn().mockImplementation(() => {
     // Simple mock that returns a buffer
     return Promise.resolve(Buffer.from('merged document content'));
   });
+
+  return {
+    __esModule: true,
+    default: createReport,
+    listCommands: jest.fn().mockResolvedValue([]),
+  };
 });
 
 describe('Template Merge', () => {
