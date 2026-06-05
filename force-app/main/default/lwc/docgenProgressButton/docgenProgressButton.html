@@ -1,0 +1,22 @@
+<template>
+  <div class="slds-m-around_medium">
+    <template if:true={showButton}>
+      <lightning-button
+        label={buttonLabel}
+        onclick={handleGenerateClick}
+        disabled={isProcessing}
+        variant={buttonVariant}
+      ></lightning-button>
+    </template>
+
+    <template if:true={showProgressPanel}>
+      <div class="slds-m-top_small" aria-live="polite">
+        <div class="slds-grid slds-grid_align-spread slds-m-bottom_x-small">
+          <span class="slds-text-body_small">{displayStatus}</span>
+          <span class="slds-text-body_small">{progressValue}%</span>
+        </div>
+        <lightning-progress-bar value={progressValue} size="medium"></lightning-progress-bar>
+      </div>
+    </template>
+  </div>
+</template>
