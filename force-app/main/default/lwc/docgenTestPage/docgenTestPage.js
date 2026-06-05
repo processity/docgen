@@ -51,6 +51,12 @@ const OBJECT_ICONS = {
     'Case': 'standard:case'
 };
 
+const OUTPUT_FORMAT_OPTIONS = [
+    { label: 'PDF', value: 'PDF' },
+    { label: 'DOCX', value: 'DOCX' },
+    { label: 'PPTX', value: 'PPTX' }
+];
+
 export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     @track recordId;
     @track templateId;
@@ -58,6 +64,7 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     @track selectedObjectApiName;
     @track selectedObjectConfig;
     @track supportedObjectsData = [];
+    @track outputFormat = 'PDF';
     columns = COLUMNS;
     pageRef;
 
@@ -80,10 +87,11 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     getPageReference(pageRef) {
         this.pageRef = pageRef;
         if (pageRef && pageRef.state) {
-            // Read c__recordId, c__templateId, and c__objectType from URL parameters
+            // Read c__recordId, c__templateId, c__objectType, and c__outputFormat from URL parameters
             const recordIdParam = pageRef.state.c__recordId;
             const templateIdParam = pageRef.state.c__templateId;
             const objectTypeParam = pageRef.state.c__objectType;
+            const outputFormatParam = this.normalizeOutputFormat(pageRef.state.c__outputFormat);
 
             // Restore object type from URL if present
             if (objectTypeParam && objectTypeParam !== this.selectedObjectApiName) {
@@ -99,6 +107,10 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
 
             if (templateIdParam && templateIdParam !== this.templateId) {
                 this.templateId = templateIdParam;
+            }
+
+            if (outputFormatParam && outputFormatParam !== this.outputFormat) {
+                this.outputFormat = outputFormatParam;
             }
         }
     }
@@ -160,6 +172,10 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
         return this.selectedObjectConfig ? this.selectedObjectConfig.Lookup_Field_API_Name__c : null;
     }
 
+    get outputFormatOptions() {
+        return OUTPUT_FORMAT_OPTIONS;
+    }
+
     // Handle object type selection
     handleObjectTypeChange(event) {
         const newObjectType = event.detail.value;
@@ -198,7 +214,26 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
         this.updateUrlParams();
     }
 
-    // Update the URL with recordId, templateId, and objectType parameters
+    // Handle output format selection
+    handleOutputFormatChange(event) {
+        this.outputFormat = event.detail.value;
+        this.updateUrlParams();
+    }
+
+    normalizeOutputFormat(outputFormat) {
+        if (!outputFormat) {
+            return null;
+        }
+
+        const normalized = outputFormat.toUpperCase();
+        if (normalized === 'PPT') {
+            return 'PPTX';
+        }
+
+        return OUTPUT_FORMAT_OPTIONS.some(option => option.value === normalized) ? normalized : null;
+    }
+
+    // Update the URL with recordId, templateId, objectType, and outputFormat parameters
     updateUrlParams() {
         if (!this.pageRef) {
             return;
@@ -224,6 +259,12 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
             newState.c__objectType = this.selectedObjectApiName;
         } else {
             delete newState.c__objectType;
+        }
+
+        if (this.outputFormat) {
+            newState.c__outputFormat = this.outputFormat;
+        } else {
+            delete newState.c__outputFormat;
         }
 
         this[NavigationMixin.Navigate]({

@@ -1,0 +1,180 @@
+@IsTest
+private class DocgenAsyncControllerTest {
+    @testSetup
+    static void setup() {
+        DocgenTestDataFactory.createTemplate(
+            'Async Account Template',
+            'Account',
+            'SELECT Id, Name, AnnualRevenue FROM Account WHERE Id = :recordId'
+        );
+        DocgenTestDataFactory.createAccount('Async Account Ltd');
+    }
+
+    @IsTest
+    static void testStartGenerationCreatesQueuedDocument() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'DOCX'
+        );
+        Test.stopTest();
+
+        Assert.isNotNull(result.generatedDocumentId, 'Generated document ID should be returned');
+        Assert.areEqual('QUEUED', result.status, 'Status should be queued for worker processing');
+        Assert.areEqual(20, result.progressValue, 'Queued documents should show queued progress');
+        Assert.isFalse(result.isTerminal, 'Queued status should not be terminal');
+
+        Generated_Document__c doc = [
+            SELECT Id, Status__c, Account__c, Template__c, OutputFormat__c, RequestJSON__c,
+                   RequestedBy__c, Attempts__c, Priority__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.areEqual('QUEUED', doc.Status__c, 'Document should be queued');
+        Assert.areEqual(account.Id, doc.Account__c, 'Parent lookup should be set');
+        Assert.areEqual(template.Id, doc.Template__c, 'Template lookup should be set');
+        Assert.areEqual('DOCX', doc.OutputFormat__c, 'Output format should be stored');
+        Assert.isNotNull(doc.RequestJSON__c, 'Request JSON should be stored for the worker');
+        Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'Requester should be tracked');
+        Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should start at 0');
+        Assert.areEqual(0, Integer.valueOf(doc.Priority__c), 'Priority should default to 0');
+    }
+
+    @IsTest
+    static void testStartGenerationByTemplateNameReusesExistingQueuedDocument() {
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult firstResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF'
+        );
+        DocgenAsyncController.StartResult secondResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(firstResult.generatedDocumentId, secondResult.generatedDocumentId, 'Duplicate request should reuse existing row');
+        Assert.areEqual(1, [SELECT COUNT() FROM Generated_Document__c], 'Only one generated document should exist');
+    }
+
+    @IsTest
+    static void testStartGenerationRequeuesFailedExistingDocument() {
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        DocgenAsyncController.StartResult firstResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF'
+        );
+
+        update new Generated_Document__c(
+            Id = firstResult.generatedDocumentId,
+            Status__c = 'FAILED',
+            Error__c = 'Previous failure',
+            OutputFileId__c = '068000000000000AAA',
+            Attempts__c = 3
+        );
+
+        Test.startTest();
+        DocgenAsyncController.StartResult retryResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(firstResult.generatedDocumentId, retryResult.generatedDocumentId, 'Retry should reuse the same row');
+        Assert.areEqual('QUEUED', retryResult.status, 'Failed document should be queued again');
+
+        Generated_Document__c doc = [
+            SELECT Status__c, Error__c, OutputFileId__c, Attempts__c
+            FROM Generated_Document__c
+            WHERE Id = :retryResult.generatedDocumentId
+        ];
+        Assert.areEqual('QUEUED', doc.Status__c, 'Status should be reset to queued');
+        Assert.isNull(doc.Error__c, 'Previous error should be cleared');
+        Assert.isNull(doc.OutputFileId__c, 'Previous output file should be cleared');
+        Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should reset for manual retry');
+    }
+
+    @IsTest
+    static void testStartGenerationDoesNotRequireConfiguredLookupFieldToExist() {
+        Supported_Object__mdt accountConfig = new Supported_Object__mdt();
+        accountConfig.DeveloperName = 'Account';
+        accountConfig.Label = 'Account';
+        accountConfig.Object_API_Name__c = 'Account';
+        accountConfig.Lookup_Field_API_Name__c = 'Missing_Lookup__c';
+        accountConfig.Is_Active__c = true;
+        DocgenObjectConfigService.configCache = new Map<String, Supported_Object__mdt>{
+            'Account' => accountConfig
+        };
+
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF'
+        );
+        Test.stopTest();
+
+        Generated_Document__c doc = [
+            SELECT Status__c, Account__c, RequestJSON__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.areEqual('QUEUED', doc.Status__c, 'Document should still be queued');
+        Assert.isNull(doc.Account__c, 'Existing lookup field should not be populated when metadata points to a missing field');
+        Assert.isTrue(doc.RequestJSON__c.contains(String.valueOf(account.Id)), 'Parent ID should still be stored for ContentDocumentLink creation');
+
+        DocgenObjectConfigService.clearCache();
+    }
+
+    @IsTest
+    static void testGetGenerationStatusReturnsDownloadUrlForSucceededDocument() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        Generated_Document__c doc = DocgenTestDataFactory.createGeneratedDocument(template.Id, account.Id, 'SUCCEEDED');
+        doc.OutputFileId__c = '068000000000001AAA';
+        update doc;
+
+        Test.startTest();
+        DocgenAsyncController.StatusResult result = DocgenAsyncController.getGenerationStatus(doc.Id);
+        Test.stopTest();
+
+        Assert.areEqual('SUCCEEDED', result.status, 'Status should be returned');
+        Assert.areEqual(100, result.progressValue, 'Succeeded documents should show full progress');
+        Assert.isTrue(result.isTerminal, 'Succeeded status should be terminal');
+        Assert.areEqual('/lightning/r/ContentDocument/069000000000001AAA/view', result.downloadUrl, 'Download URL should target ContentDocument view');
+    }
+
+    @IsTest
+    static void testStartGenerationRejectsInvalidOutputFormat() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        try {
+            DocgenAsyncController.startGeneration(template.Id, null, account.Id, 'XLSX');
+            Assert.fail('Invalid output format should throw an AuraHandledException');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('Output Format must be PDF, DOCX, or PPTX'), 'Error should explain allowed formats');
+        }
+        Test.stopTest();
+    }
+}

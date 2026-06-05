@@ -294,6 +294,10 @@
         <apexClass>CompositeDocumentController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenAsyncController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
 
     <!-- Custom Tab Visibility -->
     <tabSettings>

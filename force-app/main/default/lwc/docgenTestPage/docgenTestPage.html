@@ -75,12 +75,23 @@
                             </lightning-record-picker>
                         </div>
 
+                        <!-- Output Format Selection -->
+                        <div class="slds-m-bottom_medium">
+                            <lightning-combobox
+                                label="Output Format"
+                                value={outputFormat}
+                                options={outputFormatOptions}
+                                onchange={handleOutputFormatChange}
+                                required>
+                            </lightning-combobox>
+                        </div>
+
                         <!-- Generate Button (enabled when template is selected) -->
                         <template if:true={templateId}>
                             <c-docgen-button
                                 record-id={recordId}
                                 template-id={templateId}
-                                output-format="PDF"
+                                output-format={outputFormat}
                                 button-label="Generate Test Document"
                                 success-message="Test document generated successfully!">
                             </c-docgen-button>
