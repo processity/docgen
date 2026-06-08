@@ -201,6 +201,23 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).not.toContain('$item');
   });
 
+  it('treats missing nested loop collections as empty arrays', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:tbl>
+        <w:tr><w:tc><w:p><w:r><w:t>{{FOR item IN Account.LineItems}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{INS $item.Name}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{END-FOR item}}</w:t></w:r></w:p></w:tc></w:tr>
+      </w:tbl>
+      <w:p><w:r><w:t>After table</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, baseOptions);
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('After table');
+    expect(documentXml).not.toContain('<w:tbl');
+  });
+
   it('does not suppress repeated rows that use loop-scoped fields', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:tbl>
@@ -230,6 +247,22 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('Service A');
     expect(documentXml).toContain('Service B');
     expect(documentXml).not.toContain('__DOCGEN_ROW_');
+  });
+
+  it('does not shadow collections created by template EXEC commands', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{EXEC generatedSections = [{ rows: [{ Name: 'Generated row' }] }]}}</w:t></w:r></w:p>
+      <w:p><w:r><w:t>{{FOR section IN generatedSections}}</w:t></w:r></w:p>
+      <w:tbl>
+        <w:tr><w:tc><w:p><w:r><w:t>{{FOR item IN $section.rows}}{{INS $item.Name}}{{END-FOR item}}</w:t></w:r></w:p></w:tc></w:tr>
+      </w:tbl>
+      <w:p><w:r><w:t>{{END-FOR section}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, baseOptions);
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('Generated row');
   });
 
   it('normalizes WordprocessingML namespace aliases before merging commands', async () => {

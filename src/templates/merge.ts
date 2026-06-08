@@ -128,14 +128,19 @@ async function normalizeLoopCollections(
   let normalizedData: Record<string, any> | null = null;
 
   for (const loopPath of loopPaths) {
-    const currentValue = resolveDataPath(normalizedData ?? data, loopPath);
-    if (currentValue == null) {
+    const currentData = normalizedData ?? data;
+    const currentValue = resolveDataPath(currentData, loopPath);
+    if (currentValue == null && hasDataRoot(currentData, loopPath)) {
       normalizedData ??= cloneData(data) as Record<string, any>;
       setArrayAtPath(normalizedData, loopPath);
     }
   }
 
   return normalizedData ?? data;
+}
+
+function hasDataRoot(data: Record<string, any>, fieldPath: string): boolean {
+  return Object.prototype.hasOwnProperty.call(data, fieldPath.split('.')[0]);
 }
 
 function parseSimpleLoopPath(commandCode: string): string | null {
