@@ -1,4 +1,5 @@
 const RICH_TEXT_TAG_PATTERN = /<\/?(p|div|br|b|strong|i|em|u|ul|ol|li|a)(\s|>|\/)/i;
+export const DOCGEN_LITERAL_XML_DELIMITER = '__DOCGEN_LITERAL_XML_BOUNDARY_8E31A9__';
 
 interface RichTextRun {
   text?: string;
@@ -17,7 +18,10 @@ interface ListState {
  * Converts Salesforce rich-text HTML strings in a data object into literal
  * WordprocessingML fragments that docx-templates can insert directly.
  */
-export function prepareRichTextData<T>(value: T, literalXmlDelimiter = '||'): T {
+export function prepareRichTextData<T>(
+  value: T,
+  literalXmlDelimiter = DOCGEN_LITERAL_XML_DELIMITER
+): T {
   return transformRichTextValue(value, literalXmlDelimiter) as T;
 }
 
@@ -42,7 +46,10 @@ function transformRichTextValue(value: unknown, literalXmlDelimiter: string): un
   return value;
 }
 
-export function htmlToWordprocessingMl(html: string, literalXmlDelimiter = '||'): string | null {
+export function htmlToWordprocessingMl(
+  html: string,
+  literalXmlDelimiter = DOCGEN_LITERAL_XML_DELIMITER
+): string | null {
   if (!RICH_TEXT_TAG_PATTERN.test(html)) {
     return null;
   }

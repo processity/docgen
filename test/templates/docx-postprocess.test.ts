@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { mergeTemplate } from '../../src/templates/merge';
 import type { MergeOptions } from '../../src/types';
 import { createTestDocxFromBodyXml, readDocxXml } from '../helpers/test-docx';
@@ -229,5 +230,53 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('Service A');
     expect(documentXml).toContain('Service B');
     expect(documentXml).not.toContain('__DOCGEN_ROW_');
+  });
+
+  it('normalizes WordprocessingML namespace aliases before merging commands', async () => {
+    const canonicalTemplate = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{EXEC items = Account.Items || []; label = Account.Label || 'No label'; hasOne = items.length &amp;&amp; items.length &lt; 2;}}</w:t></w:r></w:p>
+      <w:tbl>
+        <w:tr><w:tc><w:p><w:r><w:t>{{FOR item IN Account.Items}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{INS $item.Name}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{END-FOR item}}</w:t></w:r></w:p></w:tc></w:tr>
+      </w:tbl>
+      <w:p><w:r><w:t>{{INS label}}</w:t></w:r></w:p>
+    `);
+    const zip = await JSZip.loadAsync(canonicalTemplate);
+    const documentXml = await zip.file('word/document.xml')!.async('string');
+    zip.file(
+      'word/document.xml',
+      documentXml.replace('xmlns:w=', 'xmlns:ns0=').replace(/w:/g, 'ns0:')
+    );
+    const aliasedTemplate = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const result = await mergeTemplate(
+      aliasedTemplate,
+      { Account: { Items: null, Label: null } },
+      baseOptions
+    );
+
+    const mergedXml = await readDocxXml(result, 'word/document.xml');
+    expect(mergedXml).toContain('xmlns:w=');
+    expect(mergedXml).toContain('No label');
+    expect(mergedXml).not.toContain('ns0:');
+    expect(mergedXml).not.toContain('{{EXEC');
+    expect(mergedXml).not.toContain('{{FOR');
+    expect(mergedXml).not.toContain('<w:tbl');
+  });
+
+  it('preserves ordinary text containing the old literal XML delimiter', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Account.Name}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      { Account: { Name: 'Left || Right' } },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('Left || Right');
   });
 });

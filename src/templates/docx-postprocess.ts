@@ -13,6 +13,8 @@ const HEADER_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml';
 const SETTINGS_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml';
+const WORDPROCESSING_NAMESPACE =
+  'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 export interface DocxPostProcessContext {
   controls: ControlMarker[];
@@ -55,7 +57,7 @@ export async function preprocessDocxTemplate(
   }
 
   let changed = false;
-  const xmlPaths = Object.keys(zip.files).filter(isTemplateXmlPath);
+  const xmlPaths = Object.keys(zip.files).filter(isDocxTemplatesXmlPath);
 
   for (const path of xmlPaths) {
     const file = zip.file(path);
@@ -64,15 +66,21 @@ export async function preprocessDocxTemplate(
     }
 
     let xml = await file.async('string');
+    const normalizedXml = normalizeWordprocessingNamespacePrefixes(xml);
+    changed = changed || normalizedXml !== xml;
+    xml = normalizedXml;
+
     if (path === DOCUMENT_XML) {
       const rowResult = addRowSuppressionMarkers(xml, data, context.rowMarkers);
       xml = rowResult.xml;
       changed = changed || rowResult.changed;
     }
 
-    const controlResult = replaceEditableMarkers(xml, context.controls);
-    xml = controlResult.xml;
-    changed = changed || controlResult.changed;
+    if (isTemplateXmlPath(path)) {
+      const controlResult = replaceEditableMarkers(xml, context.controls);
+      xml = controlResult.xml;
+      changed = changed || controlResult.changed;
+    }
 
     zip.file(path, xml);
   }
@@ -120,6 +128,46 @@ export async function postProcessMergedDocx(
 
 function isTemplateXmlPath(path: string): boolean {
   return /^word\/(?:document|header\d+|footer\d+)\.xml$/.test(path);
+}
+
+function isDocxTemplatesXmlPath(path: string): boolean {
+  return /^word\/[^/]+\.xml$/.test(path);
+}
+
+function normalizeWordprocessingNamespacePrefixes(xml: string): string {
+  const namespacePattern = new RegExp(
+    `xmlns:([A-Za-z_][\\w.-]*)=(["'])${escapeRegExp(WORDPROCESSING_NAMESPACE)}\\2`,
+    'g'
+  );
+  const prefixes = [...xml.matchAll(namespacePattern)]
+    .map((match) => match[1])
+    .filter((prefix) => prefix !== 'w');
+  let nextXml = xml;
+
+  for (const prefix of prefixes) {
+    const escapedPrefix = escapeRegExp(prefix);
+    const aliasDeclaration = new RegExp(
+      `\\s+xmlns:${escapedPrefix}=(["'])${escapeRegExp(WORDPROCESSING_NAMESPACE)}\\1`
+    );
+    const canonicalDeclaration = new RegExp(
+      `xmlns:w=(["'])${escapeRegExp(WORDPROCESSING_NAMESPACE)}\\1`
+    );
+
+    if (canonicalDeclaration.test(nextXml)) {
+      nextXml = nextXml.replace(aliasDeclaration, '');
+    } else {
+      nextXml = nextXml.replace(
+        new RegExp(`xmlns:${escapedPrefix}=`),
+        'xmlns:w='
+      );
+    }
+
+    nextXml = nextXml
+      .replace(new RegExp(`(<\\/?)(?:${escapedPrefix}):`, 'g'), '$1w:')
+      .replace(new RegExp(`(\\s)(?:${escapedPrefix}):`, 'g'), '$1w:');
+  }
+
+  return nextXml;
 }
 
 async function tryLoadDocx(buffer: Buffer): Promise<JSZip | null> {

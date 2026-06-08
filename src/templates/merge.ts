@@ -4,7 +4,7 @@ import type { MergeOptions } from '../types';
 import { createLogger } from '../utils/logger';
 import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
 import { preprocessDocxTemplate, postProcessMergedDocx } from './docx-postprocess';
-import { prepareRichTextData } from './rich-text';
+import { DOCGEN_LITERAL_XML_DELIMITER, prepareRichTextData } from './rich-text';
 
 const logger = createLogger('templates:merge');
 
@@ -54,18 +54,17 @@ export async function mergeTemplate(
     // Initialize image allowlist for validation (if needed in future)
     // const imageAllowlist = new ImageAllowlist(options.imageAllowlist || []);
 
-    const literalXmlDelimiter = '||';
-    const loopSafeData = await normalizeLoopCollections(template, data);
     const { template: preprocessedTemplate, context: postProcessContext } =
-      await preprocessDocxTemplate(template, loopSafeData);
-    const preparedData = prepareRichTextData(loopSafeData, literalXmlDelimiter);
+      await preprocessDocxTemplate(template, data);
+    const loopSafeData = await normalizeLoopCollections(preprocessedTemplate, data);
+    const preparedData = prepareRichTextData(loopSafeData, DOCGEN_LITERAL_XML_DELIMITER);
 
     // Merge using docx-templates
     const result = await createReport({
       template: preprocessedTemplate,
       data: preparedData,
       cmdDelimiter: ['{{', '}}'], // Handlebars-style delimiters
-      literalXmlDelimiter,
+      literalXmlDelimiter: DOCGEN_LITERAL_XML_DELIMITER,
 
       // Image resolver function
       // Handles both base64 and external URLs
