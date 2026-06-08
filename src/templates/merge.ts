@@ -1,4 +1,4 @@
-import createReport from 'docx-templates';
+import createReport, { listCommands } from 'docx-templates';
 import type { MergeOptions } from '../types';
 // import { ImageAllowlist } from '../utils/image-allowlist'; // TODO: Use for image URL validation
 import { createLogger } from '../utils/logger';
@@ -55,9 +55,10 @@ export async function mergeTemplate(
     // const imageAllowlist = new ImageAllowlist(options.imageAllowlist || []);
 
     const literalXmlDelimiter = '||';
+    const loopSafeData = await normalizeLoopCollections(template, data);
     const { template: preprocessedTemplate, context: postProcessContext } =
-      await preprocessDocxTemplate(template, data);
-    const preparedData = prepareRichTextData(data, literalXmlDelimiter);
+      await preprocessDocxTemplate(template, loopSafeData);
+    const preparedData = prepareRichTextData(loopSafeData, literalXmlDelimiter);
 
     // Merge using docx-templates
     const result = await createReport({
@@ -109,6 +110,87 @@ export async function mergeTemplate(
 
     throw new TemplateMergeError('Unknown error during template merge');
   }
+}
+
+async function normalizeLoopCollections(
+  template: Buffer,
+  data: Record<string, any>
+): Promise<Record<string, any>> {
+  const templateArrayBuffer = template.buffer.slice(
+    template.byteOffset,
+    template.byteOffset + template.byteLength
+  ) as ArrayBuffer;
+  const commands = await listCommands(templateArrayBuffer, ['{{', '}}']);
+  const loopPaths = commands
+    .filter((command) => command.type === 'FOR')
+    .map((command) => parseSimpleLoopPath(command.code))
+    .filter((path): path is string => Boolean(path));
+
+  let normalizedData: Record<string, any> | null = null;
+
+  for (const loopPath of loopPaths) {
+    const currentValue = resolveDataPath(normalizedData ?? data, loopPath);
+    if (currentValue == null) {
+      normalizedData ??= cloneData(data) as Record<string, any>;
+      setArrayAtPath(normalizedData, loopPath);
+    }
+  }
+
+  return normalizedData ?? data;
+}
+
+function parseSimpleLoopPath(commandCode: string): string | null {
+  const match = /^\S+\s+IN\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)$/i.exec(
+    commandCode.trim()
+  );
+  if (!match || match[1].startsWith('$')) {
+    return null;
+  }
+  return match[1];
+}
+
+function resolveDataPath(data: Record<string, any>, fieldPath: string): unknown {
+  return fieldPath.split('.').reduce<unknown>((current, part) => {
+    if (current && typeof current === 'object' && part in current) {
+      return (current as Record<string, unknown>)[part];
+    }
+    return undefined;
+  }, data);
+}
+
+function setArrayAtPath(data: Record<string, any>, fieldPath: string): void {
+  const parts = fieldPath.split('.');
+  let current: Record<string, any> = data;
+
+  for (const part of parts.slice(0, -1)) {
+    if (current[part] == null) {
+      current[part] = {};
+    }
+    if (typeof current[part] !== 'object' || Array.isArray(current[part])) {
+      return;
+    }
+    current = current[part];
+  }
+
+  const lastPart = parts[parts.length - 1];
+  if (current[lastPart] == null) {
+    current[lastPart] = [];
+  }
+}
+
+function cloneData(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneData);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
+        key,
+        cloneData(childValue),
+      ])
+    );
+  }
+  return value;
 }
 
 /**

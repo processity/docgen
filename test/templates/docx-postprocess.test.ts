@@ -101,4 +101,133 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).not.toContain('Remove');
     expect(documentXml).not.toContain('__DOCGEN_ROW_');
   });
+
+  it('collapses blank address lines inside a populated table row', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:tbl>
+        <w:tr>
+          <w:tc><w:p><w:r><w:t>Ship To Address:</w:t></w:r></w:p></w:tc>
+          <w:tc>
+            <w:p><w:r><w:t>{{Quote.Street}}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>{{Quote.City}}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>{{Quote.State}}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>{{Quote.Country}}</w:t></w:r></w:p>
+          </w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Quote: {
+          Street: '16 Great Marlborough Street',
+          City: 'London',
+          State: '',
+          Country: 'United Kingdom',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('Ship To Address:');
+    expect(documentXml).toContain('16 Great Marlborough Street');
+    expect(documentXml).toContain('London');
+    expect(documentXml).toContain('United Kingdom');
+    expect(documentXml).not.toContain('Quote.State');
+    expect(documentXml).not.toContain('__DOCGEN_PARAGRAPH_');
+    expect(documentXml.match(/<w:p\b/g) ?? []).toHaveLength(4);
+  });
+
+  it('keeps a valid paragraph when a table cell has only blank values', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:tbl>
+        <w:tr>
+          <w:tc><w:p><w:r><w:t>Account {{Account.Name}}</w:t></w:r></w:p></w:tc>
+          <w:tc>
+            <w:p><w:r><w:t>{{Account.OptionalLine1}}</w:t></w:r></w:p>
+            <w:p><w:r><w:t>{{Account.OptionalLine2}}</w:t></w:r></w:p>
+          </w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Account: {
+          Name: 'Acme',
+          OptionalLine1: null,
+          OptionalLine2: '',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const cells = documentXml.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) ?? [];
+    expect(cells).toHaveLength(2);
+    expect(cells[1].match(/<w:p\b/g) ?? []).toHaveLength(1);
+    expect(cells[1]).not.toContain('OptionalLine');
+  });
+
+  it('treats null loop collections as empty arrays and removes rowless tables', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:tbl>
+        <w:tr><w:tc><w:p><w:r><w:t>{{FOR item IN Account.LineItems}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{INS $item.Name}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{END-FOR item}}</w:t></w:r></w:p></w:tc></w:tr>
+      </w:tbl>
+      <w:p><w:r><w:t>After table</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Account: {
+          Name: 'Acme',
+          LineItems: null,
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('After table');
+    expect(documentXml).not.toContain('<w:tbl');
+    expect(documentXml).not.toContain('LineItems');
+    expect(documentXml).not.toContain('$item');
+  });
+
+  it('does not suppress repeated rows that use loop-scoped fields', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:tbl>
+        <w:tr><w:tc><w:p><w:r><w:t>{{FOR item IN Account.LineItems}}</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr>
+          <w:tc><w:p><w:r><w:t>{{INS $item.Name}}</w:t></w:r></w:p></w:tc>
+          <w:tc><w:p><w:r><w:t>{{INS $item.Amount}}</w:t></w:r></w:p></w:tc>
+        </w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>{{END-FOR item}}</w:t></w:r></w:p></w:tc></w:tr>
+      </w:tbl>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Account: {
+          LineItems: [
+            { Name: 'Service A', Amount: '100' },
+            { Name: 'Service B', Amount: '200' },
+          ],
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('Service A');
+    expect(documentXml).toContain('Service B');
+    expect(documentXml).not.toContain('__DOCGEN_ROW_');
+  });
 });

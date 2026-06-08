@@ -163,6 +163,9 @@ function addRowSuppressionMarkers(
     if (fieldPaths.length === 0) {
       return rowXml;
     }
+    if (fieldPaths.some((fieldPath) => !isRootDataPath(data, fieldPath))) {
+      return rowXml;
+    }
 
     const token = `__DOCGEN_ROW_${rowMarkers.length}__`;
     rowMarkers.push({
@@ -195,13 +198,68 @@ function extractSimpleFieldPaths(xml: string): string[] {
   return [...fields];
 }
 
+function extractWordText(xml: string): string {
+  const texts: string[] = [];
+  const matches = xml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g);
+
+  for (const match of matches) {
+    texts.push(decodeXmlText(match[1]));
+  }
+
+  return texts.join('');
+}
+
+function decodeXmlText(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
 function resolvePath(data: Record<string, unknown>, fieldPath: string): unknown {
-  return fieldPath.split('.').reduce<unknown>((current, part) => {
+  const directValue = fieldPath.split('.').reduce<unknown>((current, part) => {
     if (current && typeof current === 'object' && part in current) {
       return (current as Record<string, unknown>)[part];
     }
     return undefined;
   }, data);
+
+  if (directValue !== undefined || fieldPath.includes('.')) {
+    return directValue;
+  }
+
+  const rootKeys = Object.keys(data);
+  if (rootKeys.length === 1) {
+    const rootValue = data[rootKeys[0]];
+    if (rootValue && typeof rootValue === 'object' && fieldPath in rootValue) {
+      return (rootValue as Record<string, unknown>)[fieldPath];
+    }
+  }
+
+  return undefined;
+}
+
+function isRootDataPath(data: Record<string, unknown>, fieldPath: string): boolean {
+  const firstPart = fieldPath.split('.')[0];
+  if (firstPart.startsWith('$')) {
+    return false;
+  }
+  if (firstPart in data) {
+    return true;
+  }
+  if (fieldPath.includes('.')) {
+    return false;
+  }
+
+  const rootKeys = Object.keys(data);
+  if (rootKeys.length !== 1) {
+    return false;
+  }
+
+  const rootValue = data[rootKeys[0]];
+  return Boolean(rootValue && typeof rootValue === 'object' && fieldPath in rootValue);
 }
 
 function isBlankValue(value: unknown): boolean {
@@ -225,6 +283,8 @@ async function postProcessXmlParts(zip: JSZip, context: DocxPostProcessContext):
 
     let xml = await file.async('string');
     xml = applyRowSuppression(xml, context.rowMarkers);
+    xml = removeEmptyTableCellParagraphs(xml);
+    xml = removeRowlessTables(xml);
     xml = applyEditableControls(xml, context.controls);
     zip.file(path, xml);
   }
@@ -253,6 +313,46 @@ function applyRowSuppression(xml: string, rowMarkers: RowMarker[]): string {
   }
 
   return nextXml;
+}
+
+function removeEmptyTableCellParagraphs(xml: string): string {
+  return xml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, (cellXml) => {
+    let fallbackParagraph = '';
+    const cleanedCellXml = cellXml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraphXml) => {
+      if (!isRemovableEmptyParagraph(paragraphXml)) {
+        return paragraphXml;
+      }
+      fallbackParagraph ||= paragraphXml;
+      return '';
+    });
+
+    if (hasTableCellBlockContent(cleanedCellXml) || !fallbackParagraph) {
+      return cleanedCellXml;
+    }
+
+    return cleanedCellXml.replace('</w:tc>', `${fallbackParagraph}</w:tc>`);
+  });
+}
+
+function hasTableCellBlockContent(cellXml: string): boolean {
+  return /<w:(?:p|tbl|sdt|altChunk)\b/.test(cellXml);
+}
+
+function removeRowlessTables(xml: string): string {
+  return xml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, (tableXml) =>
+    /<w:tr\b/.test(tableXml) ? tableXml : ''
+  );
+}
+
+function isRemovableEmptyParagraph(paragraphXml: string): boolean {
+  if (
+    paragraphXml.includes('__DOCGEN_CONTROL_') ||
+    /<w:(?:drawing|pict|object|sdt|fldSimple|br|tab)\b/.test(paragraphXml)
+  ) {
+    return false;
+  }
+
+  return extractWordText(paragraphXml).trim() === '';
 }
 
 function applyEditableControls(xml: string, controls: ControlMarker[]): string {

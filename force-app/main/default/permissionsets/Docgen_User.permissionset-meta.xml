@@ -179,6 +179,16 @@
         <field>Generated_Document__c.ScheduledRetryTime__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Generated_Document__c.Created_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Generated_Document__c.Last_Modified_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 
     <!-- Field Permissions for Docgen_Template__c (optional fields only) -->
     <fieldPermissions>

@@ -252,7 +252,7 @@ export class LibreOfficeConverter {
 
       // Execute LibreOffice conversion
       const outputPath = path.join(jobWorkdir, 'input.pdf');
-      await this.executeLibreOffice(
+      const conversion = await this.executeLibreOffice(
         inputPath,
         jobWorkdir,
         timeout,
@@ -260,7 +260,20 @@ export class LibreOfficeConverter {
       );
 
       // Read PDF from output
-      const pdfBuffer = await fs.readFile(outputPath);
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = await fs.readFile(outputPath);
+      } catch (error: any) {
+        if (error?.code === 'ENOENT') {
+          const stderr = conversion.stderr ? ` stderr: ${conversion.stderr.trim()}` : '';
+          const stdout = conversion.stdout ? ` stdout: ${conversion.stdout.trim()}` : '';
+          throw new ConversionFailedError(
+            `LibreOffice did not produce PDF output.${stderr}${stdout}`,
+            { correlationId }
+          );
+        }
+        throw error;
+      }
       logger.debug(
         { correlationId, outputPath, size: pdfBuffer.length },
         'Read PDF from output'
@@ -300,7 +313,7 @@ export class LibreOfficeConverter {
     outputDir: string,
     timeout: number,
     correlationId: string
-  ): Promise<void> {
+  ): Promise<{ stdout: string; stderr: string }> {
     // Create unique user profile directory to prevent lock conflicts
     const userProfile = path.join(outputDir, '.libreoffice-profile');
 
@@ -341,6 +354,7 @@ export class LibreOfficeConverter {
         { correlationId, stdout: stdout ? stdout.trim() : '' },
         'LibreOffice conversion completed'
       );
+      return { stdout, stderr };
     } catch (error: any) {
       // Check if error is timeout
       if (error.killed || error.signal === 'SIGTERM') {
