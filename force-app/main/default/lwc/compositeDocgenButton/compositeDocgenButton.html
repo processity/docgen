@@ -1,11 +1,13 @@
 <template>
-  <lightning-button
-    label={buttonLabel}
-    onclick={handleGenerate}
-    disabled={isProcessing}
-    variant="brand"
-    class="slds-m-around_medium"
-  ></lightning-button>
+  <template if:true={showButton}>
+    <lightning-button
+      label={buttonLabel}
+      onclick={handleGenerate}
+      disabled={isProcessing}
+      variant="brand"
+      class="slds-m-around_medium"
+    ></lightning-button>
+  </template>
 
   <template if:true={isProcessing}>
     <lightning-spinner

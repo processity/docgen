@@ -310,4 +310,45 @@ describe('c-composite-docgen-button', () => {
     expect(button).not.toBeNull();
     expect(button.label).toBe('Generate Composite Report');
   });
+
+  it('can be called imperatively with a direct recordIds map', async () => {
+    const element = createElement('c-composite-docgen-button', {
+      is: CompositeDocgenButton
+    });
+    const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
+    generateComposite.mockResolvedValue(mockDownloadUrl);
+    document.body.appendChild(element);
+
+    const result = await element.generate({
+      compositeDocumentId: 'a0Y1234567890ABC',
+      recordIds: { quoteId: 'a551234567890ABC' },
+      outputFormat: 'PDF'
+    });
+
+    expect(result).toBe(mockDownloadUrl);
+    expect(generateComposite).toHaveBeenCalledWith({
+      compositeDocId: 'a0Y1234567890ABC',
+      recordIds: JSON.stringify({ quoteId: 'a551234567890ABC' }),
+      outputFormat: 'PDF'
+    });
+  });
+
+  it('can hide its own button for a quick action wrapper', async () => {
+    const element = createElement('c-composite-docgen-button', {
+      is: CompositeDocgenButton
+    });
+    element.hideButton = true;
+    generateComposite.mockResolvedValue('/sfc/servlet.shepherd/version/download/0681234567890ABC');
+    document.body.appendChild(element);
+
+    expect(element.shadowRoot.querySelector('lightning-button')).toBeNull();
+
+    await element.generate({
+      compositeDocumentId: 'a0Y1234567890ABC',
+      recordIds: { quoteId: 'a551234567890ABC' },
+      outputFormat: 'PDF'
+    });
+
+    expect(generateComposite).toHaveBeenCalledTimes(1);
+  });
 });

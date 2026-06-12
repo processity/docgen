@@ -475,12 +475,23 @@ public with sharing class DocgenController {
             return null;
         }
 
-        // Try to find matching key in recordIds map
-        // Convention: {objectName}Id in lowercase (e.g., accountId, contactId)
-        String expectedKey = primaryParent.toLowerCase() + 'Id';
+        // Support both full API names and the natural object-name convention.
+        // For example, SBQQ__Quote__c can be supplied as quoteId.
+        String normalizedParent = primaryParent.toLowerCase();
+        Set<String> expectedKeys = new Set<String>{ normalizedParent + 'id' };
+
+        if (normalizedParent.endsWith('__c')) {
+            normalizedParent = normalizedParent.substring(0, normalizedParent.length() - 3);
+        }
+
+        Integer namespaceSeparator = normalizedParent.lastIndexOf('__');
+        if (namespaceSeparator >= 0) {
+            normalizedParent = normalizedParent.substring(namespaceSeparator + 2);
+        }
+        expectedKeys.add(normalizedParent + 'id');
 
         for (String key : recordIds.keySet()) {
-            if (key.toLowerCase() == expectedKey) {
+            if (expectedKeys.contains(key.toLowerCase())) {
                 return recordIds.get(key);
             }
         }

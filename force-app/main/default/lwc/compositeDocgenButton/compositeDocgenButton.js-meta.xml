@@ -17,6 +17,7 @@
             <property name="outputFormat" type="String" label="Output Format" description="Document output format (PDF, DOCX, or PPTX)" datasource="PDF,DOCX,PPTX" default="PDF" required="true" />
             <property name="buttonLabel" type="String" label="Button Label" description="Custom label for the generation button" default="Generate Composite Document" />
             <property name="successMessage" type="String" label="Success Message" description="Custom message shown in success toast" default="Composite document generated successfully!" />
+            <property name="hideButton" type="Boolean" label="Hide Internal Button" description="Hide the component button when a parent component or Quick Action calls generate()" default="false" />
         </targetConfig>
     </targetConfigs>
 </LightningComponentBundle>

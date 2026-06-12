@@ -1,4 +1,4 @@
-import { LightningElement, api, track } from 'lwc';
+import { LightningElement, api } from 'lwc';
 import generateComposite from '@salesforce/apex/DocgenController.generateComposite';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
@@ -65,104 +65,160 @@ export default class CompositeDocgenButton extends LightningElement {
    */
   @api successMessage = 'Composite document generated successfully!';
 
-  /**
-   * Tracks whether document generation is in progress
-   * @type {boolean}
-   * @private
-   */
-  @track isProcessing = false;
+  _hideButton = false;
+  isProcessing = false;
+  currentRunPromise = null;
+
+  get showButton() {
+    return !this.hideButton;
+  }
+
+  @api
+  get hideButton() {
+    return this._hideButton;
+  }
+
+  set hideButton(value) {
+    this._hideButton = this.normalizeBoolean(value, false);
+  }
 
   /**
    * Handles button click event
-   * Validates required properties, builds recordIds map, calls Apex, and handles response
    * @private
    */
   async handleGenerate() {
-    // Validate required properties
-    if (!this.compositeDocumentId) {
-      this.showToast(
-        'Configuration Error',
-        'Composite Document ID is required. Please configure the component.',
-        'error'
-      );
-      return;
+    await this.generate();
+  }
+
+  /**
+   * Generates a composite document from a parent component or the internal button.
+   * @param {Object} config Runtime values that override component properties
+   * @returns {Promise<string|null>} Generated document download URL, or null on failure
+   */
+  @api
+  async generate(config = {}) {
+    if (this.isProcessing && this.currentRunPromise) {
+      return this.currentRunPromise;
     }
 
-    // Build recordIds map
-    const recordIdsMap = this.buildRecordIdsMap();
+    this.currentRunPromise = this.runGeneration(config);
+    return this.currentRunPromise;
+  }
 
-    // Validate at least one record ID exists
-    if (Object.keys(recordIdsMap).length === 0) {
-      this.showToast(
-        'Configuration Error',
-        'At least one record ID is required. Please configure the component with a record ID field or additional record IDs.',
-        'error'
-      );
-      return;
+  async runGeneration(config) {
+    const request = this.buildRequest(config);
+    if (!this.validateRequest(request)) {
+      this.currentRunPromise = null;
+      return null;
     }
 
-    if (!this.outputFormat) {
-      this.showToast(
-        'Configuration Error',
-        'Output Format is required. Please configure the component.',
-        'error'
-      );
-      return;
-    }
-
-    // Start processing
     this.isProcessing = true;
+    this.dispatchDocgenEvent('docgenstart', request);
 
     try {
-      // Call Apex method with recordIds as JSON string
       const downloadUrl = await generateComposite({
-        compositeDocId: this.compositeDocumentId,
-        recordIds: JSON.stringify(recordIdsMap),
-        outputFormat: this.outputFormat
+        compositeDocId: request.compositeDocumentId,
+        recordIds: JSON.stringify(request.recordIds),
+        outputFormat: request.outputFormat
       });
 
-      // Success: Open download URL in new tab
       window.open(downloadUrl, '_blank');
-
-      // Show success toast
       this.showToast('Success', this.successMessage, 'success');
+      this.dispatchDocgenEvent('docgensuccess', {
+        ...request,
+        downloadUrl
+      });
 
+      return downloadUrl;
     } catch (error) {
-      // Error: Extract and display error message
       const errorMessage = this.extractErrorMessage(error);
-      this.showToast('Error Generating Document', errorMessage, 'error');
+      this.handleError(errorMessage);
+      return null;
     } finally {
-      // Always re-enable button
       this.isProcessing = false;
+      this.currentRunPromise = null;
     }
+  }
+
+  buildRequest(config) {
+    const outputFormat = config.outputFormat || this.outputFormat;
+    return {
+      compositeDocumentId: config.compositeDocumentId || this.compositeDocumentId || null,
+      recordIds: this.buildRecordIdsMap(config),
+      outputFormat: outputFormat ? outputFormat.toUpperCase() : null
+    };
+  }
+
+  validateRequest(request) {
+    if (!request.compositeDocumentId) {
+      this.handleError('Composite Document ID is required. Please configure the component.', 'Configuration Error');
+      return false;
+    }
+
+    if (Object.keys(request.recordIds).length === 0) {
+      this.handleError(
+        'At least one record ID is required. Please configure the component with a record ID field or additional record IDs.',
+        'Configuration Error'
+      );
+      return false;
+    }
+
+    if (!request.outputFormat) {
+      this.handleError('Output Format is required. Please configure the component.', 'Configuration Error');
+      return false;
+    }
+
+    return true;
   }
 
   /**
    * Builds recordIds map from component properties
    * Combines recordId (from page context) with additionalRecordIds (JSON)
+   * @param {Object} config Runtime values that override component properties
    * @returns {Object} Map of record IDs (e.g., {"accountId": "001xxx", "contactId": "003xxx"})
    * @private
    */
-  buildRecordIdsMap() {
+  buildRecordIdsMap(config = {}) {
     const recordIdsMap = {};
+    const recordId = config.recordId || this.recordId;
+    const recordIdField = config.recordIdField || this.recordIdField;
+    const additionalRecordIds =
+      config.additionalRecordIds !== undefined ? config.additionalRecordIds : this.additionalRecordIds;
 
-    // Add primary record ID from page context if provided
-    if (this.recordId && this.recordIdField) {
-      recordIdsMap[this.recordIdField] = this.recordId;
+    if (recordId && recordIdField) {
+      recordIdsMap[recordIdField] = recordId;
     }
 
-    // Merge additional record IDs from JSON string
-    if (this.additionalRecordIds) {
+    if (additionalRecordIds) {
       try {
-        const additional = JSON.parse(this.additionalRecordIds);
+        const additional =
+          typeof additionalRecordIds === 'string' ? JSON.parse(additionalRecordIds) : additionalRecordIds;
         Object.assign(recordIdsMap, additional);
       } catch (e) {
-        // Invalid JSON - log error but continue with existing IDs
         console.error('Invalid JSON in additionalRecordIds:', e);
       }
     }
 
+    if (config.recordIds) {
+      Object.assign(recordIdsMap, config.recordIds);
+    }
+
     return recordIdsMap;
+  }
+
+  handleError(errorMessage, title = 'Error Generating Document') {
+    this.showToast(title, errorMessage, 'error');
+    this.dispatchDocgenEvent('docgenerror', { errorMessage });
+  }
+
+  dispatchDocgenEvent(eventName, detail) {
+    this.dispatchEvent(
+      new CustomEvent(eventName, {
+        detail,
+        bubbles: true,
+        composed: true
+      })
+    );
   }
 
   /**
@@ -218,5 +274,15 @@ export default class CompositeDocgenButton extends LightningElement {
 
     // Default error message
     return 'An unexpected error occurred. Please try again or contact your administrator.';
+  }
+
+  normalizeBoolean(value, defaultValue) {
+    if (value === undefined || value === null || value === '') {
+      return defaultValue;
+    }
+    if (typeof value === 'string') {
+      return value.toLowerCase() === 'true';
+    }
+    return Boolean(value);
   }
 }

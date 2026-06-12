@@ -308,6 +308,10 @@
         <apexClass>DocgenAsyncController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
 
     <!-- Custom Tab Visibility -->
     <tabSettings>

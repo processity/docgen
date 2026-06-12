@@ -1238,4 +1238,28 @@ private class DocgenControllerTest {
         Assert.areEqual('-', correlationId.substring(18, 19), 'Hyphen at position 18');
         Assert.areEqual('-', correlationId.substring(23, 24), 'Hyphen at position 23');
     }
+
+    @isTest
+    static void testDeterminePrimaryRecordIdMatchesStandardAndNamespacedCustomObjects() {
+        Account primaryRecord = new Account(Name = 'Primary');
+        insert primaryRecord;
+        Contact unrelatedRecord = new Contact(LastName = 'Unrelated');
+        insert unrelatedRecord;
+
+        Map<String, Id> recordIds = new Map<String, Id>{
+            'contactId' => unrelatedRecord.Id,
+            'quoteId' => primaryRecord.Id
+        };
+
+        Assert.areEqual(
+            unrelatedRecord.Id,
+            DocgenController.determinePrimaryRecordId('Contact', recordIds),
+            'Standard object keys should be matched before using the fallback'
+        );
+        Assert.areEqual(
+            primaryRecord.Id,
+            DocgenController.determinePrimaryRecordId('SBQQ__Quote__c', recordIds),
+            'Namespaced custom object API names should match their natural object key'
+        );
+    }
 }

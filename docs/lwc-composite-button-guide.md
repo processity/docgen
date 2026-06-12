@@ -25,10 +25,31 @@ This component is designed for admin configuration via the Lightning App Builder
 | **Additional Record IDs (JSON)** | String | JSON string containing additional record IDs required by the composite document | `{"contactId":"003xxx","opportunityId":"006xxx"}` |
 | **Button Label** | String | Custom text displayed on the button | `Generate Account Report` |
 | **Success Message** | String | Custom message shown in success toast notification | `Report generated successfully!` |
+| **Hide Internal Button** | Boolean | Hides the component's button when generation is controlled by a parent LWC | `true` |
 
 ---
 
 ## Configuration Examples
+
+### Custom Quick Action Wrapper
+
+A parent LWC can hide the packaged button and start generation imperatively:
+
+```html
+<c-composite-docgen-button hide-button="true"></c-composite-docgen-button>
+```
+
+```js
+const generator = this.template.querySelector('c-composite-docgen-button');
+await generator.generate({
+  compositeDocumentId: this.selectedCompositeId,
+  recordIds: { quoteId: this.recordId },
+  outputFormat: 'PDF'
+});
+```
+
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `outputFormat`. It emits
+`docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)
 
