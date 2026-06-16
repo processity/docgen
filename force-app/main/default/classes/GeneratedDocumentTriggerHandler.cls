@@ -22,6 +22,10 @@ public with sharing class GeneratedDocumentTriggerHandler {
 
             // Check if status changed to SUCCEEDED
             if (newDoc.Status__c == 'SUCCEEDED' && oldDoc.Status__c != 'SUCCEEDED') {
+                if (newDoc.PendingPreview__c) {
+                    continue;
+                }
+
                 // Check if there's at least one file to link
                 if (String.isNotBlank(newDoc.OutputFileId__c) || String.isNotBlank(newDoc.MergedDocxFileId__c)) {
                     // Check if RequestJSON is populated (contains parent information)

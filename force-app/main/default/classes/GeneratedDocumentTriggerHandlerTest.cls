@@ -73,6 +73,42 @@ private class GeneratedDocumentTriggerHandlerTest {
     }
 
     /**
+     * Test: Trigger skips pending preview documents until the user saves
+     */
+    @isTest
+    static void testTriggerSkipsPendingPreviewDocuments() {
+        Id templateId = createTestTemplate();
+        Account acc = DocgenTestDataFactory.createAccount();
+        ContentVersion cv = createTestContentVersion('Pending Preview Document');
+        String requestJSON = '{"parents": {"AccountId": "' + acc.Id + '"}}';
+
+        Generated_Document__c doc = new Generated_Document__c(
+            Template__c = templateId,
+            RequestHash__c = 'sha256:preview123',
+            Status__c = 'QUEUED',
+            OutputFormat__c = 'PDF',
+            RequestJSON__c = requestJSON,
+            PendingPreview__c = true
+        );
+        insert doc;
+
+        Test.startTest();
+        doc.Status__c = 'SUCCEEDED';
+        doc.OutputFileId__c = cv.Id;
+        update doc;
+        Test.stopTest();
+
+        List<ContentDocumentLink> links = [
+            SELECT Id
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :acc.Id
+        ];
+
+        Assert.areEqual(0, links.size(), 'Pending preview documents should not auto-link');
+    }
+
+    /**
      * Test: Trigger does not fire when Status is not SUCCEEDED
      */
     @isTest

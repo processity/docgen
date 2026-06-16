@@ -171,6 +171,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Generated_Document__c.PendingPreview__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Generated_Document__c.RequestedBy__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -310,6 +315,18 @@
     </classAccesses>
     <classAccesses>
         <apexClass>DocgenController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenStatusController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenTemplateFileController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenTestPageController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
 

@@ -1,0 +1,17 @@
+.preview-frame {
+  border: 1px solid var(--slds-g-color-border-base-1, #dddbda);
+  border-radius: 0.25rem;
+  height: 32rem;
+  width: 100%;
+}
+
+.preview-fallback {
+  border: 1px dashed var(--slds-g-color-border-base-1, #dddbda);
+  border-radius: 0.25rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.preview-record-link {
+  display: inline-block;
+}

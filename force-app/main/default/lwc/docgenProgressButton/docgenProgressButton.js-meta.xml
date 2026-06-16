@@ -18,6 +18,7 @@
             <property name="buttonVariant" type="String" label="Button Variant" description="Lightning button variant" datasource="brand,neutral,destructive,success" default="brand" />
             <property name="successMessage" type="String" label="Success Message" description="Custom message shown in success toast" default="Document generated successfully!" />
             <property name="openOnSuccess" type="Boolean" label="Open File On Success" description="Open the generated Salesforce file when generation completes" default="true" />
+            <property name="previewBeforeSave" type="Boolean" label="Preview Before Save" description="Show the generated file in this component and require Save or Cancel before linking it to parent records" default="false" />
             <property name="hideButton" type="Boolean" label="Hide Internal Button" description="Hide the component button when a parent component or Quick Action calls generate()" default="false" />
             <property name="maxPollSeconds" type="Integer" label="Max Poll Seconds" description="Maximum time to poll Generated Document status" default="180" />
         </targetConfig>

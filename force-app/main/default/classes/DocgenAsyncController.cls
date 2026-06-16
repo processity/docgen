@@ -13,6 +13,11 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String errorMessage { get; set; }
         @AuraEnabled public String correlationId { get; set; }
         @AuraEnabled public String outputFormat { get; set; }
+        @AuraEnabled public String contentVersionId { get; set; }
+        @AuraEnabled public String contentDocumentId { get; set; }
+        @AuraEnabled public String previewUrl { get; set; }
+        @AuraEnabled public Boolean canInlinePreview { get; set; }
+        @AuraEnabled public Boolean isPreviewPending { get; set; }
     }
 
     public class StatusResult {
@@ -24,10 +29,25 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String errorMessage { get; set; }
         @AuraEnabled public String correlationId { get; set; }
         @AuraEnabled public String outputFormat { get; set; }
+        @AuraEnabled public String contentVersionId { get; set; }
+        @AuraEnabled public String contentDocumentId { get; set; }
+        @AuraEnabled public String previewUrl { get; set; }
+        @AuraEnabled public Boolean canInlinePreview { get; set; }
+        @AuraEnabled public Boolean isPreviewPending { get; set; }
+    }
+
+    public static StartResult startGeneration(Id templateId, String templateName, Id recordId, String outputFormat) {
+        return startGeneration(templateId, templateName, recordId, outputFormat, false);
     }
 
     @AuraEnabled
-    public static StartResult startGeneration(Id templateId, String templateName, Id recordId, String outputFormat) {
+    public static StartResult startGeneration(
+        Id templateId,
+        String templateName,
+        Id recordId,
+        String outputFormat,
+        Boolean previewMode
+    ) {
         try {
             if (recordId == null) {
                 throw new IllegalArgumentException('Record ID is required');
@@ -35,6 +55,8 @@ public with sharing class DocgenAsyncController {
 
             String normalizedOutputFormat = normalizeOutputFormat(outputFormat);
             Docgen_Template__c template = queryTemplate(templateId, templateName);
+            Boolean isPreviewMode = previewMode == true;
+            String correlationId = generateCorrelationId();
 
             DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.build(
                 recordId,
@@ -44,11 +66,14 @@ public with sharing class DocgenAsyncController {
                 'Europe/London'
             );
 
-            Generated_Document__c existingDoc = findExistingDocument(envelope.requestHash);
+            if (isPreviewMode) {
+                envelope.requestHash = buildPreviewRequestHash(envelope.requestHash, correlationId);
+            }
+
+            Generated_Document__c existingDoc = isPreviewMode ? null : findExistingDocument(envelope.requestHash);
             if (existingDoc != null) {
                 if (existingDoc.Status__c == 'FAILED' || existingDoc.Status__c == 'CANCELED') {
-                    String retryCorrelationId = generateCorrelationId();
-                    requeueDocument(existingDoc.Id, template.Id, recordId, envelope, retryCorrelationId);
+                    requeueDocument(existingDoc.Id, template.Id, recordId, envelope, correlationId);
                     return toStartResult(queryGeneratedDocument(existingDoc.Id));
                 }
                 return toStartResult(existingDoc);
@@ -58,7 +83,8 @@ public with sharing class DocgenAsyncController {
                 template.Id,
                 recordId,
                 envelope,
-                generateCorrelationId()
+                correlationId,
+                isPreviewMode
             );
             return toStartResult(doc);
         } catch (Exception e) {
@@ -78,6 +104,48 @@ public with sharing class DocgenAsyncController {
         } catch (Exception e) {
             throwAuraException(e.getMessage());
             return null;
+        }
+    }
+
+    @AuraEnabled
+    public static StatusResult saveGeneratedDocument(Id generatedDocumentId) {
+        try {
+            Generated_Document__c doc = queryGeneratedDocument(generatedDocumentId);
+            if (doc.Status__c != 'SUCCEEDED') {
+                throw new IllegalArgumentException('Only successfully generated documents can be saved.');
+            }
+            if (!doc.PendingPreview__c) {
+                return toStatusResult(doc);
+            }
+            if (String.isBlank(doc.OutputFileId__c) && String.isBlank(doc.MergedDocxFileId__c)) {
+                throw new IllegalArgumentException('Generated document does not have a file to save.');
+            }
+
+            ContentDocumentLinkHelper.createLinksFromGeneratedDocuments(new List<Generated_Document__c>{ doc });
+            update new Generated_Document__c(
+                Id = doc.Id,
+                PendingPreview__c = false
+            );
+
+            return toStatusResult(queryGeneratedDocument(doc.Id));
+        } catch (Exception e) {
+            throwAuraException(e.getMessage());
+            return null;
+        }
+    }
+
+    @AuraEnabled
+    public static void cancelGeneratedDocument(Id generatedDocumentId) {
+        try {
+            Generated_Document__c doc = queryGeneratedDocument(generatedDocumentId);
+            if (!doc.PendingPreview__c) {
+                throw new IllegalArgumentException('Only pending preview documents can be canceled.');
+            }
+
+            deleteGeneratedFiles(doc);
+            delete doc;
+        } catch (Exception e) {
+            throwAuraException(e.getMessage());
         }
     }
 
@@ -128,7 +196,7 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c findExistingDocument(String requestHash) {
         List<Generated_Document__c> existing = [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c
             FROM Generated_Document__c
             WHERE RequestHash__c = :requestHash
             LIMIT 1
@@ -139,7 +207,7 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c queryGeneratedDocument(Id generatedDocumentId) {
         return [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c
             FROM Generated_Document__c
             WHERE Id = :generatedDocumentId
             LIMIT 1
@@ -150,7 +218,8 @@ public with sharing class DocgenAsyncController {
         Id templateId,
         Id recordId,
         DocgenEnvelopeService.Envelope envelope,
-        String correlationId
+        String correlationId,
+        Boolean pendingPreview
     ) {
         Generated_Document__c doc = new Generated_Document__c(
             Template__c = templateId,
@@ -160,7 +229,8 @@ public with sharing class DocgenAsyncController {
             Priority__c = 0,
             Attempts__c = 0,
             RequestedBy__c = UserInfo.getUserId(),
-            CorrelationId__c = correlationId
+            CorrelationId__c = correlationId,
+            PendingPreview__c = pendingPreview == true
         );
         DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
         setParentLookups(doc, recordId, envelope.parents);
@@ -190,7 +260,8 @@ public with sharing class DocgenAsyncController {
             OutputFileId__c = null,
             MergedDocxFileId__c = null,
             LockedUntil__c = null,
-            ScheduledRetryTime__c = null
+            ScheduledRetryTime__c = null,
+            PendingPreview__c = false
         );
         DocgenEnvelopeService.setRequestJSONSegments(retryDoc, DocgenEnvelopeService.toJSON(envelope));
         setParentLookups(retryDoc, recordId, envelope.parents);
@@ -261,6 +332,11 @@ public with sharing class DocgenAsyncController {
         result.errorMessage = status.errorMessage;
         result.correlationId = status.correlationId;
         result.outputFormat = status.outputFormat;
+        result.contentVersionId = status.contentVersionId;
+        result.contentDocumentId = status.contentDocumentId;
+        result.previewUrl = status.previewUrl;
+        result.canInlinePreview = status.canInlinePreview;
+        result.isPreviewPending = status.isPreviewPending;
         return result;
     }
 
@@ -273,12 +349,22 @@ public with sharing class DocgenAsyncController {
         result.errorMessage = doc.Error__c;
         result.correlationId = doc.CorrelationId__c;
         result.outputFormat = doc.OutputFormat__c;
+        result.isPreviewPending = doc.PendingPreview__c;
+        result.canInlinePreview = doc.OutputFormat__c == 'PDF';
 
         if (doc.Status__c == 'SUCCEEDED' && String.isNotBlank(doc.OutputFileId__c)) {
-            result.downloadUrl = buildDownloadUrl(doc.OutputFileId__c);
+            result.contentVersionId = doc.OutputFileId__c;
+            result.contentDocumentId = getContentDocumentId(doc.OutputFileId__c);
+            result.downloadUrl = buildDownloadUrl(result.contentDocumentId);
+            result.previewUrl = buildPreviewUrl(doc.OutputFileId__c);
         }
 
         return result;
+    }
+
+    private static String buildPreviewRequestHash(String requestHash, String correlationId) {
+        Blob digest = Crypto.generateDigest('SHA-256', Blob.valueOf(requestHash + '|' + correlationId));
+        return 'sha256:' + EncodingUtil.convertToHex(digest).toLowerCase();
     }
 
     private static Integer progressForStatus(String status) {
@@ -301,7 +387,7 @@ public with sharing class DocgenAsyncController {
         return status == 'SUCCEEDED' || status == 'FAILED' || status == 'CANCELED';
     }
 
-    private static String buildDownloadUrl(String contentVersionId) {
+    private static String getContentDocumentId(String contentVersionId) {
         if (String.isBlank(contentVersionId)) {
             return null;
         }
@@ -311,7 +397,7 @@ public with sharing class DocgenAsyncController {
             if (mockDocId.startsWith('068')) {
                 mockDocId = '069' + mockDocId.substring(3);
             }
-            return '/lightning/r/ContentDocument/' + mockDocId + '/view';
+            return mockDocId;
         }
 
         List<ContentVersion> versions = [
@@ -325,7 +411,56 @@ public with sharing class DocgenAsyncController {
             throw new AuraHandledException('Content version not found: ' + contentVersionId);
         }
 
-        return '/lightning/r/ContentDocument/' + versions[0].ContentDocumentId + '/view';
+        return versions[0].ContentDocumentId;
+    }
+
+    private static String buildDownloadUrl(String contentDocumentId) {
+        if (String.isBlank(contentDocumentId)) {
+            return null;
+        }
+        return '/lightning/r/ContentDocument/' + contentDocumentId + '/view';
+    }
+
+    private static String buildPreviewUrl(String contentVersionId) {
+        if (String.isBlank(contentVersionId)) {
+            return null;
+        }
+        return '/sfc/servlet.shepherd/version/download/' + contentVersionId;
+    }
+
+    private static void deleteGeneratedFiles(Generated_Document__c doc) {
+        Set<Id> contentVersionIds = new Set<Id>();
+        addContentVersionId(contentVersionIds, doc.OutputFileId__c);
+        addContentVersionId(contentVersionIds, doc.MergedDocxFileId__c);
+
+        if (contentVersionIds.isEmpty()) {
+            return;
+        }
+
+        List<ContentDocument> contentDocuments = [
+            SELECT Id
+            FROM ContentDocument
+            WHERE Id IN (
+                SELECT ContentDocumentId
+                FROM ContentVersion
+                WHERE Id IN :contentVersionIds
+            )
+        ];
+
+        if (!contentDocuments.isEmpty()) {
+            delete contentDocuments;
+        }
+    }
+
+    private static void addContentVersionId(Set<Id> contentVersionIds, String contentVersionId) {
+        if (String.isBlank(contentVersionId)) {
+            return;
+        }
+        try {
+            contentVersionIds.add((Id) contentVersionId);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Invalid ContentVersion ID: ' + contentVersionId);
+        }
     }
 
     private static String generateCorrelationId() {

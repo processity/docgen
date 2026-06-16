@@ -18,5 +18,75 @@
         <lightning-progress-bar value={progressValue} size="medium"></lightning-progress-bar>
       </div>
     </template>
+
+    <template if:true={showPreviewPanel}>
+      <section class="slds-box slds-theme_default slds-m-top_medium" aria-label="Generated document preview">
+        <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-m-bottom_small">
+          <h2 class="slds-text-heading_small">Preview Generated Document</h2>
+          <lightning-button-icon
+            icon-name="utility:new_window"
+            variant="border-filled"
+            alternative-text="Open generated file"
+            title="Open generated file"
+            onclick={handleOpenPreview}
+          ></lightning-button-icon>
+        </div>
+
+        <template if:true={showInlinePreview}>
+          <iframe
+            class="preview-frame"
+            src={previewUrl}
+            title="Generated document preview"
+          ></iframe>
+        </template>
+
+        <template if:true={showPreviewFallback}>
+          <div class="slds-illustration slds-illustration_small preview-fallback">
+            <lightning-icon icon-name="doctype:attachment" size="large"></lightning-icon>
+            <p class="slds-text-body_regular slds-m-top_small">{fallbackMessage}</p>
+            <a
+              class="slds-m-top_small preview-record-link"
+              href={downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open generated document record
+            </a>
+          </div>
+        </template>
+
+        <div class="slds-grid slds-grid_align-end slds-gutters slds-m-top_medium">
+          <div class="slds-col slds-grow-none">
+            <lightning-button
+              label="Cancel"
+              onclick={handleCancelPreview}
+              disabled={disablePreviewActions}
+            ></lightning-button>
+          </div>
+          <div class="slds-col slds-grow-none">
+            <lightning-button
+              label="Save"
+              variant="brand"
+              onclick={handleSavePreview}
+              disabled={disablePreviewActions}
+            ></lightning-button>
+          </div>
+        </div>
+      </section>
+    </template>
+
+    <template if:true={showSavedDownloadPanel}>
+      <section class="slds-box slds-theme_default slds-m-top_medium" aria-label="Generated document saved">
+        <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+          <h2 class="slds-text-heading_small">Generated Document Saved</h2>
+          <lightning-button
+            label="Download"
+            variant="brand"
+            icon-name="utility:download"
+            onclick={handleDownloadSavedFile}
+          ></lightning-button>
+        </div>
+      </section>
+    </template>
   </div>
 </template>

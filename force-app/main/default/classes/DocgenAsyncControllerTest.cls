@@ -10,6 +10,17 @@ private class DocgenAsyncControllerTest {
         DocgenTestDataFactory.createAccount('Async Account Ltd');
     }
 
+    private static ContentVersion createTestContentVersion(String title) {
+        ContentVersion cv = new ContentVersion(
+            Title = title,
+            PathOnClient = title + '.pdf',
+            VersionData = Blob.valueOf('Test PDF Content'),
+            IsMajorVersion = true
+        );
+        insert cv;
+        return [SELECT Id, ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id];
+    }
+
     @IsTest
     static void testStartGenerationCreatesQueuedDocument() {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
@@ -43,6 +54,61 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'Requester should be tracked');
         Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should start at 0');
         Assert.areEqual(0, Integer.valueOf(doc.Priority__c), 'Priority should default to 0');
+    }
+
+    @IsTest
+    static void testStartGenerationPreviewModeCreatesPendingPreviewDocument() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'PDF',
+            true
+        );
+        Test.stopTest();
+
+        Assert.isNotNull(result.generatedDocumentId, 'Generated document ID should be returned');
+        Assert.areEqual('QUEUED', result.status, 'Preview document should still start queued');
+        Assert.isTrue(result.isPreviewPending, 'Preview mode should mark the document pending preview');
+
+        Generated_Document__c doc = [
+            SELECT PendingPreview__c, RequestHash__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.isTrue(doc.PendingPreview__c, 'Generated document should be marked pending preview');
+        Assert.isTrue(doc.RequestHash__c.startsWith('sha256:'), 'Preview request hash should retain sha256 format');
+        Assert.areEqual(71, doc.RequestHash__c.length(), 'Preview request hash should fit the unique field length');
+    }
+
+    @IsTest
+    static void testPreviewModeDoesNotReuseSavedDocument() {
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult firstResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF',
+            true
+        );
+        DocgenAsyncController.StartResult secondResult = DocgenAsyncController.startGeneration(
+            null,
+            'Async Account Template',
+            account.Id,
+            'PDF',
+            true
+        );
+        Test.stopTest();
+
+        Assert.areNotEqual(firstResult.generatedDocumentId, secondResult.generatedDocumentId,
+            'Preview generations should not reuse existing saved or pending documents');
+        Assert.areEqual(2, [SELECT COUNT() FROM Generated_Document__c], 'Preview mode should create separate rows');
     }
 
     @IsTest
@@ -160,7 +226,87 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual('SUCCEEDED', result.status, 'Status should be returned');
         Assert.areEqual(100, result.progressValue, 'Succeeded documents should show full progress');
         Assert.isTrue(result.isTerminal, 'Succeeded status should be terminal');
+        Assert.areEqual('069000000000001AAA', result.contentDocumentId, 'ContentDocument ID should be returned for file card preview');
         Assert.areEqual('/lightning/r/ContentDocument/069000000000001AAA/view', result.downloadUrl, 'Download URL should target ContentDocument view');
+        Assert.areEqual('/sfc/servlet.shepherd/version/download/068000000000001AAA', result.previewUrl,
+            'Preview URL should use the ContentVersion URL that can be embedded for PDFs');
+        Assert.isTrue(result.canInlinePreview, 'PDF output should be marked inline previewable');
+    }
+
+    @IsTest
+    static void testSaveGeneratedDocumentLinksPendingPreviewFile() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        ContentVersion cv = createTestContentVersion('Preview Save Document');
+
+        DocgenAsyncController.StartResult startResult = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'PDF',
+            true
+        );
+        update new Generated_Document__c(
+            Id = startResult.generatedDocumentId,
+            Status__c = 'SUCCEEDED',
+            OutputFileId__c = cv.Id
+        );
+
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :account.Id
+        ], 'Pending preview files should not be linked by the trigger');
+
+        Test.startTest();
+        DocgenAsyncController.StatusResult saveResult = DocgenAsyncController.saveGeneratedDocument(startResult.generatedDocumentId);
+        Test.stopTest();
+
+        Assert.areEqual('SUCCEEDED', saveResult.status, 'Saved preview should remain succeeded');
+        Assert.isFalse(saveResult.isPreviewPending, 'Saved preview should no longer be pending');
+        Assert.areEqual(1, [
+            SELECT COUNT()
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :account.Id
+        ], 'Save should link the file to the parent record');
+    }
+
+    @IsTest
+    static void testCancelGeneratedDocumentDeletesPendingPreviewFileAndRecord() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        ContentVersion cv = createTestContentVersion('Preview Cancel Document');
+        Id contentDocumentId = cv.ContentDocumentId;
+
+        DocgenAsyncController.StartResult startResult = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'PDF',
+            true
+        );
+        update new Generated_Document__c(
+            Id = startResult.generatedDocumentId,
+            Status__c = 'SUCCEEDED',
+            OutputFileId__c = cv.Id
+        );
+
+        Test.startTest();
+        DocgenAsyncController.cancelGeneratedDocument(startResult.generatedDocumentId);
+        Test.stopTest();
+
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM Generated_Document__c
+            WHERE Id = :startResult.generatedDocumentId
+        ], 'Cancel should delete the generated document row');
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM ContentDocument
+            WHERE Id = :contentDocumentId
+        ], 'Cancel should delete the generated Salesforce file');
     }
 
     @IsTest

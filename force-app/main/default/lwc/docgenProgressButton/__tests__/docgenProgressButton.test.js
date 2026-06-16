@@ -2,6 +2,8 @@ import { createElement } from 'lwc';
 import DocgenProgressButton from 'c/docgenProgressButton';
 import startGeneration from '@salesforce/apex/DocgenAsyncController.startGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
+import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
+import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 
 jest.mock(
   '@salesforce/apex/DocgenAsyncController.startGeneration',
@@ -15,6 +17,26 @@ jest.mock(
 
 jest.mock(
   '@salesforce/apex/DocgenAsyncController.getGenerationStatus',
+  () => {
+    return {
+      default: jest.fn()
+    };
+  },
+  { virtual: true }
+);
+
+jest.mock(
+  '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument',
+  () => {
+    return {
+      default: jest.fn()
+    };
+  },
+  { virtual: true }
+);
+
+jest.mock(
+  '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument',
   () => {
     return {
       default: jest.fn()
@@ -231,5 +253,196 @@ describe('c-docgen-progress-button', () => {
 
     expect(startGeneration).not.toHaveBeenCalled();
     expect(errorHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders an inline preview and waits for user save when preview mode is enabled', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton
+    });
+    element.templateName = 'Account Template';
+    element.recordId = '0011234567890ABC';
+    element.outputFormat = 'PDF';
+    element.previewBeforeSave = true;
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      isPreviewPending: true,
+      canInlinePreview: true,
+      previewUrl: '/sfc/servlet.shepherd/version/download/068123',
+      downloadUrl: '/lightning/r/ContentDocument/069123/view'
+    });
+
+    document.body.appendChild(element);
+
+    const previewHandler = jest.fn();
+    element.addEventListener('docgenpreview', previewHandler);
+
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    expect(startGeneration).toHaveBeenCalledWith({
+      templateId: null,
+      templateName: 'Account Template',
+      recordId: '0011234567890ABC',
+      outputFormat: 'PDF',
+      previewMode: true
+    });
+    expect(window.open).not.toHaveBeenCalled();
+    expect(element.shadowRoot.querySelector('iframe').src).toContain('/sfc/servlet.shepherd/version/download/068123');
+    expect(element.shadowRoot.querySelectorAll('lightning-button')).toHaveLength(3);
+    expect(previewHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a preview document from the preview panel', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton
+    });
+    element.templateName = 'Account Template';
+    element.recordId = '0011234567890ABC';
+    element.previewBeforeSave = true;
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      isPreviewPending: true,
+      canInlinePreview: true,
+      previewUrl: '/sfc/servlet.shepherd/version/download/068123',
+      downloadUrl: '/lightning/r/ContentDocument/069123/view'
+    });
+    saveGeneratedDocument.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      isPreviewPending: false,
+      previewUrl: '/sfc/servlet.shepherd/version/download/068123',
+      downloadUrl: '/lightning/r/ContentDocument/069123/view'
+    });
+
+    document.body.appendChild(element);
+
+    const saveHandler = jest.fn();
+    element.addEventListener('docgensave', saveHandler);
+
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+    buttons[2].click();
+    await flushPromises();
+
+    expect(saveGeneratedDocument).toHaveBeenCalledWith({
+      generatedDocumentId: 'a0G123'
+    });
+    expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    const buttonLabels = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).map(
+      (button) => button.label
+    );
+    expect(buttonLabels).toContain('Download');
+    expect(buttonLabels).not.toContain('Cancel');
+    expect(buttonLabels).not.toContain('Save');
+
+    const downloadButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
+      (button) => button.label === 'Download'
+    );
+    downloadButton.click();
+    expect(window.open).toHaveBeenCalledWith('/sfc/servlet.shepherd/version/download/068123', '_blank');
+    expect(saveHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a same-panel fallback when inline preview is not available', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton
+    });
+    element.templateName = 'Account Template';
+    element.recordId = '0011234567890ABC';
+    element.outputFormat = 'DOCX';
+    element.previewBeforeSave = true;
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'DOCX',
+      isPreviewPending: true,
+      canInlinePreview: false,
+      contentDocumentId: '069123',
+      previewUrl: '/sfc/servlet.shepherd/version/download/068123',
+      downloadUrl: '/lightning/r/ContentDocument/069123/view'
+    });
+
+    document.body.appendChild(element);
+
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    expect(element.shadowRoot.querySelector('lightning-icon')).not.toBeNull();
+    expect(element.shadowRoot.textContent).toContain('DOCX files cannot be previewed inline');
+    const recordLink = element.shadowRoot.querySelector('a.preview-record-link');
+    expect(recordLink).not.toBeNull();
+    expect(recordLink.href).toContain('/lightning/r/ContentDocument/069123/view');
+    expect(recordLink.target).toBe('_blank');
+    const buttonLabels = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).map(
+      (button) => button.label
+    );
+    expect(buttonLabels).toContain('Cancel');
+    expect(buttonLabels).toContain('Save');
+  });
+
+  it('cancels and deletes a preview document from the preview panel', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton
+    });
+    element.templateName = 'Account Template';
+    element.recordId = '0011234567890ABC';
+    element.previewBeforeSave = true;
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      isPreviewPending: true,
+      canInlinePreview: true,
+      previewUrl: '/sfc/servlet.shepherd/version/download/068123',
+      downloadUrl: '/lightning/r/ContentDocument/069123/view'
+    });
+    cancelGeneratedDocument.mockResolvedValue(undefined);
+
+    document.body.appendChild(element);
+
+    const cancelHandler = jest.fn();
+    element.addEventListener('docgencancel', cancelHandler);
+
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    const buttons = element.shadowRoot.querySelectorAll('lightning-button');
+    buttons[1].click();
+    await flushPromises();
+
+    expect(cancelGeneratedDocument).toHaveBeenCalledWith({
+      generatedDocumentId: 'a0G123'
+    });
+    expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    expect(cancelHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          generatedDocumentId: 'a0G123',
+          status: 'CANCELED'
+        })
+      })
+    );
   });
 });
