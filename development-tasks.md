@@ -89,7 +89,7 @@
   - `RequestHash__c` (Text 80, External ID, Unique) - Idempotency key
   - `OutputFileId__c`, `MergedDocxFileId__c` (Text 18) - ContentVersionIds
   - `RequestedBy__c` (Lookup User)
-  - `OutputFormat__c` (Picklist: PDF, DOCX)
+  - `OutputFormat__c` (Picklist: PDF, DOCX, PPTX)
 
 **Deliverables**: 37 metadata files, 16 Apex tests enforcing required fields and External ID uniqueness
 

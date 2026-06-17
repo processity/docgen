@@ -87,7 +87,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                    ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                   Watermark_Text__c, Watermark_Condition_Field__c
+                   Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
@@ -158,7 +158,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         // Load composite configuration
         List<Composite_Document__c> composites = [
             SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
-                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c, IsActive__c
+                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c, IsActive__c,
+                   Default_Output_Format__c
             FROM Composite_Document__c
             WHERE Id = :compositeDocId
             LIMIT 1
@@ -235,7 +236,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                     Status__c = 'QUEUED',
                     RequestHash__c = envelope.requestHash,
                     CorrelationId__c = correlationId,
-                    OutputFormat__c = this.outputFormat,
+                    OutputFormat__c = envelope.outputFormat,
                     Priority__c = 0, // Default priority
                     Attempts__c = 0,  // Start with 0 attempts
                     RequestedBy__c = UserInfo.getUserId()
@@ -405,6 +406,9 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
     }
 
     private static void validateOutputFormat(String outputFormat) {
+        if (String.isBlank(outputFormat)) {
+            return;
+        }
         if (!VALID_OUTPUT_FORMATS.contains(outputFormat)) {
             throw new IllegalArgumentException('outputFormat must be PDF, DOCX, or PPTX');
         }

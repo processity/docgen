@@ -22,6 +22,10 @@
                 <behavior>Edit</behavior>
                 <field>TemplateContentVersionId__c</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Default_Output_Format__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns>
             <layoutItems>

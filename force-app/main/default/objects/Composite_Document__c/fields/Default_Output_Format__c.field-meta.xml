@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Default_Output_Format__c</fullName>
+    <description>Default output file format used when composite generation does not explicitly pass an output format.</description>
+    <externalId>false</externalId>
+    <label>Default Output Format</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>PDF</fullName>
+                <default>true</default>
+                <label>PDF</label>
+            </value>
+            <value>
+                <fullName>DOCX</fullName>
+                <default>false</default>
+                <label>DOCX</label>
+            </value>
+            <value>
+                <fullName>PPTX</fullName>
+                <default>false</default>
+                <label>PPTX</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

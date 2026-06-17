@@ -87,14 +87,15 @@ describe('c-docgen-test-page', () => {
     jest.clearAllMocks();
   });
 
-  it('passes the selected output format to the generation button', async () => {
+  it('passes the selected output format override to the generation button', async () => {
     const element = await renderConfiguredPage();
 
     const outputFormatCombobox = [...element.shadowRoot.querySelectorAll('lightning-combobox')]
       .find((combobox) => combobox.label === 'Output Format');
     expect(outputFormatCombobox).not.toBeUndefined();
-    expect(outputFormatCombobox.value).toBe('PDF');
+    expect(outputFormatCombobox.value).toBe('');
     expect(outputFormatCombobox.options).toEqual([
+      { label: 'Template Default', value: '' },
       { label: 'PDF', value: 'PDF' },
       { label: 'DOCX', value: 'DOCX' },
       { label: 'PPTX', value: 'PPTX' }

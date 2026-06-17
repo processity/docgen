@@ -77,13 +77,13 @@
 
                         <!-- Output Format Selection -->
                         <div class="slds-m-bottom_medium">
-                            <lightning-combobox
-                                label="Output Format"
-                                value={outputFormat}
-                                options={outputFormatOptions}
-                                onchange={handleOutputFormatChange}
-                                required>
-                            </lightning-combobox>
+	                            <lightning-combobox
+	                                label="Output Format"
+	                                value={outputFormat}
+	                                placeholder="Use template default"
+	                                options={outputFormatOptions}
+	                                onchange={handleOutputFormatChange}>
+	                            </lightning-combobox>
                         </div>
 
                         <!-- Generate Button (enabled when template is selected) -->

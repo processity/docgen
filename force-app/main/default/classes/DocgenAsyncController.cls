@@ -2,8 +2,6 @@
  * Controller for queued document generation with client-side progress polling.
  */
 public with sharing class DocgenAsyncController {
-    private static final Set<String> VALID_OUTPUT_FORMATS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
-
     public class StartResult {
         @AuraEnabled public String generatedDocumentId { get; set; }
         @AuraEnabled public String status { get; set; }
@@ -53,8 +51,11 @@ public with sharing class DocgenAsyncController {
                 throw new IllegalArgumentException('Record ID is required');
             }
 
-            String normalizedOutputFormat = normalizeOutputFormat(outputFormat);
             Docgen_Template__c template = queryTemplate(templateId, templateName);
+            String normalizedOutputFormat = DocgenEnvelopeService.resolveOutputFormat(
+                outputFormat,
+                template.Default_Output_Format__c
+            );
             Boolean isPreviewMode = previewMode == true;
             String correlationId = generateCorrelationId();
 
@@ -149,14 +150,6 @@ public with sharing class DocgenAsyncController {
         }
     }
 
-    private static String normalizeOutputFormat(String outputFormat) {
-        String normalized = String.isBlank(outputFormat) ? 'PDF' : outputFormat.trim().toUpperCase();
-        if (!VALID_OUTPUT_FORMATS.contains(normalized)) {
-            throw new IllegalArgumentException('Output Format must be PDF, DOCX, or PPTX');
-        }
-        return normalized;
-    }
-
     private static Docgen_Template__c queryTemplate(Id templateId, String templateName) {
         if (templateId == null && String.isBlank(templateName)) {
             throw new IllegalArgumentException('Template ID or Template Name is required');
@@ -168,7 +161,7 @@ public with sharing class DocgenAsyncController {
                 SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                        ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                        ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c
+                       Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
                 FROM Docgen_Template__c
                 WHERE Id = :templateId
                 LIMIT 1
@@ -178,7 +171,7 @@ public with sharing class DocgenAsyncController {
                 SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                        ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                        ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c
+                       Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
                 FROM Docgen_Template__c
                 WHERE Name = :templateName
                 LIMIT 1

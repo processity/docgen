@@ -25,7 +25,7 @@ export default class CompositeDocgenButton extends LightningElement {
   @api compositeDocumentId;
 
   /**
-   * Output format (PDF or DOCX)
+   * Output format override (PDF, DOCX, or PPTX). Blank uses the composite default.
    * @type {string}
    * @required
    */
@@ -160,11 +160,6 @@ export default class CompositeDocgenButton extends LightningElement {
         'At least one record ID is required. Please configure the component with a record ID field or additional record IDs.',
         'Configuration Error'
       );
-      return false;
-    }
-
-    if (!request.outputFormat) {
-      this.handleError('Output Format is required. Please configure the component.', 'Configuration Error');
       return false;
     }
 

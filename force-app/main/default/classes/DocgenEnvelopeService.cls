@@ -19,6 +19,23 @@ public with sharing class DocgenEnvelopeService {
     };
     private static final Set<String> OUTPUT_FORMATS_WITH_EXTENSIONS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
 
+    public static String resolveOutputFormat(String requestedOutputFormat, String defaultOutputFormat) {
+        String candidate = String.isBlank(requestedOutputFormat) ? defaultOutputFormat : requestedOutputFormat;
+        String normalized = String.isBlank(candidate) ? 'PDF' : candidate.trim().toUpperCase();
+        if (!OUTPUT_FORMATS_WITH_EXTENSIONS.contains(normalized)) {
+            throw new IllegalArgumentException('Output Format must be PDF, DOCX, or PPTX');
+        }
+        return normalized;
+    }
+
+    private static String getDefaultOutputFormat(SObject record) {
+        if (record == null) {
+            return null;
+        }
+        Object value = record.getPopulatedFieldsAsMap().get('Default_Output_Format__c');
+        return value == null ? null : String.valueOf(value);
+    }
+
     /**
      * Envelope structure matching TypeScript DocgenRequest interface
      */
@@ -67,10 +84,11 @@ public with sharing class DocgenEnvelopeService {
         String timezone
     ) {
         Envelope env = new Envelope();
+        String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(template));
 
         // Set basic fields
         env.templateId = template.TemplateContentVersionId__c;
-        env.outputFormat = outputFormat;
+        env.outputFormat = effectiveOutputFormat;
         env.locale = locale;
         env.timezone = timezone;
 
@@ -94,7 +112,7 @@ public with sharing class DocgenEnvelopeService {
         env.parents = extractParentIds(recordId, env.data);
 
         // Generate output filename (can contain placeholders)
-        env.outputFileName = generateOutputFileName(recordId, template, env.data, outputFormat);
+        env.outputFileName = generateOutputFileName(recordId, template, env.data, effectiveOutputFormat);
 
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
@@ -377,10 +395,11 @@ public with sharing class DocgenEnvelopeService {
 
         // Load composite configuration
         Composite_Document__c composite = loadCompositeConfig(compositeDocId);
+        String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(composite));
 
         // Set basic fields
         env.compositeDocumentId = compositeDocId;
-        env.outputFormat = outputFormat;
+        env.outputFormat = effectiveOutputFormat;
         env.locale = locale;
         env.timezone = timezone;
         env.templateStrategy = composite.Template_Strategy__c;
@@ -415,7 +434,7 @@ public with sharing class DocgenEnvelopeService {
         env.parents = extractParentIdsFromCompositeData(env.data);
 
         // Generate output filename
-        env.outputFileName = generateCompositeFileName(composite, outputFormat);
+        env.outputFileName = generateCompositeFileName(composite, effectiveOutputFormat);
 
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
@@ -423,7 +442,7 @@ public with sharing class DocgenEnvelopeService {
         String optionsJson = JSON.serialize(env.options);
         env.requestHash = computeCompositeHash(
             compositeDocId,
-            outputFormat,
+            effectiveOutputFormat,
             recordIdsJson,
             dataJson,
             null,
@@ -440,7 +459,8 @@ public with sharing class DocgenEnvelopeService {
     private static Composite_Document__c loadCompositeConfig(Id compositeDocId) {
         List<Composite_Document__c> composites = [
             SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
-                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c
+                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
+                   Default_Output_Format__c
             FROM Composite_Document__c
             WHERE Id = :compositeDocId
             LIMIT 1

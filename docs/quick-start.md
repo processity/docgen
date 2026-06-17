@@ -223,7 +223,8 @@ npm start
 2. Navigate to the **Docgen** app
 3. Go to the **Docgen Templates** tab
 4. Create a new template record
-5. Upload a DOCX file with merge fields (see [Template Authoring Guide](./template-authoring.md))
+5. Set **Default Output Format** to `PDF`, `DOCX`, or `PPTX`
+6. Upload a DOCX or PPTX file with merge fields (see [Template Authoring Guide](./template-authoring.md))
 
 ### 2. Add the LWC Button to a Page
 
@@ -236,9 +237,9 @@ npm start
 
 1. On the record page, click the **Generate Document** button
 2. Select your template from the dropdown
-3. Choose output format (PDF or DOCX)
+3. Leave the component output format blank to use the template default, or choose an override (`PDF`, `DOCX`, or `PPTX`)
 4. Click **Generate**
-5. The PDF will open in a new tab, and the file will be attached to the record
+5. The generated file will open or download based on format, and the file will be attached to the record
 
 **Note**: For local development, the backend must be accessible from Salesforce. Consider using:
 - **Ngrok** for tunneling: `ngrok http 8080`

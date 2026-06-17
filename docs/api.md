@@ -131,7 +131,7 @@ curl http://localhost:8080/readyz
 
 ### POST /generate
 
-Generate a PDF or DOCX document from a Salesforce template.
+Generate a PDF, DOCX, or PPTX document from a Salesforce template.
 
 **Authentication**: Required (Azure AD Bearer token)
 
@@ -147,7 +147,7 @@ Generate a PDF or DOCX document from a Salesforce template.
   // Template configuration
   templateId: string;              // ContentVersionId of template (required)
   outputFileName: string;          // Output file name (required)
-  outputFormat: "PDF" | "DOCX";    // Output format (required)
+  outputFormat: "PDF" | "DOCX" | "PPTX"; // Output format (required)
 
   // Locale/timezone configuration
   locale?: string;                 // e.g., "en-US", "en-GB" (optional, default: "en-US")

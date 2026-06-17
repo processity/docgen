@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Composite Document Generation Button** (`compositeDocgenButton`) is a Lightning Web Component that enables interactive composite document generation directly from Salesforce record pages. This component allows users to generate PDF or DOCX documents that combine data from multiple sources (templates) configured in a Composite Document record.
+The **Composite Document Generation Button** (`compositeDocgenButton`) is a Lightning Web Component that enables interactive composite document generation directly from Salesforce record pages. This component allows users to generate PDF, DOCX, or PPTX documents that combine data from multiple sources (templates) configured in a Composite Document record.
 
 This component is designed for admin configuration via the Lightning App Builder without requiring code.
 
@@ -15,12 +15,12 @@ This component is designed for admin configuration via the Lightning App Builder
 | Property | Type | Description | Example |
 |----------|------|-------------|---------|
 | **Composite Document ID** | String | ID of the `Composite_Document__c` record that defines the composite document configuration | `a0Y1234567890ABC` |
-| **Output Format** | Picklist | Document output format: `PDF` or `DOCX` | `PDF` |
 
 ### Optional Properties
 
 | Property | Type | Description | Example |
 |----------|------|-------------|---------|
+| **Output Format Override** | Picklist | Optional output format override: `PDF`, `DOCX`, or `PPTX`. Leave blank to use the Composite Document **Default Output Format**. | `PDF` |
 | **Record ID Field Name** | String | Variable name for the primary record ID from the page context (e.g., `accountId`, `opportunityId`). Only needed when component is placed on a record page. | `accountId` |
 | **Additional Record IDs (JSON)** | String | JSON string containing additional record IDs required by the composite document | `{"contactId":"003xxx","opportunityId":"006xxx"}` |
 | **Button Label** | String | Custom text displayed on the button | `Generate Account Report` |
@@ -48,7 +48,7 @@ await generator.generate({
 });
 ```
 
-The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `outputFormat`. It emits
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and optional `outputFormat`. Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. It emits
 `docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)
@@ -58,7 +58,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
 **Configuration**:
 - **Composite Document ID**: `a0Y1234567890ABC` (Your composite document record)
 - **Record ID Field Name**: `accountId`
-- **Output Format**: `PDF`
+- **Output Format Override**: blank to use the composite default, or `PDF`
 - **Button Label**: `Generate Account Summary`
 - **Success Message**: `Account summary generated!`
 
@@ -68,7 +68,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
 3. Configure properties in the right panel:
    - Set **Composite Document ID** to your composite document's record ID
    - Set **Record ID Field Name** to `accountId`
-   - Set **Output Format** to `PDF`
+   - Leave **Output Format Override** blank to use the composite default, or set it to `PDF`
    - Customize **Button Label** and **Success Message** as desired
 4. Save and activate the page
 
@@ -84,7 +84,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
 - **Composite Document ID**: `a0Y2345678901DEF`
 - **Record ID Field Name**: `opportunityId`
 - **Additional Record IDs (JSON)**: `{"accountId":"{!Record.AccountId}","contactId":"{!Record.ContactId}"}`
-- **Output Format**: `PDF`
+- **Output Format Override**: blank to use the composite default, or `PDF`
 - **Button Label**: `Generate Proposal`
 - **Success Message**: `Proposal generated successfully!`
 
@@ -95,7 +95,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
    - Set **Composite Document ID** to your composite document's record ID
    - Set **Record ID Field Name** to `opportunityId`
    - Set **Additional Record IDs (JSON)** to: `{"accountId":"{!Record.AccountId}","contactId":"{!Record.ContactId}"}`
-   - Set **Output Format** to `PDF`
+   - Leave **Output Format Override** blank to use the composite default, or set it to `PDF`
    - Customize labels as desired
 4. Save and activate the page
 
@@ -119,7 +119,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
 **Configuration**:
 - **Composite Document ID**: `a0Y3456789012GHI`
 - **Additional Record IDs (JSON)**: `{"accountId":"001XXXXXXXXXXXXXXX","settingsId":"a00YYYYYYYYYYYYYYY"}`
-- **Output Format**: `DOCX`
+- **Output Format Override**: `DOCX`
 - **Button Label**: `Generate Monthly Report`
 
 **Steps**:
@@ -129,7 +129,7 @@ The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and `
    - Set **Composite Document ID**
    - Leave **Record ID Field Name** blank (not on a record page)
    - Set **Additional Record IDs (JSON)** with hardcoded IDs
-   - Set **Output Format** to `DOCX`
+   - Set **Output Format Override** to `DOCX`
 4. Save and activate the page
 
 **Result**: The button will use the hardcoded record IDs for generation.
@@ -190,7 +190,7 @@ The component performs validation before calling the Apex method:
 |---------------|-------|----------|
 | "Composite Document ID is required" | `compositeDocumentId` property is blank | Set the Composite Document ID property |
 | "At least one record ID is required" | Neither `recordId` nor `additionalRecordIds` is provided | Set Record ID Field Name (on record pages) or Additional Record IDs |
-| "Output Format is required" | `outputFormat` property is blank | Set the Output Format property to PDF or DOCX |
+| "Output Format must be PDF, DOCX, or PPTX" | `outputFormat` property has an unsupported value | Clear Output Format Override to use the composite default, or set it to PDF, DOCX, or PPTX |
 
 ### Generation Errors
 
@@ -279,14 +279,14 @@ If the Apex method fails (e.g., template not found, missing namespace data), an 
    - Set **Composite Document ID** (required)
    - Set **Record ID Field Name** if using the page's record (e.g., `accountId`)
    - Set **Additional Record IDs (JSON)** if needed
-   - Set **Output Format** (PDF or DOCX)
+   - Leave **Output Format Override** blank to use the composite default, or set it to PDF, DOCX, or PPTX
    - Customize **Button Label** and **Success Message**
 7. **Save** the page
 8. **Activate** the page (assign to org default or specific profiles/apps)
 9. **Test**:
    - Navigate to a record of that object
    - Click the button
-   - Verify PDF opens in new tab and success toast appears
+   - Verify the generated file opens or downloads and success toast appears
 
 ---
 

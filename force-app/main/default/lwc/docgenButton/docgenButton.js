@@ -31,7 +31,7 @@ export default class DocgenButton extends LightningElement {
   @api templateName;
 
   /**
-   * Output format (PDF or DOCX)
+   * Output format override (PDF, DOCX, or PPTX). Blank uses the template default.
    * @type {string}
    * @required
    */
@@ -87,15 +87,6 @@ export default class DocgenButton extends LightningElement {
       return;
     }
 
-    if (!this.outputFormat) {
-      this.showToast(
-        'Configuration Error',
-        'Output Format is required. Please configure the component.',
-        'error'
-      );
-      return;
-    }
-
     // Start processing
     this.isProcessing = true;
 
@@ -124,7 +115,7 @@ export default class DocgenButton extends LightningElement {
       const result = await generate({
         templateId: effectiveTemplateId,
         recordId: this.recordId,
-        outputFormat: this.outputFormat
+        outputFormat: this.normalizeOutputFormat(this.outputFormat)
       });
 
       // Check if result indicates success or error
@@ -168,6 +159,10 @@ export default class DocgenButton extends LightningElement {
       variant
     });
     this.dispatchEvent(event);
+  }
+
+  normalizeOutputFormat(value) {
+    return value ? String(value).toUpperCase() : null;
   }
 
   /**

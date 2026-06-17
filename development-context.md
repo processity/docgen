@@ -158,7 +158,7 @@ Node receives a **single JSON envelope**. Apex is responsible for collecting and
   * `RequestHash__c` (Text 80, **External ID, Unique**)
   * `OutputFileId__c` (Text 18; ContentVersionId)
   * `RequestedBy__c` (Lookup User)
-  * `OutputFormat__c` (Picklist: `PDF,DOCX`)
+  * `OutputFormat__c` (Picklist: `PDF,DOCX,PPTX`)
 
 ### Apex Services
 
@@ -426,7 +426,7 @@ components:
       properties:
         templateId: { type: string }
         outputFileName: { type: string }
-        outputFormat: { type: string, enum: [PDF, DOCX] }
+        outputFormat: { type: string, enum: [PDF, DOCX, PPTX] }
         locale: { type: string, example: en-GB }
         timezone: { type: string, example: Europe/London }
         options:

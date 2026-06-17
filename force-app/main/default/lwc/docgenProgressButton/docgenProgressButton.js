@@ -11,7 +11,7 @@ const DEFAULT_MAX_POLL_SECONDS = 180;
 export default class DocgenProgressButton extends LightningElement {
   @api templateId;
   @api templateName;
-  @api outputFormat = 'PDF';
+  @api outputFormat;
   @api recordId;
   @api buttonLabel = 'Generate Document';
   @api buttonVariant = 'brand';
@@ -175,7 +175,7 @@ export default class DocgenProgressButton extends LightningElement {
       templateId: config.templateId || this.templateId || null,
       templateName: config.templateName || this.templateName || null,
       recordId: config.recordId || this.recordId || null,
-      outputFormat: (config.outputFormat || this.outputFormat || 'PDF').toUpperCase()
+      outputFormat: this.normalizeOutputFormat(config.outputFormat || this.outputFormat)
     };
 
     if (previewMode) {
@@ -196,7 +196,7 @@ export default class DocgenProgressButton extends LightningElement {
       return false;
     }
 
-    if (!['PDF', 'DOCX', 'PPTX'].includes(request.outputFormat)) {
+    if (request.outputFormat && !['PDF', 'DOCX', 'PPTX'].includes(request.outputFormat)) {
       this.handleError('Output Format must be PDF, DOCX, or PPTX.');
       return false;
     }
@@ -385,6 +385,10 @@ export default class DocgenProgressButton extends LightningElement {
       return value;
     }
     return String(value).toLowerCase() === 'true';
+  }
+
+  normalizeOutputFormat(value) {
+    return value ? String(value).toUpperCase() : null;
   }
 
   shouldPreviewBeforeSave(config) {

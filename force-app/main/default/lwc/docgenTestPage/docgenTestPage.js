@@ -52,6 +52,7 @@ const OBJECT_ICONS = {
 };
 
 const OUTPUT_FORMAT_OPTIONS = [
+    { label: 'Template Default', value: '' },
     { label: 'PDF', value: 'PDF' },
     { label: 'DOCX', value: 'DOCX' },
     { label: 'PPTX', value: 'PPTX' }
@@ -64,7 +65,7 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     @track selectedObjectApiName;
     @track selectedObjectConfig;
     @track supportedObjectsData = [];
-    @track outputFormat = 'PDF';
+    @track outputFormat = '';
     columns = COLUMNS;
     pageRef;
 
@@ -230,7 +231,7 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
             return 'PPTX';
         }
 
-        return OUTPUT_FORMAT_OPTIONS.some(option => option.value === normalized) ? normalized : null;
+        return OUTPUT_FORMAT_OPTIONS.some(option => option.value === normalized) ? normalized : '';
     }
 
     // Update the URL with recordId, templateId, objectType, and outputFormat parameters

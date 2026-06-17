@@ -65,6 +65,7 @@ public with sharing class DocgenController {
     @AuraEnabled
     public static GenerateResult generate(Id templateId, Id recordId, String outputFormat) {
         Generated_Document__c doc;
+        String effectiveOutputFormat = outputFormat;
         String correlationId = generateCorrelationId();
 
         try {
@@ -78,6 +79,7 @@ public with sharing class DocgenController {
                 outputFormat,
                 correlationId
             );
+            effectiveOutputFormat = envelope.outputFormat;
 
             // Step 3: Check for existing successful document (idempotency short-circuit)
             Generated_Document__c existingDoc = checkExistingDocument(envelope.requestHash);
@@ -116,7 +118,7 @@ public with sharing class DocgenController {
             } else {
                 // Error occurred early - create FAILED document record
                 try {
-                    docId = createFailedDocumentAndReturnId(templateId, recordId, outputFormat, e, correlationId);
+                    docId = createFailedDocumentAndReturnId(templateId, recordId, effectiveOutputFormat, e, correlationId);
                 } catch (Exception insertEx) {
                     System.debug(LoggingLevel.ERROR, 'Failed to create error tracking record: ' + insertEx.getMessage());
                 }
@@ -140,6 +142,7 @@ public with sharing class DocgenController {
     @AuraEnabled
     public static String generateComposite(Id compositeDocId, String recordIds, String outputFormat) {
         Generated_Document__c doc;
+        String effectiveOutputFormat = outputFormat;
         String correlationId = generateCorrelationId();
 
         try {
@@ -153,6 +156,7 @@ public with sharing class DocgenController {
                 outputFormat,
                 correlationId
             );
+            effectiveOutputFormat = envelope.outputFormat;
 
             // Step 3: Check for existing successful document (idempotency short-circuit)
             Generated_Document__c existingDoc = checkExistingDocument(envelope.requestHash);
@@ -187,7 +191,7 @@ public with sharing class DocgenController {
             } else {
                 // Create a FAILED document record for tracking even if error occurred early
                 try {
-                    createFailedCompositeDocument(compositeDocId, recordIds, outputFormat, e, correlationId);
+                    createFailedCompositeDocument(compositeDocId, recordIds, effectiveOutputFormat, e, correlationId);
                 } catch (Exception insertEx) {
                     // Log the error - include in user message for debugging
                     recordCreationError = 'Failed to create error tracking record: ' + insertEx.getMessage();
@@ -303,7 +307,7 @@ public with sharing class DocgenController {
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                    ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                   Watermark_Text__c, Watermark_Condition_Field__c
+                   Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
             FROM Docgen_Template__c
             WHERE Id = :templateId
             LIMIT 1
@@ -892,6 +896,14 @@ public with sharing class DocgenController {
         createFailedDocumentAndReturnId(templateId, recordId, outputFormat, e, correlationId);
     }
 
+    private static String safeOutputFormatForFailure(String outputFormat) {
+        try {
+            return DocgenEnvelopeService.resolveOutputFormat(outputFormat, null);
+        } catch (Exception e) {
+            return 'PDF';
+        }
+    }
+
     /**
      * Create a FAILED Generated_Document__c record when error occurs early and return the Id
      * (before the normal document creation step)
@@ -900,7 +912,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Template__c = templateId;
         doc.Status__c = 'FAILED';
-        doc.OutputFormat__c = outputFormat;
+        doc.OutputFormat__c = safeOutputFormatForFailure(outputFormat);
         doc.Attempts__c = 0;
         doc.RequestedBy__c = UserInfo.getUserId();
         doc.CorrelationId__c = correlationId;
@@ -910,7 +922,7 @@ public with sharing class DocgenController {
         Map<String, Object> requestInfo = new Map<String, Object>{
             'templateId' => templateId,
             'recordId' => recordId,
-            'outputFormat' => outputFormat,
+            'outputFormat' => doc.OutputFormat__c,
             'correlationId' => correlationId,
             'requestedAt' => Datetime.now().formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\''),
             'requestedBy' => UserInfo.getUserId(),
@@ -942,7 +954,7 @@ public with sharing class DocgenController {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Composite_Document__c = compositeDocId;
         doc.Status__c = 'FAILED';
-        doc.OutputFormat__c = outputFormat;
+        doc.OutputFormat__c = safeOutputFormatForFailure(outputFormat);
         doc.Attempts__c = 0;
         doc.RequestedBy__c = UserInfo.getUserId();
         doc.CorrelationId__c = correlationId;
@@ -952,7 +964,7 @@ public with sharing class DocgenController {
         Map<String, Object> requestInfo = new Map<String, Object>{
             'compositeDocumentId' => compositeDocId,
             'recordIds' => recordIdsJson,
-            'outputFormat' => outputFormat,
+            'outputFormat' => doc.OutputFormat__c,
             'correlationId' => correlationId,
             'requestedAt' => Datetime.now().formatGMT('yyyy-MM-dd\'T\'HH:mm:ss.SSS\'Z\''),
             'requestedBy' => UserInfo.getUserId(),

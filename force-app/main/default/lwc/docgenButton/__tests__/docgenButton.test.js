@@ -323,16 +323,17 @@ describe('c-docgen-button', () => {
     expect(toastEvent.detail.message).toContain('Template ID');
   });
 
-  it('requires outputFormat property', async () => {
+  it('allows outputFormat to be omitted so Apex can use the template default', async () => {
     // Arrange & Act
     const element = createElement('c-docgen-button', {
       is: DocgenButton
     });
     element.templateId = 'a0X1234567890ABC';
     element.recordId = '0011234567890ABC';
-
-    const toastHandler = jest.fn();
-    element.addEventListener('lightning__showtoast', toastHandler);
+    generate.mockResolvedValue({
+      success: true,
+      downloadUrl: '/sfc/servlet.shepherd/version/download/0681234567890ABC'
+    });
 
     document.body.appendChild(element);
 
@@ -343,10 +344,10 @@ describe('c-docgen-button', () => {
     await flushPromises();
 
     // Assert
-    expect(generate).not.toHaveBeenCalled();
-    expect(toastHandler).toHaveBeenCalledTimes(1);
-    const toastEvent = toastHandler.mock.calls[0][0];
-    expect(toastEvent.detail.variant).toBe('error');
-    expect(toastEvent.detail.message).toContain('Output Format');
+    expect(generate).toHaveBeenCalledWith({
+      templateId: 'a0X1234567890ABC',
+      recordId: '0011234567890ABC',
+      outputFormat: null
+    });
   });
 });

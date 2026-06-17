@@ -262,7 +262,7 @@ describe('c-composite-docgen-button', () => {
     expect(toastEvent.detail.message).toContain('record ID');
   });
 
-  it('validates required outputFormat property', async () => {
+  it('allows outputFormat to be omitted so Apex can use the composite default', async () => {
     // Arrange
     const element = createElement('c-composite-docgen-button', {
       is: CompositeDocgenButton
@@ -270,10 +270,7 @@ describe('c-composite-docgen-button', () => {
     element.compositeDocumentId = 'a0Y1234567890ABC';
     element.recordId = '0011234567890ABC';
     element.recordIdField = 'accountId';
-    // Missing outputFormat
-
-    const toastHandler = jest.fn();
-    element.addEventListener('lightning__showtoast', toastHandler);
+    generateComposite.mockResolvedValue('/sfc/servlet.shepherd/version/download/0681234567890ABC');
 
     document.body.appendChild(element);
 
@@ -285,12 +282,11 @@ describe('c-composite-docgen-button', () => {
     await flushPromises();
 
     // Assert
-    expect(generateComposite).not.toHaveBeenCalled();
-    expect(toastHandler).toHaveBeenCalledTimes(1);
-    const toastEvent = toastHandler.mock.calls[0][0];
-    expect(toastEvent.detail.variant).toBe('error');
-    expect(toastEvent.detail.title).toBe('Configuration Error');
-    expect(toastEvent.detail.message).toContain('Output Format');
+    expect(generateComposite).toHaveBeenCalledWith({
+      compositeDocId: 'a0Y1234567890ABC',
+      recordIds: JSON.stringify({ accountId: '0011234567890ABC' }),
+      outputFormat: null
+    });
   });
 
   it('renders button with configurable label', () => {

@@ -215,6 +215,30 @@ private class DocgenControllerTest {
         Assert.isNotNull(doc.RequestJSON__c, 'RequestJSON should be stored');
     }
 
+    @isTest
+    static void testGenerateUsesTemplateDefaultOutputFormatWhenBlank() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        update new Docgen_Template__c(
+            Id = template.Id,
+            Default_Output_Format__c = 'DOCX'
+        );
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        Test.startTest();
+        DocgenController.GenerateResult result = DocgenController.generate(template.Id, acc.Id, null);
+        Test.stopTest();
+
+        Assert.isTrue(result.success, 'Result should indicate success');
+        Generated_Document__c doc = [
+            SELECT OutputFormat__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.areEqual('DOCX', doc.OutputFormat__c, 'Generated document should store resolved template default');
+    }
+
     /**
      * Test: Successful PDF generation stores merged DOCX file ID when backend returns it
      */
@@ -445,7 +469,7 @@ private class DocgenControllerTest {
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                    ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                   Watermark_Text__c, Watermark_Condition_Field__c
+                   Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
             FROM Docgen_Template__c
             LIMIT 1
         ];
@@ -985,6 +1009,35 @@ private class DocgenControllerTest {
         Assert.areEqual('068YYYYYYYYYYYYYY', doc.OutputFileId__c, 'OutputFileId should be set');
         Assert.isNotNull(doc.RequestHash__c, 'RequestHash should be set');
         Assert.isNotNull(doc.CorrelationId__c, 'CorrelationId should be set');
+    }
+
+    @isTest
+    static void testGenerateCompositeUsesDefaultOutputFormatWhenBlank() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        update new Composite_Document__c(
+            Id = scenario.compositeDoc.Id,
+            Default_Output_Format__c = 'PPTX'
+        );
+
+        Map<String, Id> recordIdsMap = new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        };
+        String recordIds = JSON.serialize(recordIdsMap);
+
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        Test.startTest();
+        DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, null);
+        Test.stopTest();
+
+        Generated_Document__c doc = [
+            SELECT OutputFormat__c
+            FROM Generated_Document__c
+            WHERE Composite_Document__c = :scenario.compositeDoc.Id
+            LIMIT 1
+        ];
+        Assert.areEqual('PPTX', doc.OutputFormat__c, 'Composite generation should store resolved composite default');
     }
 
     /**

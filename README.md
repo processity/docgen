@@ -254,7 +254,7 @@ sf org assign permset --name Docgen_User
 
 1. **Upload a template**: Navigate to the Docgen app → Docgen Templates tab → Create new template with DOCX file
 2. **Add LWC button**: Edit an Account/Opportunity/Case page → Drag `docgenButton` component onto the layout
-3. **Generate**: Click "Generate Document" → Select template → Choose format → Generate
+3. **Generate**: Click "Generate Document" → Select template → Use the template default format or choose an override → Generate
 
 For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 
@@ -376,7 +376,7 @@ The **Docgen** app includes:
 
 ### Document Generation
 
-- **POST /generate**: Generate PDF/DOCX from template (requires Azure AD token)
+- **POST /generate**: Generate PDF/DOCX/PPTX from template (requires Azure AD token)
 
 ### Worker Management
 

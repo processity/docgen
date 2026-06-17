@@ -57,6 +57,33 @@ private class DocgenAsyncControllerTest {
     }
 
     @IsTest
+    static void testStartGenerationUsesTemplateDefaultOutputFormatWhenBlank() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        update new Docgen_Template__c(
+            Id = template.Id,
+            Default_Output_Format__c = 'PPTX'
+        );
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            null
+        );
+        Test.stopTest();
+
+        Assert.areEqual('PPTX', result.outputFormat, 'Blank request should use the template default output format');
+        Generated_Document__c doc = [
+            SELECT OutputFormat__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.areEqual('PPTX', doc.OutputFormat__c, 'Generated document should store resolved template default');
+    }
+
+    @IsTest
     static void testStartGenerationPreviewModeCreatesPendingPreviewDocument() {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
         Account account = [SELECT Id FROM Account LIMIT 1];
