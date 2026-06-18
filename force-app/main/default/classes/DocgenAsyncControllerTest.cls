@@ -254,10 +254,44 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual(100, result.progressValue, 'Succeeded documents should show full progress');
         Assert.isTrue(result.isTerminal, 'Succeeded status should be terminal');
         Assert.areEqual('069000000000001AAA', result.contentDocumentId, 'ContentDocument ID should be returned for file card preview');
-        Assert.areEqual('/lightning/r/ContentDocument/069000000000001AAA/view', result.downloadUrl, 'Download URL should target ContentDocument view');
-        Assert.areEqual('/sfc/servlet.shepherd/version/download/068000000000001AAA', result.previewUrl,
-            'Preview URL should use the ContentVersion URL that can be embedded for PDFs');
+        Assert.areEqual('/sfc/servlet.shepherd/version/download/068000000000001AAA', result.downloadUrl,
+            'Download URL should target the file download endpoint');
+        Assert.areEqual('/lightning/r/ContentDocument/069000000000001AAA/view', result.previewUrl,
+            'Preview URL should use the Salesforce file record instead of the download endpoint');
+        Assert.isFalse(result.previewUrl.contains('/version/download/'), 'Inline preview must not use a download URL');
         Assert.isTrue(result.canInlinePreview, 'PDF output should be marked inline previewable');
+    }
+
+    @IsTest
+    static void testGetPdfPreviewContentReturnsPdfBytes() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        ContentVersion cv = createTestContentVersion('Inline Preview Document');
+
+        DocgenAsyncController.StartResult startResult = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'PDF',
+            true
+        );
+        update new Generated_Document__c(
+            Id = startResult.generatedDocumentId,
+            Status__c = 'SUCCEEDED',
+            OutputFileId__c = cv.Id
+        );
+
+        Test.startTest();
+        DocgenAsyncController.PreviewContent preview = DocgenAsyncController.getPdfPreviewContent(startResult.generatedDocumentId);
+        Test.stopTest();
+
+        Assert.areEqual('application/pdf', preview.contentType, 'Preview content should be served as PDF');
+        Assert.areEqual('Inline Preview Document.pdf', preview.fileName, 'Preview file name should include extension');
+        Assert.areEqual(
+            EncodingUtil.base64Encode(Blob.valueOf('Test PDF Content')),
+            preview.base64Data,
+            'Preview payload should contain the generated PDF bytes'
+        );
     }
 
     @IsTest

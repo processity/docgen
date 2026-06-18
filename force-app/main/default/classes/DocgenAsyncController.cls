@@ -2,6 +2,8 @@
  * Controller for queued document generation with client-side progress polling.
  */
 public with sharing class DocgenAsyncController {
+    private static final Integer MAX_INLINE_PREVIEW_BYTES = 2500000;
+
     public class StartResult {
         @AuraEnabled public String generatedDocumentId { get; set; }
         @AuraEnabled public String status { get; set; }
@@ -32,6 +34,12 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String previewUrl { get; set; }
         @AuraEnabled public Boolean canInlinePreview { get; set; }
         @AuraEnabled public Boolean isPreviewPending { get; set; }
+    }
+
+    public class PreviewContent {
+        @AuraEnabled public String contentType { get; set; }
+        @AuraEnabled public String base64Data { get; set; }
+        @AuraEnabled public String fileName { get; set; }
     }
 
     public static StartResult startGeneration(Id templateId, String templateName, Id recordId, String outputFormat) {
@@ -102,6 +110,55 @@ public with sharing class DocgenAsyncController {
             }
 
             return toStatusResult(queryGeneratedDocument(generatedDocumentId));
+        } catch (Exception e) {
+            throwAuraException(e.getMessage());
+            return null;
+        }
+    }
+
+    @AuraEnabled
+    public static PreviewContent getPdfPreviewContent(Id generatedDocumentId) {
+        try {
+            if (generatedDocumentId == null) {
+                throw new IllegalArgumentException('Generated Document ID is required');
+            }
+
+            Generated_Document__c doc = [
+                SELECT Id, Status__c, OutputFileId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c
+                FROM Generated_Document__c
+                WHERE Id = :generatedDocumentId
+                LIMIT 1
+            ];
+
+            if (doc.Status__c != 'SUCCEEDED') {
+                throw new IllegalArgumentException('Only successfully generated documents can be previewed.');
+            }
+            if (doc.OutputFormat__c != 'PDF') {
+                throw new IllegalArgumentException('Only PDF documents can be previewed inline.');
+            }
+            if (String.isBlank(doc.OutputFileId__c)) {
+                throw new IllegalArgumentException('Generated document does not have a PDF file.');
+            }
+            if (doc.PendingPreview__c && doc.RequestedBy__c != UserInfo.getUserId()) {
+                throw new IllegalArgumentException('Only the requesting user can preview this pending document.');
+            }
+
+            ContentVersion version = [
+                SELECT Title, FileExtension, ContentSize, VersionData
+                FROM ContentVersion
+                WHERE Id = :doc.OutputFileId__c
+                LIMIT 1
+            ];
+
+            if (version.ContentSize != null && version.ContentSize > MAX_INLINE_PREVIEW_BYTES) {
+                throw new IllegalArgumentException('PDF is too large for inline preview. Open the generated file instead.');
+            }
+
+            PreviewContent content = new PreviewContent();
+            content.contentType = 'application/pdf';
+            content.base64Data = EncodingUtil.base64Encode(version.VersionData);
+            content.fileName = buildFileName(version.Title, version.FileExtension);
+            return content;
         } catch (Exception e) {
             throwAuraException(e.getMessage());
             return null;
@@ -348,8 +405,8 @@ public with sharing class DocgenAsyncController {
         if (doc.Status__c == 'SUCCEEDED' && String.isNotBlank(doc.OutputFileId__c)) {
             result.contentVersionId = doc.OutputFileId__c;
             result.contentDocumentId = getContentDocumentId(doc.OutputFileId__c);
-            result.downloadUrl = buildDownloadUrl(result.contentDocumentId);
-            result.previewUrl = buildPreviewUrl(doc.OutputFileId__c);
+            result.downloadUrl = buildDownloadUrl(doc.OutputFileId__c);
+            result.previewUrl = buildPreviewUrl(result.contentDocumentId);
         }
 
         return result;
@@ -407,18 +464,28 @@ public with sharing class DocgenAsyncController {
         return versions[0].ContentDocumentId;
     }
 
-    private static String buildDownloadUrl(String contentDocumentId) {
+    private static String buildDownloadUrl(String contentVersionId) {
+        if (String.isBlank(contentVersionId)) {
+            return null;
+        }
+        return '/sfc/servlet.shepherd/version/download/' + contentVersionId;
+    }
+
+    private static String buildPreviewUrl(String contentDocumentId) {
         if (String.isBlank(contentDocumentId)) {
             return null;
         }
         return '/lightning/r/ContentDocument/' + contentDocumentId + '/view';
     }
 
-    private static String buildPreviewUrl(String contentVersionId) {
-        if (String.isBlank(contentVersionId)) {
-            return null;
+    private static String buildFileName(String title, String extension) {
+        if (String.isBlank(extension)) {
+            return title;
         }
-        return '/sfc/servlet.shepherd/version/download/' + contentVersionId;
+        if (String.isBlank(title) || title.toLowerCase().endsWith('.' + extension.toLowerCase())) {
+            return title;
+        }
+        return title + '.' + extension;
     }
 
     private static void deleteGeneratedFiles(Generated_Document__c doc) {

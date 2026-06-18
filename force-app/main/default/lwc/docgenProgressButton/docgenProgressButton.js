@@ -1,12 +1,14 @@
 import { LightningElement, api } from 'lwc';
 import startGeneration from '@salesforce/apex/DocgenAsyncController.startGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
+import getPdfPreviewContent from '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
+const PDF_INLINE_PREVIEW_FRAGMENT = '#view=FitH&zoom=page-width&pagemode=none';
 
 export default class DocgenProgressButton extends LightningElement {
   @api templateId;
@@ -29,8 +31,11 @@ export default class DocgenProgressButton extends LightningElement {
   status = null;
   generatedDocumentId = null;
   previewUrl = null;
+  fileRecordUrl = null;
   downloadUrl = null;
   savedDownloadUrl = null;
+  previewObjectUrl = null;
+  isLoadingInlinePreview = false;
   canInlinePreview = false;
   outputFormatLabel = null;
   pollTimer = null;
@@ -46,7 +51,12 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   get showPreviewPanel() {
-    return this.status === 'SUCCEEDED' && this.previewUrl && this.generatedDocumentId;
+    return Boolean(
+      this.status === 'SUCCEEDED' &&
+        this.generatedDocumentId &&
+        !this.savedDownloadUrl &&
+        (this.previewUrl || this.fileRecordUrl || this.downloadUrl || this.isLoadingInlinePreview)
+    );
   }
 
   get showSavedDownloadPanel() {
@@ -54,15 +64,42 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   get showInlinePreview() {
-    return this.showPreviewPanel && this.canInlinePreview;
+    return this.showPreviewPanel && this.canInlinePreview && this.previewUrl;
+  }
+
+  get showPreviewLoading() {
+    return this.showPreviewPanel && this.isLoadingInlinePreview;
   }
 
   get showPreviewFallback() {
-    return this.showPreviewPanel && !this.canInlinePreview;
+    return this.showPreviewPanel && !this.canInlinePreview && !this.isLoadingInlinePreview;
+  }
+
+  get openPreviewUrl() {
+    return this.fileRecordUrl || this.downloadUrl;
   }
 
   get disablePreviewActions() {
     return this.isSavingPreview || this.isCancelingPreview;
+  }
+
+  get showPreviewActionSpinner() {
+    return this.isSavingPreview || this.isCancelingPreview;
+  }
+
+  get previewActionMessage() {
+    if (this.isSavingPreview) {
+      return 'Saving document...';
+    }
+    if (this.isCancelingPreview) {
+      return 'Canceling preview...';
+    }
+    return '';
+  }
+
+  get progressBarStyle() {
+    const progress = Math.max(0, Math.min(100, Number(this.progressValue) || 0));
+    return `width: ${progress}%`;
   }
 
   get fallbackMessage() {
@@ -118,6 +155,7 @@ export default class DocgenProgressButton extends LightningElement {
 
   disconnectedCallback() {
     this.clearPollTimer();
+    this.clearPreviewState();
   }
 
   async handleGenerateClick() {
@@ -175,7 +213,7 @@ export default class DocgenProgressButton extends LightningElement {
       templateId: config.templateId || this.templateId || null,
       templateName: config.templateName || this.templateName || null,
       recordId: config.recordId || this.recordId || null,
-      outputFormat: this.normalizeOutputFormat(config.outputFormat || this.outputFormat)
+      outputFormat: this.normalizeOutputFormat(config.outputFormat || this.outputFormat),
     };
 
     if (previewMode) {
@@ -214,14 +252,16 @@ export default class DocgenProgressButton extends LightningElement {
         }
 
         if (this.hasTimedOut()) {
-          this.handleError('Document generation is still running. Open Generated Documents to check the latest status.');
+          this.handleError(
+            'Document generation is still running. Open Generated Documents to check the latest status.'
+          );
           resolve(null);
           return;
         }
 
         try {
           const statusResult = await getGenerationStatus({
-            generatedDocumentId: this.generatedDocumentId
+            generatedDocumentId: this.generatedDocumentId,
           });
 
           this.applyStatus(statusResult);
@@ -251,7 +291,11 @@ export default class DocgenProgressButton extends LightningElement {
     if (statusResult.status === 'SUCCEEDED') {
       if (statusResult.isPreviewPending) {
         this.setPreviewState(statusResult);
-        this.showToast('Review Document', 'Review the generated document, then save or cancel it.', 'info');
+        this.showToast(
+          'Review Document',
+          'Review the generated document, then save or cancel it.',
+          'info'
+        );
         this.dispatchDocgenEvent('docgenpreview', statusResult);
         return statusResult;
       }
@@ -262,11 +306,12 @@ export default class DocgenProgressButton extends LightningElement {
       this.showToast('Success', this.successMessage, 'success');
       this.dispatchDocgenEvent('docgensuccess', statusResult);
     } else {
-      const errorMessage = statusResult.errorMessage || `Document generation ${statusResult.status.toLowerCase()}.`;
+      const errorMessage =
+        statusResult.errorMessage || `Document generation ${statusResult.status.toLowerCase()}.`;
       this.showToast('Error Generating Document', errorMessage, 'error');
       this.dispatchDocgenEvent('docgenerror', {
         ...statusResult,
-        errorMessage
+        errorMessage,
       });
     }
 
@@ -286,13 +331,12 @@ export default class DocgenProgressButton extends LightningElement {
 
     this.isSavingPreview = true;
     try {
-      const currentPreviewUrl = this.previewUrl;
       const currentDownloadUrl = this.downloadUrl;
       const result = await saveGeneratedDocument({
-        generatedDocumentId: this.generatedDocumentId
+        generatedDocumentId: this.generatedDocumentId,
       });
       this.applyStatus(result);
-      this.setSavedDownloadState(result, currentPreviewUrl, currentDownloadUrl);
+      this.setSavedDownloadState(result, currentDownloadUrl);
       this.showToast('Saved', this.successMessage, 'success');
       this.dispatchDocgenEvent('docgensave', result);
       this.dispatchDocgenEvent('docgensuccess', result);
@@ -302,7 +346,7 @@ export default class DocgenProgressButton extends LightningElement {
       this.dispatchDocgenEvent('docgenerror', {
         generatedDocumentId: this.generatedDocumentId,
         status: this.status,
-        errorMessage
+        errorMessage,
       });
     } finally {
       this.isSavingPreview = false;
@@ -318,7 +362,7 @@ export default class DocgenProgressButton extends LightningElement {
     this.isCancelingPreview = true;
     try {
       await cancelGeneratedDocument({
-        generatedDocumentId: canceledDocumentId
+        generatedDocumentId: canceledDocumentId,
       });
       this.clearPreviewState();
       this.generatedDocumentId = null;
@@ -327,7 +371,7 @@ export default class DocgenProgressButton extends LightningElement {
       this.showToast('Canceled', 'Generated document was discarded.', 'info');
       this.dispatchDocgenEvent('docgencancel', {
         generatedDocumentId: canceledDocumentId,
-        status: 'CANCELED'
+        status: 'CANCELED',
       });
     } catch (error) {
       const errorMessage = this.extractErrorMessage(error);
@@ -335,7 +379,7 @@ export default class DocgenProgressButton extends LightningElement {
       this.dispatchDocgenEvent('docgenerror', {
         generatedDocumentId: canceledDocumentId,
         status: this.status,
-        errorMessage
+        errorMessage,
       });
     } finally {
       this.isCancelingPreview = false;
@@ -343,8 +387,8 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   handleOpenPreview() {
-    if (this.downloadUrl) {
-      window.open(this.downloadUrl, '_blank');
+    if (this.openPreviewUrl) {
+      window.open(this.openPreviewUrl, '_blank');
     }
   }
 
@@ -364,7 +408,7 @@ export default class DocgenProgressButton extends LightningElement {
       generatedDocumentId: this.generatedDocumentId,
       status: this.status,
       progressValue: this.progressValue,
-      errorMessage
+      errorMessage,
     });
   }
 
@@ -399,28 +443,100 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   setPreviewState(statusResult) {
-    this.previewUrl = statusResult.previewUrl || statusResult.downloadUrl || null;
-    this.downloadUrl = statusResult.downloadUrl || this.previewUrl;
+    this.revokePreviewObjectUrl();
+    this.previewUrl = null;
+    this.fileRecordUrl = statusResult.previewUrl || statusResult.downloadUrl || null;
+    this.downloadUrl = statusResult.downloadUrl || this.fileRecordUrl;
     this.savedDownloadUrl = null;
-    this.canInlinePreview = Boolean(statusResult.canInlinePreview && statusResult.previewUrl);
+    this.canInlinePreview = false;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
+
+    if (this.shouldLoadPdfInlinePreview(statusResult)) {
+      this.loadPdfInlinePreview(this.generatedDocumentId);
+    }
   }
 
-  setSavedDownloadState(statusResult, previousPreviewUrl, previousDownloadUrl) {
-    this.savedDownloadUrl =
-      statusResult.previewUrl || previousPreviewUrl || statusResult.downloadUrl || previousDownloadUrl || null;
+  setSavedDownloadState(statusResult, previousDownloadUrl) {
+    this.savedDownloadUrl = statusResult.downloadUrl || previousDownloadUrl || null;
+    this.revokePreviewObjectUrl();
     this.previewUrl = null;
+    this.fileRecordUrl = statusResult.previewUrl || null;
     this.downloadUrl = statusResult.downloadUrl || previousDownloadUrl || null;
+    this.isLoadingInlinePreview = false;
     this.canInlinePreview = false;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
   }
 
   clearPreviewState() {
+    this.revokePreviewObjectUrl();
     this.previewUrl = null;
+    this.fileRecordUrl = null;
     this.downloadUrl = null;
     this.savedDownloadUrl = null;
+    this.isLoadingInlinePreview = false;
     this.canInlinePreview = false;
     this.outputFormatLabel = null;
+  }
+
+  shouldLoadPdfInlinePreview(statusResult) {
+    return Boolean(
+      statusResult?.isPreviewPending &&
+        statusResult?.canInlinePreview &&
+        this.normalizeOutputFormat(statusResult?.outputFormat || this.outputFormat) === 'PDF' &&
+        this.generatedDocumentId
+    );
+  }
+
+  async loadPdfInlinePreview(generatedDocumentId) {
+    this.isLoadingInlinePreview = true;
+
+    try {
+      const content = await getPdfPreviewContent({ generatedDocumentId });
+      if (generatedDocumentId !== this.generatedDocumentId || this.status !== 'SUCCEEDED') {
+        return;
+      }
+
+      const objectUrl = this.createPdfObjectUrl(content?.base64Data, content?.contentType);
+      this.revokePreviewObjectUrl();
+      this.previewObjectUrl = objectUrl;
+      this.previewUrl = this.buildPdfPreviewUrl(objectUrl);
+      this.canInlinePreview = true;
+    } catch {
+      this.canInlinePreview = false;
+    } finally {
+      if (generatedDocumentId === this.generatedDocumentId) {
+        this.isLoadingInlinePreview = false;
+      }
+    }
+  }
+
+  createPdfObjectUrl(base64Data, contentType) {
+    if (!base64Data) {
+      throw new Error('PDF preview data was empty.');
+    }
+    if (!window.URL || !window.URL.createObjectURL) {
+      throw new Error('Browser does not support inline PDF preview.');
+    }
+
+    const byteCharacters = window.atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i += 1) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: contentType || 'application/pdf' });
+    return window.URL.createObjectURL(blob);
+  }
+
+  buildPdfPreviewUrl(objectUrl) {
+    return `${objectUrl}${PDF_INLINE_PREVIEW_FRAGMENT}`;
+  }
+
+  revokePreviewObjectUrl() {
+    if (this.previewObjectUrl) {
+      window.URL.revokeObjectURL(this.previewObjectUrl);
+      this.previewObjectUrl = null;
+    }
   }
 
   clearPollTimer() {
@@ -435,7 +551,7 @@ export default class DocgenProgressButton extends LightningElement {
       new ShowToastEvent({
         title,
         message,
-        variant
+        variant,
       })
     );
   }
@@ -445,7 +561,7 @@ export default class DocgenProgressButton extends LightningElement {
       new CustomEvent(name, {
         detail,
         bubbles: true,
-        composed: true
+        composed: true,
       })
     );
   }
