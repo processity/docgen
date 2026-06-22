@@ -85,11 +85,13 @@ private class CompositeDocgenDataProviderTest {
         Assert.isTrue(compositeData.containsKey('Account'), 'Should contain Account namespace');
         Assert.isTrue(compositeData.containsKey('Terms'), 'Should contain Terms namespace');
 
-        // Verify Account data structure
-        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
+        // Verify Account data structure exposes both direct fields and object wrapper
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.isNotNull(accountData, 'Account namespace data should not be null');
         Assert.areEqual('Acme Ltd', accountData.get('Name'), 'Should contain Account Name');
+        Assert.isTrue(accountData.containsKey('Account'), 'Should retain object wrapper for reused standalone templates');
+        Map<String, Object> wrappedAccountData = (Map<String, Object>) accountData.get('Account');
+        Assert.areEqual('Acme Ltd', wrappedAccountData.get('Name'), 'Wrapped Account should contain Account Name');
     }
 
     /**
@@ -137,13 +139,14 @@ private class CompositeDocgenDataProviderTest {
         );
         Test.stopTest();
 
-        // Then: Child relationships should be preserved
-        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
+        // Then: Child relationships should be preserved on direct and wrapped access paths
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.isTrue(accountData.containsKey('Contacts'), 'Should contain Contacts child relationship');
 
         List<Object> contactsList = (List<Object>) accountData.get('Contacts');
         Assert.areEqual(2, contactsList.size(), 'Should have 2 contacts');
+        Map<String, Object> wrappedAccountData = (Map<String, Object>) accountData.get('Account');
+        Assert.isTrue(wrappedAccountData.containsKey('Contacts'), 'Wrapped Account should contain Contacts child relationship');
     }
 
     /**
@@ -467,10 +470,11 @@ private class CompositeDocgenDataProviderTest {
         Assert.isTrue(compositeData.containsKey('Account'), 'Should contain Account namespace');
 
         // Verify Account data was populated (proves accountId was extracted)
-        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
         Assert.areEqual('Test Account', accountData.get('Name'), 'Account data should be populated');
         Assert.areEqual('San Francisco', accountData.get('BillingCity'), 'Account city should be populated');
+        Map<String, Object> wrappedAccountData = (Map<String, Object>) accountData.get('Account');
+        Assert.areEqual('Test Account', wrappedAccountData.get('Name'), 'Wrapped Account data should be populated');
     }
 
     /**
@@ -517,7 +521,6 @@ private class CompositeDocgenDataProviderTest {
         Test.stopTest();
 
         // Then: Formatted fields should use German formatting
-        // Note: unwrapSingleObjectData unwraps {"Account": {...}} to {...}, so accountData is the record itself
         Map<String, Object> accountData = (Map<String, Object>) compositeData.get('Account');
 
         String formattedRevenue = (String) accountData.get('AnnualRevenue__formatted');

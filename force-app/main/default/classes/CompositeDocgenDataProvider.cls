@@ -88,9 +88,10 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                 timezone
             );
 
-            // Unwrap single-object data to avoid double nesting
-            // E.g., if namespaceData = {"Account": {...}}, extract the inner object
-            // This allows templates to use {{Account.Name}} instead of {{Account.Account.Name}}
+            // Build section data for this namespace.
+            // Single-record SOQL data is exposed in both convenient forms:
+            // direct fields for composite-native templates and object wrapper for
+            // standalone templates reused inside a concatenated composite.
             Object unwrappedData = unwrapSingleObjectData(namespaceData);
 
             // Store in namespace key
@@ -275,17 +276,15 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
     }
 
     /**
-     * Unwrap single-object data to avoid double nesting in composite templates
+     * Unwrap single-object data while retaining the original object wrapper.
      *
-     * SOQL providers return data like: {"Account": {...}}
-     * When stored in namespace "Account", this would create: {"Account": {"Account": {...}}}
-     * This method extracts the inner object for cleaner template syntax
+     * SOQL providers return data like {"Account": {...}}. For composite-native
+     * templates we expose the inner fields directly, so templates can use
+     * {{Name}} inside that section. For existing standalone templates reused in
+     * a concatenated composite, we also retain Account as a nested key, so
+     * {{Account.Name}} and exec blocks that read Account continue to work.
      *
-     * EXCEPTION: Does not unwrap {"records": [...]} structure used by MultiRecordSOQLProvider
-     * Templates need access to the "records" key for FOR loop iteration
-     *
-     * @param namespaceData Data returned from provider.buildData()
-     * @return Unwrapped data (the inner object if single-key map, otherwise original map)
+     * EXCEPTION: Does not unwrap {"records": [...]} used by multi-record SOQL.
      */
     private static Object unwrapSingleObjectData(Map<String, Object> namespaceData) {
         // If the map has exactly one key, check if it should be unwrapped
@@ -299,8 +298,14 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                 return namespaceData;
             }
 
-            // Get the first (and only) value
+            // Get the first value, expose its fields directly, and keep a copy
+            // under the original object key for standalone-template reuse.
             for (Object value : namespaceData.values()) {
+                if (value instanceof Map<String, Object>) {
+                    Map<String, Object> directData = new Map<String, Object>((Map<String, Object>) value);
+                    directData.put(singleKey, value);
+                    return directData;
+                }
                 return value;
             }
         }
