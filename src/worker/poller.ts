@@ -3,7 +3,7 @@ import { loadConfig } from '../config';
 import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
-import { mergeTemplate, concatenateDocx } from '../templates';
+import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templates';
 import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import {
@@ -431,7 +431,9 @@ export class PollerService {
               throw new MissingNamespaceError(templateRef.namespace, { correlationId: doc.CorrelationId__c });
             }
 
-            // Merge template with its namespace data
+            const sectionOptions = optionsWithoutWatermark(request.options);
+
+            // Merge template with its namespace data. Composite watermark is applied once after concatenation.
             const mergedSection = await mergeTemplate(
               templateBuffer,
               namespaceData,
@@ -439,7 +441,7 @@ export class PollerService {
                 locale: request.locale,
                 timezone: request.timezone,
                 imageAllowlist: getConfig().imageAllowlist,
-                ...request.options,
+                ...sectionOptions,
               }
             );
 
@@ -453,6 +455,11 @@ export class PollerService {
           // Concatenate all sections
           log.debug({ sectionCount: sections.length }, 'Concatenating document sections');
           mergedDocx = await concatenateDocx(sections, doc.CorrelationId__c);
+          mergedDocx = await applyWatermarkToDocx(
+            mergedDocx,
+            request.options.watermarkText,
+            request.options.watermarkStyle
+          );
         }
       } else {
         // SINGLE-TEMPLATE DOCUMENT PROCESSING (existing logic)
@@ -717,6 +724,13 @@ function reconstructRequestJson(doc: QueuedDocument): string {
     .map((fieldName) => doc[fieldName])
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join('');
+}
+
+function optionsWithoutWatermark(options: DocgenRequest['options']): DocgenRequest['options'] {
+  const nextOptions = { ...options };
+  delete nextOptions.watermarkText;
+  delete nextOptions.watermarkStyle;
+  return nextOptions;
 }
 
 // Singleton instance

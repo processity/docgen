@@ -124,7 +124,8 @@ private class CompositeDocumentTest {
 
         // Then: Default values applied
         Composite_Document__c inserted = [
-            SELECT IsActive__c, StoreMergedDocx__c, ReturnDocxToBrowser__c
+            SELECT IsActive__c, StoreMergedDocx__c, ReturnDocxToBrowser__c,
+                   Output_File_Name_Field__c, Watermark_Style__c
             FROM Composite_Document__c
             WHERE Id = :composite.Id
         ];
@@ -132,6 +133,12 @@ private class CompositeDocumentTest {
         Assert.areEqual(true, inserted.IsActive__c, 'IsActive__c should default to true');
         Assert.areEqual(false, inserted.StoreMergedDocx__c, 'StoreMergedDocx__c should default to false');
         Assert.areEqual(false, inserted.ReturnDocxToBrowser__c, 'ReturnDocxToBrowser__c should default to false');
+        Assert.isNull(inserted.Output_File_Name_Field__c, 'Output file name field path should be blank by default');
+        Assert.areEqual(
+            'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080',
+            inserted.Watermark_Style__c,
+            'Watermark style should default to the configured client style'
+        );
     }
 
     /**

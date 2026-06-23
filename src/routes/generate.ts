@@ -4,7 +4,7 @@ import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
 import { getSalesforceAuth } from '../sf/auth';
 import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
-import { mergeTemplate, concatenateDocx } from '../templates';
+import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templates';
 import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
@@ -302,7 +302,9 @@ async function generateHandler(
             throw new MissingNamespaceError(templateRef.namespace, { correlationId });
           }
 
-          // Merge template with namespace data
+          const sectionOptions = optionsWithoutWatermark(request.body.options);
+
+          // Merge template with namespace data. Composite watermark is applied once after concatenation.
           const mergedSection = await mergeTemplate(
             templateBuffer,
             namespaceData,
@@ -310,7 +312,7 @@ async function generateHandler(
               locale: request.body.locale,
               timezone: request.body.timezone,
               imageAllowlist: config.imageAllowlist,
-              ...request.body.options,
+              ...sectionOptions,
             }
           );
 
@@ -325,6 +327,11 @@ async function generateHandler(
         // Concatenate all sections
         request.log.info({ correlationId, sectionCount: sections.length }, 'Concatenating template sections');
         mergedDocx = await concatenateDocx(sections, correlationId);
+        mergedDocx = await applyWatermarkToDocx(
+          mergedDocx,
+          request.body.options.watermarkText,
+          request.body.options.watermarkStyle
+        );
       }
     } else {
       // SINGLE-TEMPLATE PATH (backward compatible)
@@ -547,6 +554,13 @@ async function generateHandler(
     // Re-throw DocgenError - global error handler will format the response
     throw docgenError;
   }
+}
+
+function optionsWithoutWatermark(options: DocgenRequest['options']): DocgenRequest['options'] {
+  const nextOptions = { ...options };
+  delete nextOptions.watermarkText;
+  delete nextOptions.watermarkStyle;
+  return nextOptions;
 }
 
 /**

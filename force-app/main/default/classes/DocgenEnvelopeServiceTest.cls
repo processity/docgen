@@ -1185,6 +1185,64 @@ private class DocgenEnvelopeServiceTest {
     }
 
     @isTest
+    static void testBuildForCompositeOwnTemplateIncludesWatermarkOptions() {
+        // Given: Own Template composite with composite-level watermark settings
+        Account acc = DocgenTestDataFactory.createAccount('Own Template Watermark Account');
+
+        Docgen_Template__c accountTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Own Template Watermark Data',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000126AAA',
+            false,
+            false,
+            false
+        );
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Own Template',
+            TemplateContentVersionId__c = '068000000000127AAA',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true,
+            Watermark_Text__c = 'DRAFT',
+            Watermark_Condition_Field__c = 'Account.Name',
+            Watermark_Style__c = 'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080'
+        );
+        insert composite;
+
+        insert new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = accountTemplate.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        // When: Building envelope
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            new Map<String, Id>{ 'accountId' => acc.Id },
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Composite watermark settings should be sent to the backend
+        Assert.areEqual('DRAFT', env.options.get('watermarkText'), 'Watermark text should be included');
+        Assert.areEqual(
+            composite.Watermark_Style__c,
+            env.options.get('watermarkStyle'),
+            'Watermark style should be included'
+        );
+    }
+
+    @isTest
     static void testBuildForCompositeConcatenateStrategy() {
         // Given: Composite with "Concatenate Templates" strategy
         Account acc = DocgenTestDataFactory.createAccount('Concat Account');
@@ -1291,6 +1349,85 @@ private class DocgenEnvelopeServiceTest {
         Assert.areEqual('068000000000030AAA', env.templates[2].templateId, 'Third template should be sequence 30');
         Assert.areEqual('Section3', env.templates[2].namespace, 'Third namespace should be Section3');
         Assert.areEqual(30, env.templates[2].sequence, 'Third sequence should be 30');
+    }
+
+    @isTest
+    static void testBuildForCompositeConcatenateIncludesWatermarkOptions() {
+        // Given: Concatenate composite with multiple templates and composite-level watermark settings
+        Account acc = DocgenTestDataFactory.createAccount('Concat Watermark Account');
+
+        Docgen_Template__c template1 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Concat Watermark Section 1',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000128AAA',
+            false,
+            false,
+            false
+        );
+
+        Docgen_Template__c template2 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Concat Watermark Section 2',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000129AAA',
+            false,
+            false,
+            false
+        );
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Concatenate Templates',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = true,
+            PrimaryParent__c = 'Account',
+            IsActive__c = true,
+            Watermark_Text__c = 'DRAFT',
+            Watermark_Condition_Field__c = 'Account.Name',
+            Watermark_Style__c = 'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080'
+        );
+        insert composite;
+
+        insert new List<Composite_Document_Template__c>{
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = template1.Id,
+                Namespace__c = 'Account',
+                Sequence__c = 10,
+                IsActive__c = true
+            ),
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = template2.Id,
+                Namespace__c = 'Terms',
+                Sequence__c = 20,
+                IsActive__c = true
+            )
+        };
+
+        // When: Building envelope
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            new Map<String, Id>{ 'accountId' => acc.Id },
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Composite watermark settings should be sent once at request-options level
+        Assert.areEqual('DRAFT', env.options.get('watermarkText'), 'Watermark text should be included');
+        Assert.areEqual(
+            composite.Watermark_Style__c,
+            env.options.get('watermarkStyle'),
+            'Watermark style should be included'
+        );
+        Assert.areEqual(2, env.templates.size(), 'Concatenate strategy should still include both child templates');
     }
 
     @isTest
@@ -1580,6 +1717,60 @@ private class DocgenEnvelopeServiceTest {
         Assert.isTrue(
             env.outputFileName.length() > 30,
             'Filename should be long enough to contain Composite_ + name + timestamp + .pdf'
+        );
+    }
+
+    /**
+     * Test: Composite output file name can be resolved from a configured envelope data path.
+     */
+    @isTest
+    static void testCompositeOutputFileNameFromConfiguredField() {
+        Account acc = DocgenTestDataFactory.createAccount('Composite Contract Name');
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Composite Filename Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000040AAA',
+            false,
+            true,
+            false
+        );
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Composite with configured output file name',
+            Template_Strategy__c = 'Concatenate Templates',
+            PrimaryParent__c = 'Account',
+            Output_File_Name_Field__c = 'Account.Name',
+            IsActive__c = true
+        );
+        insert composite;
+
+        insert new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'Account',
+            Sequence__c = 10,
+            IsActive__c = true
+        );
+
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            recordIds,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(
+            'Composite Contract Name.pdf',
+            env.outputFileName,
+            'Configured composite file name should resolve from namespaced data and enforce extension'
         );
     }
 }

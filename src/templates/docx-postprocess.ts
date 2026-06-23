@@ -143,6 +143,25 @@ export async function postProcessMergedDocx(
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
+export async function applyWatermarkToDocx(
+  docx: Buffer,
+  watermarkText?: string | null,
+  watermarkStyle?: string | null
+): Promise<Buffer> {
+  const text = normalizeOptionText(watermarkText);
+  if (!text) {
+    return docx;
+  }
+
+  const zip = await tryLoadDocx(docx);
+  if (!zip) {
+    return docx;
+  }
+
+  await addWatermark(zip, text, watermarkStyle);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
 function isTemplateXmlPath(path: string): boolean {
   return /^word\/(?:document|header\d+|footer\d+)\.xml$/.test(path);
 }

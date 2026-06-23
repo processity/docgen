@@ -156,6 +156,33 @@ describe('concatenateDocx', () => {
       expect(documentXml).toContain('Formatted Content');
       expect(documentXml).toContain('More formatted content');
     });
+
+    it('should preserve source page margins in section breaks', async () => {
+      const docx1 = await addSectionProperties(
+        await createTestDocxWithContent('Narrow Margin Section'),
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr>'
+      );
+      const docx2 = await addSectionProperties(
+        await createTestDocxWithContent('Wide Margin Section'),
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
+      );
+
+      const sections: TemplateSection[] = [
+        { buffer: docx1, sequence: 1, namespace: 'Narrow' },
+        { buffer: docx2, sequence: 2, namespace: 'Wide' }
+      ];
+
+      const result = await concatenateDocx(sections, mockCorrelationId);
+      const zip = await JSZip.loadAsync(result);
+      const documentXml = await zip.file('word/document.xml')!.async('string');
+
+      expect(documentXml).toContain('<w:type w:val="nextPage"/>');
+      expect(documentXml).toContain('<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>');
+      expect(documentXml).toContain('<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>');
+      expect(documentXml.indexOf('<w:pgMar w:top="720"')).toBeLessThan(
+        documentXml.indexOf('Wide Margin Section')
+      );
+    });
   });
 
   describe('correlation ID logging', () => {
@@ -182,3 +209,14 @@ describe('concatenateDocx', () => {
     });
   });
 });
+
+async function addSectionProperties(buffer: Buffer, sectionProperties: string): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  zip.file('word/document.xml', documentXml.replace('</w:body>', `${sectionProperties}</w:body>`));
+  return zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+}

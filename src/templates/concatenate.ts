@@ -172,41 +172,20 @@ async function combineDocumentBodies(
     }
 
     let bodyContent = bodyMatch[1];
+    const sectionProperties = extractTrailingSectionProperties(bodyContent);
 
-    // For all sections except the last, we need to add a section break before the closing </w:body>
-    // This requires modifying the last paragraph to include section properties
+    // For all sections except the last, carry forward the source section properties
+    // into a next-page section break. This preserves source page size/margins.
     if (!isLastSection) {
-      // Remove any existing <w:sectPr> at the end of the body (it will be inside the last <w:p>)
-      // We'll add our own section break
-
-      // Find the last paragraph in this body
-      const paragraphMatches = bodyContent.match(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g);
-
-      if (paragraphMatches && paragraphMatches.length > 0) {
-        const lastParagraph = paragraphMatches[paragraphMatches.length - 1];
-
-        // Check if this paragraph already has <w:sectPr> inside <w:pPr>
-        const hasSectPr = lastParagraph.includes('<w:sectPr');
-
-        if (!hasSectPr) {
-          // Add section properties to create a section break
-          // Insert <w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr> after <w:p>
-          const modifiedLastParagraph = lastParagraph.replace(
-            /(<w:p(?:\s[^>]*)?>)/,
-            '$1<w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr>'
-          );
-
-          // Replace the last paragraph in bodyContent
-          bodyContent = bodyContent.replace(lastParagraph, modifiedLastParagraph);
-        }
-      } else {
-        // No paragraphs found, add a section break paragraph
-        bodyContent += '<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p>';
+      if (sectionProperties) {
+        bodyContent = bodyContent.slice(0, sectionProperties.startIndex);
       }
+
+      bodyContent += createSectionBreakParagraph(sectionProperties?.xml);
 
       logger.debug(
         { correlationId, namespace: section.namespace },
-        'Added section break to section'
+        'Added section break to section with preserved section properties'
       );
     }
 
@@ -231,6 +210,39 @@ async function combineDocumentBodies(
   );
 
   return combinedXml;
+}
+
+function extractTrailingSectionProperties(
+  bodyContent: string
+): { xml: string; startIndex: number } | null {
+  const match = bodyContent.match(/\s*(<w:sectPr\b[\s\S]*?<\/w:sectPr>)\s*$/);
+  if (!match || match.index === undefined) {
+    return null;
+  }
+
+  return {
+    xml: match[1],
+    startIndex: match.index,
+  };
+}
+
+function createSectionBreakParagraph(sectionProperties?: string): string {
+  const sectPr = ensureNextPageSectionType(
+    sectionProperties ?? '<w:sectPr><w:type w:val="nextPage"/></w:sectPr>'
+  );
+  return `<w:p><w:pPr>${sectPr}</w:pPr></w:p>`;
+}
+
+function ensureNextPageSectionType(sectionProperties: string): string {
+  if (/<w:type\b[\s\S]*?\/>/.test(sectionProperties)) {
+    return sectionProperties.replace(/<w:type\b[\s\S]*?\/>/, '<w:type w:val="nextPage"/>');
+  }
+
+  if (/<w:type\b[\s\S]*?<\/w:type>/.test(sectionProperties)) {
+    return sectionProperties.replace(/<w:type\b[\s\S]*?<\/w:type>/, '<w:type w:val="nextPage"/>');
+  }
+
+  return sectionProperties.replace(/(<w:sectPr\b[^>]*>)/, '$1<w:type w:val="nextPage"/>');
 }
 
 /**

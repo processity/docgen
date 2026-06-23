@@ -197,6 +197,33 @@ private class StandardSOQLProviderTest {
     }
 
     @isTest
+    static void testBuildDataDedupesDuplicateTopLevelFields() {
+        // Given: A template whose SOQL repeats top-level fields
+        Account acc = DocgenTestDataFactory.createAccount('Duplicate Field Account');
+
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Duplicate Field Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name, Id, BillingCity, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000099AAA',
+            false,
+            false,
+            false
+        );
+
+        // When: Building data
+        StandardSOQLProvider provider = new StandardSOQLProvider();
+        Map<String, Object> data = provider.buildData(acc.Id, template, 'en-GB', 'Europe/London');
+
+        // Then: The duplicate selected fields should not make the dynamic query fail
+        Map<String, Object> accountData = (Map<String, Object>) data.get('Account');
+        Assert.areEqual(acc.Id, accountData.get('Id'), 'Account Id should be returned');
+        Assert.areEqual('Duplicate Field Account', accountData.get('Name'), 'Account Name should be returned');
+    }
+
+    @isTest
     static void testBuildDataWithInvalidSOQL() {
         // Given: A template with invalid SOQL
         Account acc = DocgenTestDataFactory.createAccount();
@@ -577,6 +604,9 @@ private class StandardSOQLProviderTest {
 
         // Create a product for line items
         Product2 prod = new Product2(Name = 'Test Product', ProductCode = 'TP001', IsActive = true);
+        if (Product2.SObjectType.getDescribe().fields.getMap().containsKey('Clause_Product_Type__c')) {
+            prod.put('Clause_Product_Type__c', 'N/A');
+        }
         insert prod;
 
         // Get standard pricebook

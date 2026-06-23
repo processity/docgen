@@ -28,7 +28,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
         }
 
         // Safely bind :recordId if author used it in the template
-        String soql = bindRecordId(template.SOQL__c, recordId);
+        String soql = removeDuplicateTopLevelSelectItems(bindRecordId(template.SOQL__c, recordId));
 
         // Execute query
         List<SObject> results;
@@ -273,6 +273,59 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
 
         items.add(selectClause.substring(itemStart));
         return items;
+    }
+
+    @TestVisible
+    private static String removeDuplicateTopLevelSelectItems(String soql) {
+        if (String.isBlank(soql)) return soql;
+
+        String lower = soql.toLowerCase();
+        Integer selectIndex = lower.indexOf('select');
+        if (selectIndex < 0) return soql;
+
+        Integer selectStart = selectIndex + 6;
+        Integer fromIndex = findTopLevelFromIndex(soql, selectStart);
+        if (fromIndex < 0) return soql;
+
+        List<String> selectedItems = splitTopLevelSelectItems(soql.substring(selectStart, fromIndex));
+        Set<String> seenDedupeKeys = new Set<String>();
+        List<String> uniqueItems = new List<String>();
+        Boolean changed = false;
+
+        for (String item : selectedItems) {
+            String trimmedItem = item == null ? null : item.trim();
+            if (String.isBlank(trimmedItem)) {
+                continue;
+            }
+
+            String dedupeKey = getDedupeKeyForSelectItem(trimmedItem);
+            if (dedupeKey != null) {
+                if (seenDedupeKeys.contains(dedupeKey)) {
+                    changed = true;
+                    continue;
+                }
+                seenDedupeKeys.add(dedupeKey);
+            }
+
+            uniqueItems.add(trimmedItem);
+        }
+
+        if (!changed || uniqueItems.isEmpty()) {
+            return soql;
+        }
+
+        return soql.substring(0, selectStart) + ' ' + String.join(uniqueItems, ', ') + ' ' + soql.substring(fromIndex);
+    }
+
+    private static String getDedupeKeyForSelectItem(String selectItem) {
+        if (String.isBlank(selectItem)) return null;
+
+        String lower = selectItem.toLowerCase();
+        if (selectItem.startsWith('(') || selectItem.contains('(') || lower.startsWith('typeof ')) {
+            return null;
+        }
+
+        return lower.replaceAll('\\s+', '');
     }
 
     /**

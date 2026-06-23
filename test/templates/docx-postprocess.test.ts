@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { applyWatermarkToDocx } from '../../src/templates/docx-postprocess';
 import { mergeTemplate } from '../../src/templates/merge';
 import type { MergeOptions } from '../../src/types';
 import { createTestDocxFromBodyXml, readDocxXml } from '../helpers/test-docx';
@@ -100,6 +101,25 @@ describe('DOCX template post-processing', () => {
     expect(headerXml).toContain('rotation:330');
     expect(headerXml).toContain('fillcolor="#112233"');
     expect(headerXml).toContain('font-family:&quot;Arial&quot;');
+  });
+
+  it('can apply a watermark to an already merged DOCX', async () => {
+    const docx = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>Composite output</w:t></w:r></w:p>
+    `);
+
+    const result = await applyWatermarkToDocx(
+      docx,
+      'COMPOSITE',
+      'Font: Arial\nWidth: 400\nHeight: 60\nRotation: -30\nColor code: #112233'
+    );
+
+    const headerXml = await readDocxXml(result, 'word/header1.xml');
+    expect(headerXml).toContain('string="COMPOSITE"');
+    expect(headerXml).toContain('width:400pt');
+    expect(headerXml).toContain('height:60pt');
+    expect(headerXml).toContain('rotation:330');
+    expect(headerXml).toContain('fillcolor="#112233"');
   });
 
   it('removes table rows whose simple field paths resolve blank', async () => {

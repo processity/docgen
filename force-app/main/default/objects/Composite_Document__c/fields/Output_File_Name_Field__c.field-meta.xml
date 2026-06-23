@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Output_File_Name_Field__c</fullName>
+    <description>Dot-delimited path in composite envelope data to use as the output file name. For composites with multiple namespaces, use a namespace-qualified path such as Quote.Conga_Offer_FileName__c. If blank or unresolved, Docgen uses the default timestamp file name.</description>
+    <externalId>false</externalId>
+    <label>Output File Name Field</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

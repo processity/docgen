@@ -422,6 +422,14 @@ public with sharing class DocgenEnvelopeService {
             timezone
         );
         env.options.put('readOnlyWord', getReadOnlyWordOptionFromData(env.data));
+        String watermarkText = resolveWatermarkText(composite, env.data, null);
+        if (String.isNotBlank(watermarkText)) {
+            env.options.put('watermarkText', watermarkText);
+            String watermarkStyle = getOptionalString(composite, 'Watermark_Style__c');
+            if (String.isNotBlank(watermarkStyle)) {
+                env.options.put('watermarkStyle', watermarkStyle.trim());
+            }
+        }
 
         // Handle template strategy
         if (composite.Template_Strategy__c == 'Own Template') {
@@ -438,7 +446,7 @@ public with sharing class DocgenEnvelopeService {
         env.parents = extractParentIdsFromCompositeData(env.data);
 
         // Generate output filename
-        env.outputFileName = generateCompositeFileName(composite, effectiveOutputFormat);
+        env.outputFileName = generateCompositeFileName(composite, env.data, effectiveOutputFormat);
 
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
@@ -449,7 +457,7 @@ public with sharing class DocgenEnvelopeService {
             effectiveOutputFormat,
             recordIdsJson,
             dataJson,
-            null,
+            getCompositeOutputFileNameForHash(composite, env.outputFileName),
             optionsJson
         );
 
@@ -464,7 +472,8 @@ public with sharing class DocgenEnvelopeService {
         List<Composite_Document__c> composites = [
             SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
                    StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   Default_Output_Format__c
+                   Default_Output_Format__c, Output_File_Name_Field__c, Watermark_Text__c,
+                   Watermark_Condition_Field__c, Watermark_Style__c
             FROM Composite_Document__c
             WHERE Id = :compositeDocId
             LIMIT 1
@@ -631,13 +640,32 @@ public with sharing class DocgenEnvelopeService {
     @TestVisible
     private static String generateCompositeFileName(
         Composite_Document__c composite,
+        Map<String, Object> data,
         String outputFormat
     ) {
-        String extension = outputFormat.toLowerCase();
+        String configuredPath = getOptionalString(composite, 'Output_File_Name_Field__c');
+        if (String.isNotBlank(configuredPath)) {
+            Object configuredValue = resolveSimpleFieldPath(data, configuredPath, null);
+            if (configuredValue != null) {
+                String configuredFileName = sanitizeFileName(String.valueOf(configuredValue));
+                if (String.isNotBlank(configuredFileName)) {
+                    return enforceOutputExtension(configuredFileName, outputFormat);
+                }
+            }
+        }
+
+        String extension = getOutputExtension(outputFormat);
         String timestamp = Datetime.now().format('yyyyMMdd_HHmmss');
         String sanitizedName = composite.Name.replaceAll('[^a-zA-Z0-9]', '_');
 
         return 'Composite_' + sanitizedName + '_' + timestamp + '.' + extension;
+    }
+
+    private static String getCompositeOutputFileNameForHash(Composite_Document__c composite, String outputFileName) {
+        if (composite != null && String.isNotBlank(getOptionalString(composite, 'Output_File_Name_Field__c'))) {
+            return outputFileName;
+        }
+        return null;
     }
 
     private static String generateTimestampFileName(String objectType, String templateName, String outputFormat) {
@@ -748,19 +776,21 @@ public with sharing class DocgenEnvelopeService {
         return outputFormat.trim().toLowerCase();
     }
 
-    private static String resolveWatermarkText(Docgen_Template__c template, Map<String, Object> data, String primaryObjectName) {
-        if (template == null || String.isBlank(template.Watermark_Text__c)) {
+    private static String resolveWatermarkText(SObject config, Map<String, Object> data, String primaryObjectName) {
+        String watermarkText = getOptionalString(config, 'Watermark_Text__c');
+        if (String.isBlank(watermarkText)) {
             return null;
         }
 
-        if (String.isNotBlank(template.Watermark_Condition_Field__c)) {
-            Object conditionValue = resolveSimpleFieldPath(data, template.Watermark_Condition_Field__c, primaryObjectName);
+        String conditionPath = getOptionalString(config, 'Watermark_Condition_Field__c');
+        if (String.isNotBlank(conditionPath)) {
+            Object conditionValue = resolveSimpleFieldPath(data, conditionPath, primaryObjectName);
             if (!isTruthy(conditionValue)) {
                 return null;
             }
         }
 
-        return template.Watermark_Text__c.trim();
+        return watermarkText.trim();
     }
 
     private static String getOptionalString(SObject record, String fieldApiName) {
