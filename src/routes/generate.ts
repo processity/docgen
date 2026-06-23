@@ -109,6 +109,16 @@ const docgenRequestSchema = {
           type: 'boolean',
           description: 'Whether to return DOCX URL instead of PDF (interactive mode)',
         },
+        watermarkText: {
+          type: 'string',
+          nullable: true,
+          description: 'Optional watermark text to apply to generated DOCX/PDF output',
+        },
+        watermarkStyle: {
+          type: 'string',
+          nullable: true,
+          description: 'Optional key/value watermark style lines: Font, Width, Height, Rotation, Color code',
+        },
       },
     },
     data: {

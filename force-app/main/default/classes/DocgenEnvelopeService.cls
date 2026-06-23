@@ -106,6 +106,10 @@ public with sharing class DocgenEnvelopeService {
         String watermarkText = resolveWatermarkText(template, env.data, objectType);
         if (String.isNotBlank(watermarkText)) {
             env.options.put('watermarkText', watermarkText);
+            String watermarkStyle = getOptionalString(template, 'Watermark_Style__c');
+            if (String.isNotBlank(watermarkStyle)) {
+                env.options.put('watermarkStyle', watermarkStyle.trim());
+            }
         }
 
         // Extract parent IDs
@@ -759,6 +763,20 @@ public with sharing class DocgenEnvelopeService {
         return template.Watermark_Text__c.trim();
     }
 
+    private static String getOptionalString(SObject record, String fieldApiName) {
+        if (record == null || String.isBlank(fieldApiName)) {
+            return null;
+        }
+
+        Map<String, Object> fields = record.getPopulatedFieldsAsMap();
+        if (!fields.containsKey(fieldApiName)) {
+            return null;
+        }
+
+        Object value = fields.get(fieldApiName);
+        return value == null ? null : String.valueOf(value);
+    }
+
     private static Boolean isTruthy(Object value) {
         Boolean booleanValue = toBoolean(value);
         if (booleanValue != null) {
@@ -790,7 +808,8 @@ public with sharing class DocgenEnvelopeService {
         if (cases.isEmpty()) {
             return false;
         }
-        return (Boolean) cases[0].get('Standard_Template__c');
+        Object standardTemplate = cases[0].get('Standard_Template__c');
+        return standardTemplate == null ? false : (Boolean) standardTemplate;
     }
 
     private static Boolean getReadOnlyWordOptionFromData(Map<String, Object> data) {

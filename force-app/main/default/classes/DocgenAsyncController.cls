@@ -218,7 +218,8 @@ public with sharing class DocgenAsyncController {
                 SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                        ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                        ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
+                       Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
+                       Default_Output_Format__c
                 FROM Docgen_Template__c
                 WHERE Id = :templateId
                 LIMIT 1
@@ -228,7 +229,8 @@ public with sharing class DocgenAsyncController {
                 SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                        ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
                        ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c, Default_Output_Format__c
+                       Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
+                       Default_Output_Format__c
                 FROM Docgen_Template__c
                 WHERE Name = :templateName
                 LIMIT 1

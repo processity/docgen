@@ -74,8 +74,32 @@ describe('DOCX template post-processing', () => {
     expect(headerXml).toContain('<v:shapetype id="_x0000_t136"');
     expect(headerXml).toContain('mso-position-horizontal:center');
     expect(headerXml).toContain('mso-position-vertical:center');
+    expect(headerXml).toContain('width:350pt');
+    expect(headerXml).toContain('height:50pt');
+    expect(headerXml).toContain('rotation:315');
+    expect(headerXml).toContain('fillcolor="#808080"');
+    expect(headerXml).toContain('font-family:&quot;Courier&quot;');
     expect(headerXml).toContain('<w10:wrap anchorx="margin" anchory="margin"/>');
     expect(headerXml).toContain('string="DRAFT"');
+  });
+
+  it('uses configured watermark style values when supplied', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Account.Name}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, {
+      ...baseOptions,
+      watermarkText: 'DRAFT',
+      watermarkStyle: 'Font: Arial\nWidth: 400\nHeight: 60\nRotation: -30\nColor code: #112233',
+    } as MergeOptions & { watermarkText: string; watermarkStyle: string });
+
+    const headerXml = await readDocxXml(result, 'word/header1.xml');
+    expect(headerXml).toContain('width:400pt');
+    expect(headerXml).toContain('height:60pt');
+    expect(headerXml).toContain('rotation:330');
+    expect(headerXml).toContain('fillcolor="#112233"');
+    expect(headerXml).toContain('font-family:&quot;Arial&quot;');
   });
 
   it('removes table rows whose simple field paths resolve blank', async () => {

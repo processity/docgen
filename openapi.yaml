@@ -589,6 +589,22 @@ components:
               description: |
                 (Interactive mode only) If true, return the DOCX download URL instead of PDF.
                 Ignored in batch mode.
+            watermarkText:
+              type: string
+              nullable: true
+              description: Optional watermark text to apply to generated DOCX/PDF output.
+            watermarkStyle:
+              type: string
+              nullable: true
+              description: |
+                Optional key/value watermark style lines. Supported keys: Font, Width, Height,
+                Rotation, Color code.
+              example: |-
+                Font: Courier
+                Width: 350
+                Height: 50
+                Rotation: -45
+                Color code: #808080
         data:
           type: object
           additionalProperties: true

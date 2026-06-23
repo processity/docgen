@@ -157,6 +157,8 @@ Generate a PDF, DOCX, or PPTX document from a Salesforce template.
   options?: {
     storeMergedDocx?: boolean;     // Store merged DOCX in Salesforce (default: false)
     returnDocxToBrowser?: boolean; // Return DOCX instead of PDF (default: false)
+    watermarkText?: string | null; // Optional watermark text
+    watermarkStyle?: string | null; // Optional key/value style lines for watermark rendering
   };
 
   // Parent record IDs for linking
@@ -207,6 +209,8 @@ Generate a PDF, DOCX, or PPTX document from a Salesforce template.
 | `timezone` | string | No | Timezone for date formatting (default: "UTC") |
 | `options.storeMergedDocx` | boolean | No | Store merged DOCX in addition to PDF (default: false) |
 | `options.returnDocxToBrowser` | boolean | No | Return DOCX URL instead of PDF (default: false) |
+| `options.watermarkText` | string | No | Optional watermark text |
+| `options.watermarkStyle` | string | No | Optional key/value style lines: Font, Width, Height, Rotation, Color code |
 | `parents` | object | No | Parent record IDs for ContentDocumentLink creation |
 | `data` | object | Yes | Template merge data (Salesforce field paths) |
 | `requestHash` | string | No | Idempotency key (auto-computed if not provided) |

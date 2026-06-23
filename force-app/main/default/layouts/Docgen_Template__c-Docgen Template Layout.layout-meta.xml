@@ -50,6 +50,10 @@
             </layoutItems>
             <layoutItems>
                 <behavior>Edit</behavior>
+                <field>Watermark_Style__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
                 <field>StoreMergedDocx__c</field>
             </layoutItems>
             <layoutItems>

@@ -39,6 +39,23 @@ type ExtendedMergeOptions = MergeOptions & {
   protect?: boolean;
   protection?: boolean | { enabled?: boolean; edit?: string };
   watermarkText?: string | null;
+  watermarkStyle?: string | null;
+};
+
+interface WatermarkStyle {
+  font: string;
+  width: number;
+  height: number;
+  rotation: number;
+  color: string;
+}
+
+const DEFAULT_WATERMARK_STYLE: WatermarkStyle = {
+  font: 'Courier',
+  width: 350,
+  height: 50,
+  rotation: -45,
+  color: '#808080',
 };
 
 export async function preprocessDocxTemplate(
@@ -120,7 +137,7 @@ export async function postProcessMergedDocx(
 
   const watermarkText = normalizeOptionText(extendedOptions.watermarkText);
   if (watermarkText) {
-    await addWatermark(zip, watermarkText);
+    await addWatermark(zip, watermarkText, extendedOptions.watermarkStyle);
   }
 
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -474,11 +491,16 @@ function getProtectionEditMode(options: ExtendedMergeOptions): string {
     : 'forms';
 }
 
-async function addWatermark(zip: JSZip, text: string): Promise<void> {
+async function addWatermark(
+  zip: JSZip,
+  text: string,
+  styleText?: string | null
+): Promise<void> {
+  const style = resolveWatermarkStyle(styleText);
   const headerPaths = Object.keys(zip.files).filter((path) => /^word\/header\d+\.xml$/.test(path));
 
   if (headerPaths.length === 0) {
-    const headerPath = await createWatermarkHeader(zip, text);
+    const headerPath = await createWatermarkHeader(zip, text, style);
     await attachHeaderToDocument(zip, headerPath);
     return;
   }
@@ -488,19 +510,24 @@ async function addWatermark(zip: JSZip, text: string): Promise<void> {
     if (!file) {
       continue;
     }
-    const headerXml = addWatermarkToHeaderXml(await file.async('string'), text);
+    const headerXml = addWatermarkToHeaderXml(await file.async('string'), text, style);
     zip.file(path, headerXml);
   }
 }
 
-async function createWatermarkHeader(zip: JSZip, text: string): Promise<string> {
+async function createWatermarkHeader(
+  zip: JSZip,
+  text: string,
+  style: WatermarkStyle
+): Promise<string> {
   const headerNumber = nextPartNumber(zip, /^word\/header(\d+)\.xml$/);
   const headerPath = `word/header${headerNumber}.xml`;
   zip.file(
     headerPath,
     addWatermarkToHeaderXml(
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:hdr>',
-      text
+      text,
+      style
     )
   );
   await ensureContentTypeOverride(zip, `/word/header${headerNumber}.xml`, HEADER_CONTENT_TYPE);
@@ -531,26 +558,104 @@ async function attachHeaderToDocument(zip: JSZip, headerPath: string): Promise<v
   zip.file(DOCUMENT_XML, documentXml);
 }
 
-function addWatermarkToHeaderXml(headerXml: string, text: string): string {
+function addWatermarkToHeaderXml(
+  headerXml: string,
+  text: string,
+  style: WatermarkStyle
+): string {
   let nextXml = ensureWordNamespace(headerXml, 'w:hdr');
   nextXml = ensureNamespace(nextXml, 'w:hdr', 'xmlns:v', 'urn:schemas-microsoft-com:vml');
   nextXml = ensureNamespace(nextXml, 'w:hdr', 'xmlns:o', 'urn:schemas-microsoft-com:office:office');
   nextXml = ensureNamespace(nextXml, 'w:hdr', 'xmlns:w10', 'urn:schemas-microsoft-com:office:word');
 
-  return nextXml.replace('</w:hdr>', `${watermarkParagraphXml(text)}</w:hdr>`);
+  return nextXml.replace('</w:hdr>', `${watermarkParagraphXml(text, style)}</w:hdr>`);
 }
 
-function watermarkParagraphXml(text: string): string {
+function watermarkParagraphXml(text: string, style: WatermarkStyle): string {
   const escapedText = escapeXmlAttribute(text);
-  return `<w:p><w:r><w:pict>${watermarkShapeTypeXml()}${watermarkShapeXml(escapedText)}</w:pict></w:r></w:p>`;
+  return `<w:p><w:r><w:pict>${watermarkShapeTypeXml()}${watermarkShapeXml(escapedText, style)}</w:pict></w:r></w:p>`;
 }
 
 function watermarkShapeTypeXml(): string {
   return '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>';
 }
 
-function watermarkShapeXml(escapedText: string): string {
-  return `<v:shape id="DocgenWatermark" o:spid="_x0000_s1025" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:527.85pt;height:131.95pt;rotation:315;z-index:251659264;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin;mso-wrap-edited:f" fillcolor="#C0C0C0" stroked="f"><v:fill opacity=".22"/><v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="${escapedText}"/><w10:wrap anchorx="margin" anchory="margin"/></v:shape>`;
+function watermarkShapeXml(escapedText: string, style: WatermarkStyle): string {
+  const width = formatWatermarkNumber(style.width);
+  const height = formatWatermarkNumber(style.height);
+  const rotation = formatWatermarkNumber(toVmlRotation(style.rotation));
+  const color = escapeXmlAttribute(style.color);
+  const font = escapeXmlAttribute(style.font);
+  return `<v:shape id="DocgenWatermark" o:spid="_x0000_s1025" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:${width}pt;height:${height}pt;rotation:${rotation};z-index:251659264;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin;mso-wrap-edited:f" fillcolor="${color}" stroked="f"><v:fill opacity=".22"/><v:textpath style="font-family:&quot;${font}&quot;;font-size:1pt" string="${escapedText}"/><w10:wrap anchorx="margin" anchory="margin"/></v:shape>`;
+}
+
+function resolveWatermarkStyle(styleText?: string | null): WatermarkStyle {
+  const style: WatermarkStyle = { ...DEFAULT_WATERMARK_STYLE };
+  const normalizedText = normalizeOptionText(styleText);
+  if (!normalizedText) {
+    return style;
+  }
+
+  for (const line of normalizedText.split(/\r?\n|;/)) {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = normalizeStyleKey(line.slice(0, separatorIndex));
+    const value = line.slice(separatorIndex + 1).trim();
+    if (!value) {
+      continue;
+    }
+
+    if (key === 'font' || key === 'fontfamily') {
+      style.font = normalizeFont(value, style.font);
+    } else if (key === 'width') {
+      style.width = normalizePositiveNumber(value, style.width);
+    } else if (key === 'height') {
+      style.height = normalizePositiveNumber(value, style.height);
+    } else if (key === 'rotation') {
+      style.rotation = normalizeNumber(value, style.rotation);
+    } else if (key === 'color' || key === 'colorcode' || key === 'fillcolor') {
+      style.color = normalizeColor(value, style.color);
+    }
+  }
+
+  return style;
+}
+
+function normalizeStyleKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeFont(value: string, fallback: string): string {
+  const normalized = value.trim().replace(/^["']|["']$/g, '');
+  return normalized || fallback;
+}
+
+function normalizePositiveNumber(value: string, fallback: number): number {
+  const normalized = normalizeNumber(value, fallback);
+  return normalized > 0 ? normalized : fallback;
+}
+
+function normalizeNumber(value: string, fallback: number): number {
+  const normalized = Number(value.trim().replace(/pt$/i, ''));
+  return Number.isFinite(normalized) ? normalized : fallback;
+}
+
+function normalizeColor(value: string, fallback: string): string {
+  const normalized = value.trim();
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized)
+    ? normalized.toUpperCase()
+    : fallback;
+}
+
+function toVmlRotation(rotation: number): number {
+  return ((rotation % 360) + 360) % 360;
+}
+
+function formatWatermarkNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
 }
 
 async function ensureContentTypeOverride(

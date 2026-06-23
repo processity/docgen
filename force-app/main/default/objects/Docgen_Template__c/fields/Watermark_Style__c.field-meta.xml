@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Watermark_Style__c</fullName>
+    <defaultValue>&quot;Font: Courier&quot; &amp; BR() &amp; &quot;Width: 350&quot; &amp; BR() &amp; &quot;Height: 50&quot; &amp; BR() &amp; &quot;Rotation: -45&quot; &amp; BR() &amp; &quot;Color code: #808080&quot;</defaultValue>
+    <description>Optional key/value style settings for generated watermarks. Supported keys: Font, Width, Height, Rotation, Color code.</description>
+    <externalId>false</externalId>
+    <label>Watermark Style</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>TextArea</type>
+    <unique>false</unique>
+</CustomField>

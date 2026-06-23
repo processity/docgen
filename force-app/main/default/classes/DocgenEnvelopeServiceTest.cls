@@ -102,6 +102,56 @@ private class DocgenEnvelopeServiceTest {
     }
 
     @isTest
+    static void testBuildEnvelopeIncludesWatermarkStyleWhenWatermarkApplies() {
+        // Given: A template with watermark text and explicit style
+        Account acc = DocgenTestDataFactory.createAccount('Watermark Account');
+
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Watermark Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000051AAA',
+            false,
+            false,
+            false
+        );
+        template.Watermark_Text__c = 'DRAFT';
+        template.Watermark_Style__c = 'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080';
+        update template;
+
+        template = [
+            SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
+                   ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
+                   Default_Output_Format__c
+            FROM Docgen_Template__c
+            WHERE Id = :template.Id
+        ];
+
+        // When: Building envelope
+        Test.startTest();
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            acc.Id,
+            template,
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        // Then: Watermark style should be sent to the backend alongside the watermark text
+        Assert.areEqual('DRAFT', env.options.get('watermarkText'), 'Watermark text should be included');
+        Assert.areEqual(
+            template.Watermark_Style__c,
+            env.options.get('watermarkStyle'),
+            'Watermark style should be included'
+        );
+    }
+
+    @isTest
     static void testBuildEnvelopeWithOpportunity() {
         // Given: An Opportunity with Account
         Account acc = DocgenTestDataFactory.createAccount('Test Account');

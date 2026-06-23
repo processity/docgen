@@ -58,6 +58,7 @@ export interface DocgenOptions {
   returnDocxToBrowser: boolean;
   readOnlyWord?: boolean;
   watermarkText?: string | null;
+  watermarkStyle?: string | null;
 }
 
 export type DocgenOutputFormat = 'PDF' | 'DOCX' | 'PPTX';
@@ -228,6 +229,7 @@ export interface MergeOptions {
   imageAllowlist?: string[];
   readOnlyWord?: boolean;
   watermarkText?: string | null;
+  watermarkStyle?: string | null;
 }
 
 /**

@@ -246,6 +246,11 @@
         <field>Docgen_Template__c.Watermark_Condition_Field__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Docgen_Template__c.Watermark_Style__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 
     <!-- Field Permissions for Composite_Document__c -->
     <fieldPermissions>
