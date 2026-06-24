@@ -113,6 +113,125 @@ private class DocgenAsyncControllerTest {
     }
 
     @IsTest
+    static void testStartCompositeGenerationCreatesQueuedDocument() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        String recordIds = JSON.serialize(new Map<String, String>{
+            'accountId' => String.valueOf(scenario.testRecordId)
+        });
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'PDF',
+            false
+        );
+        Test.stopTest();
+
+        Assert.isNotNull(result.generatedDocumentId, 'Generated document ID should be returned');
+        Assert.areEqual('QUEUED', result.status, 'Composite document should be queued for worker processing');
+        Assert.areEqual('PDF', result.outputFormat, 'Requested output format should be returned');
+        Assert.isFalse(result.isPreviewPending, 'Normal composite generation should not be pending preview');
+
+        Generated_Document__c doc = [
+            SELECT Id, Status__c, Account__c, Template__c, Composite_Document__c,
+                   OutputFormat__c, RequestJSON__c, RequestedBy__c, Attempts__c, Priority__c
+            FROM Generated_Document__c
+            WHERE Id = :result.generatedDocumentId
+        ];
+        Assert.areEqual('QUEUED', doc.Status__c, 'Document should be queued');
+        Assert.areEqual(scenario.testRecordId, doc.Account__c, 'Primary parent lookup should be set');
+        Assert.isNull(doc.Template__c, 'Template lookup should not be set for composite generation');
+        Assert.areEqual(scenario.compositeDoc.Id, doc.Composite_Document__c, 'Composite lookup should be set');
+        Assert.areEqual('PDF', doc.OutputFormat__c, 'Output format should be stored');
+        Assert.isNotNull(doc.RequestJSON__c, 'Request JSON should be stored for the worker');
+        Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'Requester should be tracked');
+        Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should start at 0');
+        Assert.areEqual(0, Integer.valueOf(doc.Priority__c), 'Priority should default to 0');
+    }
+
+    @IsTest
+    static void testStartCompositeGenerationPreviewModeCreatesPendingPreviewDocument() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        String recordIds = JSON.serialize(new Map<String, String>{
+            'accountId' => String.valueOf(scenario.testRecordId)
+        });
+
+        Test.startTest();
+        DocgenAsyncController.StartResult firstResult = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'PDF',
+            true
+        );
+        DocgenAsyncController.StartResult secondResult = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'PDF',
+            true
+        );
+        Test.stopTest();
+
+        Assert.areNotEqual(firstResult.generatedDocumentId, secondResult.generatedDocumentId,
+            'Preview composite generations should create separate rows');
+        Assert.isTrue(firstResult.isPreviewPending, 'Preview mode should mark the document pending preview');
+
+        Generated_Document__c doc = [
+            SELECT PendingPreview__c, RequestHash__c, Composite_Document__c
+            FROM Generated_Document__c
+            WHERE Id = :firstResult.generatedDocumentId
+        ];
+        Assert.isTrue(doc.PendingPreview__c, 'Generated document should be marked pending preview');
+        Assert.areEqual(scenario.compositeDoc.Id, doc.Composite_Document__c, 'Composite lookup should be set');
+        Assert.isTrue(doc.RequestHash__c.startsWith('sha256:'), 'Preview request hash should retain sha256 format');
+        Assert.areEqual(71, doc.RequestHash__c.length(), 'Preview request hash should fit the unique field length');
+    }
+
+    @IsTest
+    static void testSaveGeneratedDocumentLinksPendingCompositePreviewFile() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        ContentVersion cv = createTestContentVersion('Composite Preview Save Document');
+        String recordIds = JSON.serialize(new Map<String, String>{
+            'accountId' => String.valueOf(scenario.testRecordId)
+        });
+
+        DocgenAsyncController.StartResult startResult = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'PDF',
+            true
+        );
+        update new Generated_Document__c(
+            Id = startResult.generatedDocumentId,
+            Status__c = 'SUCCEEDED',
+            OutputFileId__c = cv.Id
+        );
+
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :scenario.testRecordId
+        ], 'Pending composite preview files should not be linked by the trigger');
+
+        Test.startTest();
+        DocgenAsyncController.StatusResult saveResult = DocgenAsyncController.saveGeneratedDocument(startResult.generatedDocumentId);
+        Test.stopTest();
+
+        Assert.areEqual('SUCCEEDED', saveResult.status, 'Saved preview should remain succeeded');
+        Assert.isFalse(saveResult.isPreviewPending, 'Saved preview should no longer be pending');
+        Assert.areEqual(1, [
+            SELECT COUNT()
+            FROM ContentDocumentLink
+            WHERE ContentDocumentId = :cv.ContentDocumentId
+            AND LinkedEntityId = :scenario.testRecordId
+        ], 'Save should link the composite file to the primary parent record');
+    }
+
+    @IsTest
     static void testPreviewModeDoesNotReuseSavedDocument() {
         Account account = [SELECT Id FROM Account LIMIT 1];
 

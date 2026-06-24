@@ -47,6 +47,98 @@ private class CompositeDocumentControllerTest {
     }
 
     @isTest
+    static void testSearchActiveQuoteCompositeDocuments_BlankFallsBackToActiveRecords() {
+        // Arrange
+        Composite_Document__c quoteComposite = createQuoteComposite('Quote Template EN Composite');
+        Composite_Document__c accountComposite = createAccountComposite('Account-only composite');
+        insert new List<Composite_Document__c>{ quoteComposite, accountComposite };
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteCompositeDocuments('', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return only active Quote composite documents');
+        System.assertEquals(quoteComposite.Id, results[0].id, 'Should return the Quote composite');
+        System.assertEquals('Quote Template EN Composite', results[0].label, 'Description should be the primary label');
+        System.assertNotEquals(null, results[0].subLabel, 'Name should be available as secondary text');
+    }
+
+    @isTest
+    static void testSearchActiveQuoteCompositeDocuments_SearchesDescriptionWithSosl() {
+        // Arrange
+        Composite_Document__c quoteComposite = createQuoteComposite('Quote Template EN Composite - Header, Line Items, Clauses');
+        insert quoteComposite;
+        Test.setFixedSearchResults(new Id[]{ quoteComposite.Id });
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteCompositeDocuments('Line Items', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return the SOSL-matched Quote composite');
+        System.assertEquals(quoteComposite.Id, results[0].id, 'Should return the matched composite');
+        System.assert(results[0].label.contains('Line Items'), 'Result label should expose the matching description');
+        System.assertEquals(results[0].name, results[0].subLabel, 'Record number should be shown as secondary text');
+    }
+
+    @isTest
+    static void testSearchActiveQuoteCompositeDocuments_EmptySanitizedTermReturnsNoResults() {
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteCompositeDocuments('!!!', null);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(0, results.size(), 'Punctuation-only searches should not run SOSL');
+    }
+
+    @isTest
+    static void testSearchActiveQuoteCompositeDocuments_NoDescriptionUsesRecordName() {
+        // Arrange
+        Composite_Document__c quoteComposite = createQuoteComposite(null);
+        insert quoteComposite;
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteCompositeDocuments('', 1);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return the active Quote composite');
+        System.assertEquals(results[0].name, results[0].label, 'Name should be used when description is blank');
+        System.assertEquals(null, results[0].subLabel, 'Secondary label should be blank without a description');
+    }
+
+    @isTest
+    static void testSearchActiveQuoteCompositeDocuments_TruncatesLongDescription() {
+        // Arrange
+        String longDescription = '';
+        for (Integer i = 0; i < 20; i++) {
+            longDescription += '0123456789';
+        }
+        Composite_Document__c quoteComposite = createQuoteComposite(longDescription);
+        insert quoteComposite;
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteCompositeDocuments('', 1);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return the active Quote composite');
+        System.assertEquals(160, results[0].label.length(), 'Long descriptions should be truncated for display');
+        System.assert(results[0].label.endsWith('...'), 'Truncated labels should end with ellipsis');
+    }
+
+    @isTest
     static void testAddTemplateToComposite_Success() {
         // Arrange
         Composite_Document__c composite = [SELECT Id FROM Composite_Document__c LIMIT 1];
@@ -314,5 +406,27 @@ private class CompositeDocumentControllerTest {
         System.assertEquals(2, junctions.size(), 'Should have 2 junction records');
         System.assertEquals('Account', junctions[0].Namespace__c, 'First should be Account');
         System.assertEquals('Terms', junctions[1].Namespace__c, 'Second should be Terms');
+    }
+
+    private static Composite_Document__c createQuoteComposite(String description) {
+        return new Composite_Document__c(
+            Description__c = description,
+            Template_Strategy__c = 'Concatenate Templates',
+            PrimaryParent__c = 'SBQQ__Quote__c',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = false,
+            IsActive__c = true
+        );
+    }
+
+    private static Composite_Document__c createAccountComposite(String description) {
+        return new Composite_Document__c(
+            Description__c = description,
+            Template_Strategy__c = 'Concatenate Templates',
+            PrimaryParent__c = 'Account',
+            StoreMergedDocx__c = false,
+            ReturnDocxToBrowser__c = false,
+            IsActive__c = true
+        );
     }
 }

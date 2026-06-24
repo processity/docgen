@@ -103,6 +103,63 @@ public with sharing class DocgenAsyncController {
     }
 
     @AuraEnabled
+    public static StartResult startCompositeGeneration(
+        Id compositeDocumentId,
+        String recordIds,
+        String outputFormat,
+        Boolean previewMode
+    ) {
+        try {
+            if (compositeDocumentId == null) {
+                throw new IllegalArgumentException('Composite Document ID is required');
+            }
+
+            Map<String, Id> recordIdsMap = parseRecordIds(recordIds);
+            String correlationId = generateCorrelationId();
+            Boolean isPreviewMode = previewMode == true;
+
+            DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.buildForComposite(
+                compositeDocumentId,
+                recordIdsMap,
+                outputFormat,
+                'en-GB',
+                'Europe/London'
+            );
+
+            if (isPreviewMode) {
+                envelope.requestHash = buildPreviewRequestHash(envelope.requestHash, correlationId);
+            }
+
+            Generated_Document__c existingDoc = isPreviewMode ? null : findExistingDocument(envelope.requestHash);
+            if (existingDoc != null) {
+                if (existingDoc.Status__c == 'FAILED' || existingDoc.Status__c == 'CANCELED') {
+                    requeueCompositeDocument(
+                        existingDoc.Id,
+                        compositeDocumentId,
+                        recordIdsMap,
+                        envelope,
+                        correlationId
+                    );
+                    return toStartResult(queryGeneratedDocument(existingDoc.Id));
+                }
+                return toStartResult(existingDoc);
+            }
+
+            Generated_Document__c doc = createQueuedCompositeDocument(
+                compositeDocumentId,
+                recordIdsMap,
+                envelope,
+                correlationId,
+                isPreviewMode
+            );
+            return toStartResult(doc);
+        } catch (Exception e) {
+            throwAuraException(e.getMessage());
+            return null;
+        }
+    }
+
+    @AuraEnabled
     public static StatusResult getGenerationStatus(Id generatedDocumentId) {
         try {
             if (generatedDocumentId == null) {
@@ -291,6 +348,31 @@ public with sharing class DocgenAsyncController {
         return doc;
     }
 
+    private static Generated_Document__c createQueuedCompositeDocument(
+        Id compositeDocumentId,
+        Map<String, Id> recordIds,
+        DocgenEnvelopeService.Envelope envelope,
+        String correlationId,
+        Boolean pendingPreview
+    ) {
+        Generated_Document__c doc = new Generated_Document__c(
+            Composite_Document__c = compositeDocumentId,
+            RequestHash__c = envelope.requestHash,
+            Status__c = 'QUEUED',
+            OutputFormat__c = envelope.outputFormat,
+            Priority__c = 0,
+            Attempts__c = 0,
+            RequestedBy__c = UserInfo.getUserId(),
+            CorrelationId__c = correlationId,
+            PendingPreview__c = pendingPreview == true
+        );
+        DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
+        setCompositeParentLookups(doc, compositeDocumentId, recordIds, envelope.parents);
+
+        insert doc;
+        return doc;
+    }
+
     private static void requeueDocument(
         Id generatedDocumentId,
         Id templateId,
@@ -319,6 +401,154 @@ public with sharing class DocgenAsyncController {
         setParentLookups(retryDoc, recordId, envelope.parents);
 
         update retryDoc;
+    }
+
+    private static void requeueCompositeDocument(
+        Id generatedDocumentId,
+        Id compositeDocumentId,
+        Map<String, Id> recordIds,
+        DocgenEnvelopeService.Envelope envelope,
+        String correlationId
+    ) {
+        Generated_Document__c retryDoc = new Generated_Document__c(
+            Id = generatedDocumentId,
+            Composite_Document__c = compositeDocumentId,
+            Template__c = null,
+            RequestHash__c = envelope.requestHash,
+            Status__c = 'QUEUED',
+            OutputFormat__c = envelope.outputFormat,
+            Priority__c = 0,
+            Attempts__c = 0,
+            RequestedBy__c = UserInfo.getUserId(),
+            CorrelationId__c = correlationId,
+            Error__c = null,
+            OutputFileId__c = null,
+            MergedDocxFileId__c = null,
+            LockedUntil__c = null,
+            ScheduledRetryTime__c = null,
+            PendingPreview__c = false
+        );
+        DocgenEnvelopeService.setRequestJSONSegments(retryDoc, DocgenEnvelopeService.toJSON(envelope));
+        setCompositeParentLookups(retryDoc, compositeDocumentId, recordIds, envelope.parents);
+
+        update retryDoc;
+    }
+
+    private static Map<String, Id> parseRecordIds(String recordIdsJson) {
+        if (String.isBlank(recordIdsJson)) {
+            throw new IllegalArgumentException('recordIds parameter is required');
+        }
+
+        try {
+            Map<String, Object> rawMap = (Map<String, Object>) JSON.deserializeUntyped(recordIdsJson);
+            Map<String, Id> recordIds = new Map<String, Id>();
+            for (String key : rawMap.keySet()) {
+                Object value = rawMap.get(key);
+                if (value == null || String.isBlank(String.valueOf(value))) {
+                    continue;
+                }
+                recordIds.put(key, (Id) String.valueOf(value));
+            }
+
+            if (recordIds.isEmpty()) {
+                throw new IllegalArgumentException('At least one record ID is required');
+            }
+
+            return recordIds;
+        } catch (Exception e) {
+            throw new IllegalArgumentException('Invalid recordIds JSON format: ' + e.getMessage());
+        }
+    }
+
+    private static void setCompositeParentLookups(
+        Generated_Document__c doc,
+        Id compositeDocumentId,
+        Map<String, Id> recordIds,
+        Map<String, String> parents
+    ) {
+        Id primaryRecordId = determineCompositePrimaryRecordId(compositeDocumentId, recordIds);
+        if (primaryRecordId != null) {
+            setConfiguredParentLookup(doc, primaryRecordId);
+        }
+
+        if (parents == null || parents.isEmpty()) {
+            return;
+        }
+
+        for (String parentKey : parents.keySet()) {
+            String parentIdValue = parents.get(parentKey);
+            if (String.isBlank(parentIdValue)) {
+                continue;
+            }
+
+            try {
+                String parentObjectName = parentKey.endsWith('Id')
+                    ? parentKey.substring(0, parentKey.length() - 2)
+                    : parentKey;
+                if (!DocgenObjectConfigService.isObjectSupported(parentObjectName)) {
+                    continue;
+                }
+
+                Supported_Object__mdt parentConfig = DocgenObjectConfigService.getConfigForObject(parentObjectName);
+                putConfiguredParentLookup(doc, parentConfig, (Id) parentIdValue);
+            } catch (Exception e) {
+                System.debug(LoggingLevel.WARN, 'Could not set composite parent lookup: ' + e.getMessage());
+            }
+        }
+    }
+
+    private static Id determineCompositePrimaryRecordId(Id compositeDocumentId, Map<String, Id> recordIds) {
+        if (compositeDocumentId == null || recordIds == null || recordIds.isEmpty()) {
+            return null;
+        }
+
+        List<Composite_Document__c> composites = [
+            SELECT PrimaryParent__c
+            FROM Composite_Document__c
+            WHERE Id = :compositeDocumentId
+            LIMIT 1
+        ];
+
+        if (composites.isEmpty()) {
+            return null;
+        }
+
+        String primaryParent = composites[0].PrimaryParent__c;
+        if (String.isBlank(primaryParent)) {
+            return recordIds.values()[0];
+        }
+
+        String normalizedParent = primaryParent.toLowerCase();
+        Set<String> expectedKeys = new Set<String>{ normalizedParent + 'id' };
+
+        if (normalizedParent.endsWith('__c')) {
+            normalizedParent = normalizedParent.substring(0, normalizedParent.length() - 3);
+        }
+
+        Integer namespaceSeparator = normalizedParent.lastIndexOf('__');
+        if (namespaceSeparator >= 0) {
+            normalizedParent = normalizedParent.substring(namespaceSeparator + 2);
+        }
+        expectedKeys.add(normalizedParent + 'id');
+
+        for (String key : recordIds.keySet()) {
+            if (expectedKeys.contains(key.toLowerCase())) {
+                return recordIds.get(key);
+            }
+        }
+
+        return recordIds.values()[0];
+    }
+
+    private static void setConfiguredParentLookup(Generated_Document__c doc, Id parentId) {
+        if (parentId == null) {
+            return;
+        }
+
+        String objectApiName = parentId.getSObjectType().getDescribe().getName();
+        DocgenObjectConfigService.validateObjectSupported(objectApiName);
+        Supported_Object__mdt config = DocgenObjectConfigService.getConfigForObject(objectApiName);
+        putConfiguredParentLookup(doc, config, parentId);
     }
 
     private static void setParentLookups(Generated_Document__c doc, Id recordId, Map<String, String> parents) {

@@ -29,6 +29,82 @@ public with sharing class CompositeDocumentController {
     }
 
     /**
+     * Search active Quote composite documents for the Conga Draft Quote quick action.
+     * Blank search terms return recently viewed records when available, then fall back
+     * to the latest active Quote composite documents.
+     *
+     * @param searchTerm optional user-entered search text
+     * @param limitSize maximum number of results to return
+     * @return List of lightweight search result DTOs
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<CompositeDocumentSearchResult> searchActiveQuoteCompositeDocuments(
+        String searchTerm,
+        Integer limitSize
+    ) {
+        Integer safeLimit = normalizeSearchLimit(limitSize);
+
+        try {
+            if (String.isBlank(searchTerm)) {
+                List<Composite_Document__c> recentDocs = getRecentlyViewedQuoteCompositeDocuments(safeLimit);
+                if (!recentDocs.isEmpty()) {
+                    return toSearchResults(recentDocs, safeLimit);
+                }
+
+                return toSearchResults([
+                    SELECT Id, Name, Description__c
+                    FROM Composite_Document__c
+                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                      AND IsActive__c = true
+                    ORDER BY LastModifiedDate DESC
+                    LIMIT :safeLimit
+                ], safeLimit);
+            }
+
+            String soslTerm = buildSoslSearchTerm(searchTerm);
+            if (String.isBlank(soslTerm)) {
+                return new List<CompositeDocumentSearchResult>();
+            }
+
+            List<List<SObject>> searchResults = [
+                FIND :soslTerm IN ALL FIELDS
+                RETURNING Composite_Document__c(
+                    Id, Name, Description__c
+                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                      AND IsActive__c = true
+                    LIMIT 20
+                )
+            ];
+
+            return toSearchResults((List<Composite_Document__c>) searchResults[0], safeLimit);
+        } catch (Exception e) {
+            throw new AuraHandledException('Error searching composite documents: ' + e.getMessage());
+        }
+    }
+
+    public class CompositeDocumentSearchResult {
+        @AuraEnabled public Id id;
+        @AuraEnabled public String name;
+        @AuraEnabled public String description;
+        @AuraEnabled public String label;
+        @AuraEnabled public String subLabel;
+
+        public CompositeDocumentSearchResult(Composite_Document__c compositeDocument) {
+            this.id = compositeDocument.Id;
+            this.name = compositeDocument.Name;
+            this.description = compositeDocument.Description__c;
+            String displayDescription = compositeDocument.Description__c;
+            if (!String.isBlank(displayDescription) && displayDescription.length() > 160) {
+                displayDescription = displayDescription.substring(0, 157) + '...';
+            }
+            this.label = String.isBlank(displayDescription) ? compositeDocument.Name : displayDescription;
+            this.subLabel = String.isBlank(compositeDocument.Description__c)
+                ? null
+                : compositeDocument.Name;
+        }
+    }
+
+    /**
      * Add a Docgen Template to a Composite Document
      * Creates a junction record (Composite_Document_Template__c) with validation
      *
@@ -216,4 +292,80 @@ public with sharing class CompositeDocumentController {
             throw new AuraHandledException('Unexpected error: ' + e.getMessage());
         }
     }
+
+    private static Integer normalizeSearchLimit(Integer limitSize) {
+        if (limitSize == null || limitSize < 1) {
+            return 10;
+        }
+        return limitSize > 20 ? 20 : limitSize;
+    }
+
+    private static String buildSoslSearchTerm(String searchTerm) {
+        String cleanedTerm = searchTerm == null
+            ? ''
+            : searchTerm.trim().replaceAll('[^a-zA-Z0-9 ]', ' ').replaceAll('\\s+', ' ');
+
+        if (String.isBlank(cleanedTerm)) {
+            return '';
+        }
+
+        return cleanedTerm + '*';
+    }
+
+    private static List<Composite_Document__c> getRecentlyViewedQuoteCompositeDocuments(Integer safeLimit) {
+        List<RecentlyViewed> recentRecords = [
+            SELECT Id
+            FROM RecentlyViewed
+            WHERE Type = 'Composite_Document__c'
+            ORDER BY LastViewedDate DESC
+            LIMIT 20
+        ];
+
+        Set<Id> recentIds = new Set<Id>();
+        for (RecentlyViewed recentRecord : recentRecords) {
+            recentIds.add(recentRecord.Id);
+        }
+
+        if (recentIds.isEmpty()) {
+            return new List<Composite_Document__c>();
+        }
+
+        Map<Id, Composite_Document__c> compositesById = new Map<Id, Composite_Document__c>([
+            SELECT Id, Name, Description__c
+            FROM Composite_Document__c
+            WHERE Id IN :recentIds
+              AND PrimaryParent__c = 'SBQQ__Quote__c'
+              AND IsActive__c = true
+        ]);
+
+        List<Composite_Document__c> orderedComposites = new List<Composite_Document__c>();
+        for (RecentlyViewed recentRecord : recentRecords) {
+            Composite_Document__c compositeDocument = compositesById.get(recentRecord.Id);
+            if (compositeDocument != null) {
+                orderedComposites.add(compositeDocument);
+            }
+            if (orderedComposites.size() == safeLimit) {
+                break;
+            }
+        }
+
+        return orderedComposites;
+    }
+
+    private static List<CompositeDocumentSearchResult> toSearchResults(
+        List<Composite_Document__c> compositeDocuments,
+        Integer safeLimit
+    ) {
+        List<CompositeDocumentSearchResult> results = new List<CompositeDocumentSearchResult>();
+
+        for (Composite_Document__c compositeDocument : compositeDocuments) {
+            results.add(new CompositeDocumentSearchResult(compositeDocument));
+            if (results.size() == safeLimit) {
+                break;
+            }
+        }
+
+        return results;
+    }
+
 }
