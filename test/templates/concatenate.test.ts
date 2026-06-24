@@ -183,6 +183,54 @@ describe('concatenateDocx', () => {
         documentXml.indexOf('Wide Margin Section')
       );
     });
+
+    it('should extract trailing section properties from section-only paragraphs', async () => {
+      const docx1 = await addParagraphSectionProperties(
+        await createTestDocxWithContent('Paragraph Section Properties'),
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="360" w:right="360" w:bottom="360" w:left="360"/></w:sectPr>'
+      );
+      const docx2 = await createTestDocxWithContent('Second Section');
+
+      const sections: TemplateSection[] = [
+        { buffer: docx1, sequence: 1, namespace: 'ParagraphSectPr' },
+        { buffer: docx2, sequence: 2, namespace: 'Second' }
+      ];
+
+      const result = await concatenateDocx(sections, mockCorrelationId);
+      const zip = await JSZip.loadAsync(result);
+      const documentXml = await zip.file('word/document.xml')!.async('string');
+
+      expect(documentXml).toContain('<w:type w:val="nextPage"/>');
+      expect(documentXml).toContain('<w:pgMar w:top="360" w:right="360" w:bottom="360" w:left="360"/>');
+      expect(documentXml).not.toContain('<w:sectPr><w:type w:val="nextPage"/></w:sectPr>');
+      expect(documentXml).not.toMatch(/<w:p\b[^>]*>\s*<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>\s*<w:pPr\b/);
+    });
+
+    it('should remove later section header and footer references when only first section parts are kept', async () => {
+      const docx1 = await addSectionProperties(
+        await createTestDocxWithContent('First Section'),
+        '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader1"/><w:footerReference w:type="default" r:id="rIdFooter1"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+      );
+      const docx2 = await addSectionProperties(
+        await createTestDocxWithContent('Second Section'),
+        '<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader2"/><w:footerReference w:type="default" r:id="rIdFooter2"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+      );
+
+      const sections: TemplateSection[] = [
+        { buffer: docx1, sequence: 1, namespace: 'First' },
+        { buffer: docx2, sequence: 2, namespace: 'Second' }
+      ];
+
+      const result = await concatenateDocx(sections, mockCorrelationId);
+      const zip = await JSZip.loadAsync(result);
+      const documentXml = await zip.file('word/document.xml')!.async('string');
+
+      expect(documentXml).toContain('rIdHeader1');
+      expect(documentXml).toContain('rIdFooter1');
+      expect(documentXml).not.toContain('rIdHeader2');
+      expect(documentXml).not.toContain('rIdFooter2');
+      expect(documentXml).toContain('<w:pgSz w:w="12240" w:h="15840"/>');
+    });
   });
 
   describe('correlation ID logging', () => {
@@ -214,6 +262,21 @@ async function addSectionProperties(buffer: Buffer, sectionProperties: string): 
   const zip = await JSZip.loadAsync(buffer);
   const documentXml = await zip.file('word/document.xml')!.async('string');
   zip.file('word/document.xml', documentXml.replace('</w:body>', `${sectionProperties}</w:body>`));
+  return zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+}
+
+async function addParagraphSectionProperties(
+  buffer: Buffer,
+  sectionProperties: string
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  const sectionParagraph = `<w:p><w:pPr>${sectionProperties}</w:pPr></w:p>`;
+  zip.file('word/document.xml', documentXml.replace('</w:body>', `${sectionParagraph}</w:body>`));
   return zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',

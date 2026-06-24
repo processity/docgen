@@ -173,6 +173,10 @@ async function combineDocumentBodies(
 
     let bodyContent = bodyMatch[1];
     const sectionProperties = extractTrailingSectionProperties(bodyContent);
+    const sectionPropertiesXml =
+      sectionProperties && i > 0
+        ? removeHeaderFooterReferences(sectionProperties.xml)
+        : sectionProperties?.xml;
 
     // For all sections except the last, carry forward the source section properties
     // into a next-page section break. This preserves source page size/margins.
@@ -181,12 +185,17 @@ async function combineDocumentBodies(
         bodyContent = bodyContent.slice(0, sectionProperties.startIndex);
       }
 
-      bodyContent += createSectionBreakParagraph(sectionProperties?.xml);
+      bodyContent += createSectionBreakParagraph(sectionPropertiesXml);
 
       logger.debug(
         { correlationId, namespace: section.namespace },
         'Added section break to section with preserved section properties'
       );
+    } else if (i > 0 && sectionProperties) {
+      bodyContent =
+        bodyContent.slice(0, sectionProperties.startIndex) +
+        sectionPropertiesXml +
+        bodyContent.slice(sectionProperties.endIndex);
     }
 
     bodies.push(bodyContent);
@@ -214,16 +223,32 @@ async function combineDocumentBodies(
 
 function extractTrailingSectionProperties(
   bodyContent: string
-): { xml: string; startIndex: number } | null {
-  const match = bodyContent.match(/\s*(<w:sectPr\b[\s\S]*?<\/w:sectPr>)\s*$/);
-  if (!match || match.index === undefined) {
+): { xml: string; startIndex: number; endIndex: number } | null {
+  const directMatch = bodyContent.match(/\s*(<w:sectPr\b[\s\S]*?<\/w:sectPr>)\s*$/);
+  if (directMatch && directMatch.index !== undefined) {
+    return {
+      xml: directMatch[1],
+      startIndex: directMatch.index,
+      endIndex: bodyContent.length,
+    };
+  }
+
+  const paragraphMatch = bodyContent.match(
+    /\s*<w:p\b[^>]*>\s*<w:pPr\b[^>]*>[\s\S]*?(<w:sectPr\b[\s\S]*?<\/w:sectPr>)[\s\S]*?<\/w:pPr>\s*<\/w:p>\s*$/
+  );
+  if (!paragraphMatch || paragraphMatch.index === undefined) {
     return null;
   }
 
   return {
-    xml: match[1],
-    startIndex: match.index,
+    xml: paragraphMatch[1],
+    startIndex: paragraphMatch.index,
+    endIndex: bodyContent.length,
   };
+}
+
+function removeHeaderFooterReferences(sectionProperties: string): string {
+  return sectionProperties.replace(/\s*<w:(?:headerReference|footerReference)\b[^>]*\/>/g, '');
 }
 
 function createSectionBreakParagraph(sectionProperties?: string): string {

@@ -82,6 +82,52 @@ public with sharing class CompositeDocumentController {
         }
     }
 
+    /**
+     * Search Quote DocGen templates for quick action lookup selection.
+     * Blank search terms return recently viewed Quote templates when available,
+     * then fall back to the latest Quote templates.
+     *
+     * @param searchTerm optional user-entered search text
+     * @param limitSize maximum number of results to return
+     * @return List of lightweight search result DTOs
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<CompositeDocumentSearchResult> searchActiveQuoteTemplates(
+        String searchTerm,
+        Integer limitSize
+    ) {
+        Integer safeLimit = normalizeSearchLimit(limitSize);
+
+        try {
+            if (String.isBlank(searchTerm)) {
+                List<Docgen_Template__c> recentTemplates = getRecentlyViewedQuoteTemplates(safeLimit);
+                if (!recentTemplates.isEmpty()) {
+                    return toTemplateSearchResults(recentTemplates, safeLimit);
+                }
+
+                return toTemplateSearchResults([
+                    SELECT Id, Name
+                    FROM Docgen_Template__c
+                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                    ORDER BY LastModifiedDate DESC
+                    LIMIT :safeLimit
+                ], safeLimit);
+            }
+
+            String likeTerm = '%' + searchTerm.trim() + '%';
+            return toTemplateSearchResults([
+                SELECT Id, Name
+                FROM Docgen_Template__c
+                WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                  AND Name LIKE :likeTerm
+                ORDER BY Name ASC
+                LIMIT :safeLimit
+            ], safeLimit);
+        } catch (Exception e) {
+            throw new AuraHandledException('Error searching templates: ' + e.getMessage());
+        }
+    }
+
     public class CompositeDocumentSearchResult {
         @AuraEnabled public Id id;
         @AuraEnabled public String name;
@@ -101,6 +147,14 @@ public with sharing class CompositeDocumentController {
             this.subLabel = String.isBlank(compositeDocument.Description__c)
                 ? null
                 : compositeDocument.Name;
+        }
+
+        public CompositeDocumentSearchResult(Docgen_Template__c template) {
+            this.id = template.Id;
+            this.name = template.Name;
+            this.description = null;
+            this.label = template.Name;
+            this.subLabel = null;
         }
     }
 
@@ -352,6 +406,45 @@ public with sharing class CompositeDocumentController {
         return orderedComposites;
     }
 
+    private static List<Docgen_Template__c> getRecentlyViewedQuoteTemplates(Integer safeLimit) {
+        List<RecentlyViewed> recentRecords = [
+            SELECT Id
+            FROM RecentlyViewed
+            WHERE Type = 'Docgen_Template__c'
+            ORDER BY LastViewedDate DESC
+            LIMIT 20
+        ];
+
+        Set<Id> recentIds = new Set<Id>();
+        for (RecentlyViewed recentRecord : recentRecords) {
+            recentIds.add(recentRecord.Id);
+        }
+
+        if (recentIds.isEmpty()) {
+            return new List<Docgen_Template__c>();
+        }
+
+        Map<Id, Docgen_Template__c> templatesById = new Map<Id, Docgen_Template__c>([
+            SELECT Id, Name
+            FROM Docgen_Template__c
+            WHERE Id IN :recentIds
+              AND PrimaryParent__c = 'SBQQ__Quote__c'
+        ]);
+
+        List<Docgen_Template__c> orderedTemplates = new List<Docgen_Template__c>();
+        for (RecentlyViewed recentRecord : recentRecords) {
+            Docgen_Template__c template = templatesById.get(recentRecord.Id);
+            if (template != null) {
+                orderedTemplates.add(template);
+            }
+            if (orderedTemplates.size() == safeLimit) {
+                break;
+            }
+        }
+
+        return orderedTemplates;
+    }
+
     private static List<CompositeDocumentSearchResult> toSearchResults(
         List<Composite_Document__c> compositeDocuments,
         Integer safeLimit
@@ -360,6 +453,22 @@ public with sharing class CompositeDocumentController {
 
         for (Composite_Document__c compositeDocument : compositeDocuments) {
             results.add(new CompositeDocumentSearchResult(compositeDocument));
+            if (results.size() == safeLimit) {
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    private static List<CompositeDocumentSearchResult> toTemplateSearchResults(
+        List<Docgen_Template__c> templates,
+        Integer safeLimit
+    ) {
+        List<CompositeDocumentSearchResult> results = new List<CompositeDocumentSearchResult>();
+
+        for (Docgen_Template__c template : templates) {
+            results.add(new CompositeDocumentSearchResult(template));
             if (results.size() == safeLimit) {
                 break;
             }

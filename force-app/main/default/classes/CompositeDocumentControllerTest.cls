@@ -139,6 +139,59 @@ private class CompositeDocumentControllerTest {
     }
 
     @isTest
+    static void testSearchActiveQuoteTemplates_BlankFallsBackToQuoteTemplates() {
+        // Arrange
+        Docgen_Template__c quoteTemplate = DocgenTestDataFactory.createTemplate(
+            'Quote Template EN Header',
+            'SBQQ__Quote__c',
+            'SELECT Id FROM SBQQ__Quote__c WHERE Id = :recordId'
+        );
+        DocgenTestDataFactory.createTemplate(
+            'Account Template Not Returned',
+            'Account',
+            'SELECT Id FROM Account WHERE Id = :recordId'
+        );
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteTemplates('', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return only Quote templates');
+        System.assertEquals(quoteTemplate.Id, results[0].id, 'Should return the Quote template');
+        System.assertEquals('Quote Template EN Header', results[0].label, 'Template name should be the label');
+        System.assertEquals(null, results[0].subLabel, 'Template lookup does not need secondary text');
+    }
+
+    @isTest
+    static void testSearchActiveQuoteTemplates_SearchesByName() {
+        // Arrange
+        Docgen_Template__c headerTemplate = DocgenTestDataFactory.createTemplate(
+            'Quote Template EN Header',
+            'SBQQ__Quote__c',
+            'SELECT Id FROM SBQQ__Quote__c WHERE Id = :recordId'
+        );
+        DocgenTestDataFactory.createTemplate(
+            'Quote Template EN Clauses',
+            'SBQQ__Quote__c',
+            'SELECT Id FROM SBQQ__Quote__c WHERE Id = :recordId'
+        );
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveQuoteTemplates('Header', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return the name-matched Quote template');
+        System.assertEquals(headerTemplate.Id, results[0].id, 'Should return the Header template');
+        System.assertEquals('Quote Template EN Header', results[0].name, 'Name should be exposed for selection');
+    }
+
+    @isTest
     static void testAddTemplateToComposite_Success() {
         // Arrange
         Composite_Document__c composite = [SELECT Id FROM Composite_Document__c LIMIT 1];
