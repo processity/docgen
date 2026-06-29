@@ -8,7 +8,7 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
-const PDF_INLINE_PREVIEW_FRAGMENT = '#view=FitH&zoom=page-width&pagemode=none';
+const PDF_INLINE_PREVIEW_FRAGMENT = '#page=1&zoom=100&navpanes=0&pagemode=none';
 
 export default class DocgenProgressButton extends LightningElement {
   @api templateId;
@@ -24,6 +24,7 @@ export default class DocgenProgressButton extends LightningElement {
   _openOnSuccess = true;
   _hideButton = false;
   _previewBeforeSave = false;
+  _readOnlyWord = false;
   isProcessing = false;
   isSavingPreview = false;
   isCancelingPreview = false;
@@ -134,6 +135,15 @@ export default class DocgenProgressButton extends LightningElement {
     this._previewBeforeSave = this.normalizeBoolean(value, false);
   }
 
+  @api
+  get readOnlyWord() {
+    return this._readOnlyWord;
+  }
+
+  set readOnlyWord(value) {
+    this._readOnlyWord = this.normalizeBoolean(value, false);
+  }
+
   get displayStatus() {
     if (this.status === 'QUEUED') {
       return 'Queued';
@@ -214,6 +224,10 @@ export default class DocgenProgressButton extends LightningElement {
       templateName: config.templateName || this.templateName || null,
       recordId: config.recordId || this.recordId || null,
       outputFormat: this.normalizeOutputFormat(config.outputFormat || this.outputFormat),
+      readOnlyWord: this.normalizeBoolean(
+        config.readOnlyWord !== undefined ? config.readOnlyWord : this.readOnlyWord,
+        false
+      ),
     };
 
     if (previewMode) {

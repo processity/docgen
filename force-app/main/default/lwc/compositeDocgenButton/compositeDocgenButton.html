@@ -9,13 +9,6 @@
     ></lightning-button>
   </template>
 
-  <template if:true={isProcessing}>
-    <lightning-spinner
-      alternative-text="Generating document..."
-      size="small"
-    ></lightning-spinner>
-  </template>
-
   <template if:true={showProgressPanel}>
     <div class="docgen-progress slds-m-top_small" aria-live="polite">
       <div class="docgen-progress__header">

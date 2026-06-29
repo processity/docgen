@@ -44,11 +44,12 @@ const generator = this.template.querySelector('c-composite-docgen-button');
 await generator.generate({
   compositeDocumentId: this.selectedCompositeId,
   recordIds: { quoteId: this.recordId },
-  outputFormat: 'PDF'
+  outputFormat: 'DOCX',
+  readOnlyWord: true
 });
 ```
 
-The public `generate()` method accepts `compositeDocumentId`, `recordIds`, and optional `outputFormat`. Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. It emits
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, and optional `readOnlyWord`. Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF and PPTX. It emits
 `docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)

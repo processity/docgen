@@ -43,7 +43,17 @@ public with sharing class DocgenAsyncController {
     }
 
     public static StartResult startGeneration(Id templateId, String templateName, Id recordId, String outputFormat) {
-        return startGeneration(templateId, templateName, recordId, outputFormat, false);
+        return startGeneration(templateId, templateName, recordId, outputFormat, false, false);
+    }
+
+    public static StartResult startGeneration(
+        Id templateId,
+        String templateName,
+        Id recordId,
+        String outputFormat,
+        Boolean previewMode
+    ) {
+        return startGeneration(templateId, templateName, recordId, outputFormat, previewMode, false);
     }
 
     @AuraEnabled
@@ -52,7 +62,8 @@ public with sharing class DocgenAsyncController {
         String templateName,
         Id recordId,
         String outputFormat,
-        Boolean previewMode
+        Boolean previewMode,
+        Boolean readOnlyWord
     ) {
         try {
             if (recordId == null) {
@@ -72,7 +83,8 @@ public with sharing class DocgenAsyncController {
                 template,
                 normalizedOutputFormat,
                 'en-GB',
-                'Europe/London'
+                'Europe/London',
+                readOnlyWord
             );
 
             if (isPreviewMode) {
@@ -102,12 +114,22 @@ public with sharing class DocgenAsyncController {
         }
     }
 
-    @AuraEnabled
     public static StartResult startCompositeGeneration(
         Id compositeDocumentId,
         String recordIds,
         String outputFormat,
         Boolean previewMode
+    ) {
+        return startCompositeGeneration(compositeDocumentId, recordIds, outputFormat, previewMode, false);
+    }
+
+    @AuraEnabled
+    public static StartResult startCompositeGeneration(
+        Id compositeDocumentId,
+        String recordIds,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord
     ) {
         try {
             if (compositeDocumentId == null) {
@@ -123,7 +145,8 @@ public with sharing class DocgenAsyncController {
                 recordIdsMap,
                 outputFormat,
                 'en-GB',
-                'Europe/London'
+                'Europe/London',
+                readOnlyWord
             );
 
             if (isPreviewMode) {

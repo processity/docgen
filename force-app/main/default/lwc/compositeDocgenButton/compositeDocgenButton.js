@@ -9,7 +9,7 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
-const PDF_INLINE_PREVIEW_FRAGMENT = '#view=FitH&zoom=page-width&pagemode=none';
+const PDF_INLINE_PREVIEW_FRAGMENT = '#page=1&zoom=100&navpanes=0&pagemode=none';
 
 /**
  * LWC component for interactive composite document generation
@@ -38,6 +38,13 @@ export default class CompositeDocgenButton extends LightningElement {
    * @type {string}
    */
   @api outputFormat;
+
+  /**
+   * Protect generated DOCX content while leaving supported form fields editable.
+   * Ignored for PDF and PPTX output.
+   * @type {boolean}
+   */
+  @api readOnlyWord = false;
 
   /**
    * Current record ID (automatically provided by Lightning runtime)
@@ -263,7 +270,8 @@ export default class CompositeDocgenButton extends LightningElement {
       const downloadUrl = await generateComposite({
         compositeDocId: request.compositeDocumentId,
         recordIds: JSON.stringify(request.recordIds),
-        outputFormat: request.outputFormat
+        outputFormat: request.outputFormat,
+        readOnlyWord: request.readOnlyWord
       });
 
       this.progressValue = 100;
@@ -300,7 +308,8 @@ export default class CompositeDocgenButton extends LightningElement {
         compositeDocumentId: request.compositeDocumentId,
         recordIds: JSON.stringify(request.recordIds),
         outputFormat: request.outputFormat,
-        previewMode: true
+        previewMode: true,
+        readOnlyWord: request.readOnlyWord
       });
 
       this.applyStatus(startResult);
@@ -480,7 +489,11 @@ export default class CompositeDocgenButton extends LightningElement {
     return {
       compositeDocumentId: config.compositeDocumentId || this.compositeDocumentId || null,
       recordIds: this.buildRecordIdsMap(config),
-      outputFormat: outputFormat ? outputFormat.toUpperCase() : null
+      outputFormat: outputFormat ? outputFormat.toUpperCase() : null,
+      readOnlyWord: this.normalizeBoolean(
+        config.readOnlyWord !== undefined ? config.readOnlyWord : this.readOnlyWord,
+        false
+      )
     };
   }
 

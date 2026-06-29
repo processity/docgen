@@ -60,10 +60,24 @@ public with sharing class DocgenController {
      * @param templateId ID of the Docgen_Template__c record
      * @param recordId ID of the source record (Account, Opportunity, Case, etc.)
      * @param outputFormat Output format (PDF, DOCX, or PPTX)
+     * Existing overload defaults readOnlyWord to false.
      * @return GenerateResult containing either downloadUrl (success) or errorMessage (failure)
      */
-    @AuraEnabled
     public static GenerateResult generate(Id templateId, Id recordId, String outputFormat) {
+        return generate(templateId, recordId, outputFormat, false);
+    }
+
+    /**
+     * Generate a document with an optional read-only Word override.
+     * readOnlyWord is ignored unless the resolved output format is DOCX.
+     */
+    @AuraEnabled
+    public static GenerateResult generate(
+        Id templateId,
+        Id recordId,
+        String outputFormat,
+        Boolean readOnlyWord
+    ) {
         Generated_Document__c doc;
         String effectiveOutputFormat = outputFormat;
         String correlationId = generateCorrelationId();
@@ -77,7 +91,8 @@ public with sharing class DocgenController {
                 template,
                 recordId,
                 outputFormat,
-                correlationId
+                correlationId,
+                readOnlyWord
             );
             effectiveOutputFormat = envelope.outputFormat;
 
@@ -136,11 +151,25 @@ public with sharing class DocgenController {
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds JSON string of record IDs (e.g., '{"accountId":"001xxx","contactId":"003xxx"}')
      * @param outputFormat Output format (PDF, DOCX, or PPTX)
+     * Existing overload defaults readOnlyWord to false.
      * @return Download URL for the generated document
      * @throws AuraHandledException on validation or generation failures
      */
-    @AuraEnabled
     public static String generateComposite(Id compositeDocId, String recordIds, String outputFormat) {
+        return generateComposite(compositeDocId, recordIds, outputFormat, false);
+    }
+
+    /**
+     * Generate a composite document with an optional read-only Word override.
+     * readOnlyWord is ignored unless the resolved output format is DOCX.
+     */
+    @AuraEnabled
+    public static String generateComposite(
+        Id compositeDocId,
+        String recordIds,
+        String outputFormat,
+        Boolean readOnlyWord
+    ) {
         Generated_Document__c doc;
         String effectiveOutputFormat = outputFormat;
         String correlationId = generateCorrelationId();
@@ -154,7 +183,8 @@ public with sharing class DocgenController {
                 compositeDocId,
                 recordIdsMap,
                 outputFormat,
-                correlationId
+                correlationId,
+                readOnlyWord
             );
             effectiveOutputFormat = envelope.outputFormat;
 
@@ -330,7 +360,8 @@ public with sharing class DocgenController {
         Docgen_Template__c template,
         Id recordId,
         String outputFormat,
-        String correlationId
+        String correlationId,
+        Boolean readOnlyWord
     ) {
         // Use en-GB locale and Europe/London timezone per spec
         String locale = 'en-GB';
@@ -341,7 +372,8 @@ public with sharing class DocgenController {
             template,
             outputFormat,
             locale,
-            timezone
+            timezone,
+            readOnlyWord
         );
 
         return envelope;
@@ -393,7 +425,8 @@ public with sharing class DocgenController {
         Id compositeDocId,
         Map<String, Id> recordIds,
         String outputFormat,
-        String correlationId
+        String correlationId,
+        Boolean readOnlyWord
     ) {
         // Use en-GB locale and Europe/London timezone per spec
         String locale = 'en-GB';
@@ -404,7 +437,8 @@ public with sharing class DocgenController {
             recordIds,
             outputFormat,
             locale,
-            timezone
+            timezone,
+            readOnlyWord
         );
 
         return envelope;

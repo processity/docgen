@@ -219,7 +219,37 @@ private class DocgenEnvelopeServiceTest {
         Assert.isNotNull(env.parents, 'Parents should not be null');
         Assert.areEqual(cs.Id, env.parents.get('CaseId'), 'CaseId should be set');
         Assert.areEqual(acc.Id, env.parents.get('AccountId'), 'AccountId should be set from Case');
-        Assert.areEqual(false, env.options.get('readOnlyWord'), 'readOnlyWord should default to false when Standard_Template__c is unavailable');
+        Assert.areEqual(false, env.options.get('readOnlyWord'), 'readOnlyWord should default to false when no override is supplied');
+    }
+
+    @isTest
+    static void testReadOnlyWordOptionIsRequestDrivenAndDocxOnly() {
+        Account acc = DocgenTestDataFactory.createAccount('Read Only Test Account');
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Read Only Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000042AAA',
+            false,
+            true,
+            false
+        );
+
+        DocgenEnvelopeService.Envelope defaultDocx = DocgenEnvelopeService.build(
+            acc.Id, template, 'DOCX', 'en-GB', 'Europe/London'
+        );
+        DocgenEnvelopeService.Envelope readOnlyDocx = DocgenEnvelopeService.build(
+            acc.Id, template, 'DOCX', 'en-GB', 'Europe/London', true
+        );
+        DocgenEnvelopeService.Envelope pdf = DocgenEnvelopeService.build(
+            acc.Id, template, 'PDF', 'en-GB', 'Europe/London', true
+        );
+
+        Assert.areEqual(false, defaultDocx.options.get('readOnlyWord'), 'Existing callers should generate normal DOCX files');
+        Assert.areEqual(true, readOnlyDocx.options.get('readOnlyWord'), 'The explicit override should protect DOCX files');
+        Assert.areEqual(false, pdf.options.get('readOnlyWord'), 'The Word protection option should be ignored for PDF');
     }
 
     @isTest
@@ -1209,7 +1239,7 @@ private class DocgenEnvelopeServiceTest {
             PrimaryParent__c = 'Account',
             IsActive__c = true,
             Watermark_Text__c = 'DRAFT',
-            Watermark_Condition_Field__c = 'Account.Name',
+            Watermark_Condition_Field__c = 'Name',
             Watermark_Style__c = 'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080'
         );
         insert composite;
@@ -1387,7 +1417,7 @@ private class DocgenEnvelopeServiceTest {
             PrimaryParent__c = 'Account',
             IsActive__c = true,
             Watermark_Text__c = 'DRAFT',
-            Watermark_Condition_Field__c = 'Account.Name',
+            Watermark_Condition_Field__c = 'Name',
             Watermark_Style__c = 'Font: Courier\nWidth: 350\nHeight: 50\nRotation: -45\nColor code: #808080'
         );
         insert composite;
@@ -1724,7 +1754,7 @@ private class DocgenEnvelopeServiceTest {
      * Test: Composite output file name can be resolved from a configured envelope data path.
      */
     @isTest
-    static void testCompositeOutputFileNameFromConfiguredField() {
+    static void testCompositeOutputFileNameFromConfiguredUnqualifiedField() {
         Account acc = DocgenTestDataFactory.createAccount('Composite Contract Name');
         Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
             'Composite Filename Template',
@@ -1737,23 +1767,43 @@ private class DocgenEnvelopeServiceTest {
             true,
             false
         );
+        Docgen_Template__c template2 = DocgenTestDataFactory.createTemplateWithConfig(
+            'Composite Filename Terms Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000041AAA',
+            false,
+            true,
+            false
+        );
 
         Composite_Document__c composite = new Composite_Document__c(
             Description__c = 'Composite with configured output file name',
             Template_Strategy__c = 'Concatenate Templates',
             PrimaryParent__c = 'Account',
-            Output_File_Name_Field__c = 'Account.Name',
+            Output_File_Name_Field__c = 'Name',
             IsActive__c = true
         );
         insert composite;
 
-        insert new Composite_Document_Template__c(
-            Composite_Document__c = composite.Id,
-            Document_Template__c = template.Id,
-            Namespace__c = 'Account',
-            Sequence__c = 10,
-            IsActive__c = true
-        );
+        insert new List<Composite_Document_Template__c>{
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = template.Id,
+                Namespace__c = 'Account',
+                Sequence__c = 10,
+                IsActive__c = true
+            ),
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = template2.Id,
+                Namespace__c = 'Terms',
+                Sequence__c = 20,
+                IsActive__c = true
+            )
+        };
 
         Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => acc.Id };
 
@@ -1772,5 +1822,32 @@ private class DocgenEnvelopeServiceTest {
             env.outputFileName,
             'Configured composite file name should resolve from namespaced data and enforce extension'
         );
+    }
+
+    @isTest
+    static void testCompositeReadOnlyWordOptionIsRequestDrivenAndDocxOnly() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 1, 'Concatenate Templates');
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => scenario.testRecordId };
+
+        DocgenEnvelopeService.Envelope readOnlyDocx = DocgenEnvelopeService.buildForComposite(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'DOCX',
+            'en-GB',
+            'Europe/London',
+            true
+        );
+        DocgenEnvelopeService.Envelope pptx = DocgenEnvelopeService.buildForComposite(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'PPTX',
+            'en-GB',
+            'Europe/London',
+            true
+        );
+
+        Assert.areEqual(true, readOnlyDocx.options.get('readOnlyWord'), 'Composite DOCX should accept the read-only override');
+        Assert.areEqual(false, pptx.options.get('readOnlyWord'), 'The Word protection option should be ignored for PPTX');
     }
 }

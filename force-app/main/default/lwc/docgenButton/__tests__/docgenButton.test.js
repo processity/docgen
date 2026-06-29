@@ -112,7 +112,8 @@ describe('c-docgen-button', () => {
       expect(generate).toHaveBeenCalledWith({
         templateId: 'a0X1234567890ABC',
         recordId: '0011234567890ABC',
-        outputFormat: 'PDF'
+        outputFormat: 'PDF',
+        readOnlyWord: false
       });
     });
   });
@@ -347,7 +348,33 @@ describe('c-docgen-button', () => {
     expect(generate).toHaveBeenCalledWith({
       templateId: 'a0X1234567890ABC',
       recordId: '0011234567890ABC',
-      outputFormat: null
+      outputFormat: null,
+      readOnlyWord: false
+    });
+  });
+
+  it('passes the read-only Word option to Apex', async () => {
+    const element = createElement('c-docgen-button', {
+      is: DocgenButton
+    });
+    element.templateId = 'a0X1234567890ABC';
+    element.outputFormat = 'DOCX';
+    element.readOnlyWord = true;
+    element.recordId = '0011234567890ABC';
+    generate.mockResolvedValue({
+      success: true,
+      downloadUrl: '/sfc/servlet.shepherd/version/download/0681234567890ABC'
+    });
+    document.body.appendChild(element);
+
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    expect(generate).toHaveBeenCalledWith({
+      templateId: 'a0X1234567890ABC',
+      recordId: '0011234567890ABC',
+      outputFormat: 'DOCX',
+      readOnlyWord: true
     });
   });
 });

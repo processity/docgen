@@ -38,7 +38,9 @@
 .preview-frame {
   border: 1px solid var(--slds-g-color-border-base-1, #dddbda);
   border-radius: 0.25rem;
-  height: 32rem;
+  height: 70vh;
+  max-height: 48rem;
+  min-height: 32rem;
   width: 100%;
 }
 

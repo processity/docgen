@@ -316,14 +316,28 @@ Docgen_Template__c template = [
 ];
 
 // Generate document
-String downloadUrl = DocgenController.generate(
+DocgenController.GenerateResult result = DocgenController.generate(
     template.Id,
     testAsset.Id,
     'PDF'
 );
 
-System.debug('Download URL: ' + downloadUrl);
+System.debug('Download URL: ' + result.downloadUrl);
 ```
+
+For a protected DOCX, use the overload with the optional `readOnlyWord` argument:
+
+```apex
+DocgenController.GenerateResult result = DocgenController.generate(
+    template.Id,
+    testAsset.Id,
+    'DOCX',
+    true
+);
+System.debug('Download URL: ' + result.downloadUrl);
+```
+
+Existing calls that omit `readOnlyWord` remain supported and default to `false`. The option is ignored for PDF and PPTX output.
 
 #### 5.3 Verify Generated Document Record
 
@@ -599,6 +613,19 @@ String downloadUrl = DocgenController.generateComposite(
 
 System.debug('Download URL: ' + downloadUrl);
 ```
+
+To produce a protected composite DOCX, pass `readOnlyWord` as the fourth argument:
+
+```apex
+String downloadUrl = DocgenController.generateComposite(
+    composite.Id,
+    recordIdsJson,
+    'DOCX',
+    true
+);
+```
+
+The older three-argument overload remains supported and defaults `readOnlyWord` to `false`.
 
 #### Step 5: Verify Output
 

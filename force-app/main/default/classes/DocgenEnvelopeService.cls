@@ -83,6 +83,21 @@ public with sharing class DocgenEnvelopeService {
         String locale,
         String timezone
     ) {
+        return build(recordId, template, outputFormat, locale, timezone, false);
+    }
+
+    /**
+     * Build a complete envelope with an explicit Word protection option.
+     * readOnlyWord is applied only when the resolved output format is DOCX.
+     */
+    public static Envelope build(
+        Id recordId,
+        Docgen_Template__c template,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord
+    ) {
         Envelope env = new Envelope();
         String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(template));
 
@@ -101,7 +116,7 @@ public with sharing class DocgenEnvelopeService {
         // Get data from appropriate provider
         DocgenDataProvider provider = getProvider(template);
         env.data = provider.buildData(recordId, template, locale, timezone);
-        env.options.put('readOnlyWord', getReadOnlyWordOption(recordId, env.data));
+        env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String objectType = recordId.getSObjectType().getDescribe().getName();
         String watermarkText = resolveWatermarkText(template, env.data, objectType);
         if (String.isNotBlank(watermarkText)) {
@@ -395,6 +410,21 @@ public with sharing class DocgenEnvelopeService {
         String locale,
         String timezone
     ) {
+        return buildForComposite(compositeDocId, recordIds, outputFormat, locale, timezone, false);
+    }
+
+    /**
+     * Build a complete composite envelope with an explicit Word protection option.
+     * readOnlyWord is applied only when the resolved output format is DOCX.
+     */
+    public static Envelope buildForComposite(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord
+    ) {
         Envelope env = new Envelope();
 
         // Load composite configuration
@@ -421,7 +451,7 @@ public with sharing class DocgenEnvelopeService {
             locale,
             timezone
         );
-        env.options.put('readOnlyWord', getReadOnlyWordOptionFromData(env.data));
+        env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String watermarkText = resolveWatermarkText(composite, env.data, null);
         if (String.isNotBlank(watermarkText)) {
             env.options.put('watermarkText', watermarkText);
@@ -701,15 +731,28 @@ public with sharing class DocgenEnvelopeService {
                 }
             }
 
-            if (data.size() == 1) {
-                for (Object value : data.values()) {
-                    if (value instanceof Map<String, Object>) {
-                        Map<String, Object> nestedData = (Map<String, Object>) value;
-                        if (nestedData.containsKey(trimmedPath)) {
-                            return nestedData.get(trimmedPath);
+            Boolean foundNestedMatch = false;
+            Object matchedValue;
+            String matchedValueJson;
+            for (Object value : data.values()) {
+                if (value instanceof Map<String, Object>) {
+                    Map<String, Object> nestedData = (Map<String, Object>) value;
+                    if (nestedData.containsKey(trimmedPath)) {
+                        Object candidateValue = nestedData.get(trimmedPath);
+                        String candidateValueJson = JSON.serialize(candidateValue);
+                        if (!foundNestedMatch) {
+                            foundNestedMatch = true;
+                            matchedValue = candidateValue;
+                            matchedValueJson = candidateValueJson;
+                        } else if (candidateValueJson != matchedValueJson) {
+                            return null;
                         }
                     }
                 }
+            }
+
+            if (foundNestedMatch) {
+                return matchedValue;
             }
 
             return null;
@@ -819,38 +862,7 @@ public with sharing class DocgenEnvelopeService {
         return value != null;
     }
 
-    private static Boolean getReadOnlyWordOption(Id recordId, Map<String, Object> data) {
-        if (recordId == null || recordId.getSObjectType().getDescribe().getName() != 'Case') {
-            return false;
-        }
-
-        Boolean dataValue = getReadOnlyWordOptionFromData(data);
-        if (dataValue != null) {
-            return dataValue;
-        }
-
-        Schema.SObjectType caseType = Schema.getGlobalDescribe().get('Case');
-        if (caseType == null || !caseType.getDescribe().fields.getMap().containsKey('Standard_Template__c')) {
-            return false;
-        }
-
-        List<SObject> cases = Database.query('SELECT Standard_Template__c FROM Case WHERE Id = :recordId LIMIT 1');
-        if (cases.isEmpty()) {
-            return false;
-        }
-        Object standardTemplate = cases[0].get('Standard_Template__c');
-        return standardTemplate == null ? false : (Boolean) standardTemplate;
-    }
-
-    private static Boolean getReadOnlyWordOptionFromData(Map<String, Object> data) {
-        Object value = resolveSimpleFieldPath(data, 'Case.Standard_Template__c', 'Case');
-        return toBoolean(value);
-    }
-
     private static Boolean toBoolean(Object value) {
-        if (value == null) {
-            return null;
-        }
         if (value instanceof Boolean) {
             return (Boolean) value;
         }
@@ -860,6 +872,10 @@ public with sharing class DocgenEnvelopeService {
             if (stringValue == 'false') return false;
         }
         return null;
+    }
+
+    private static Boolean resolveReadOnlyWordOption(String outputFormat, Boolean readOnlyWord) {
+        return outputFormat == 'DOCX' && readOnlyWord == true;
     }
 
     private static String getStringFieldValue(SObject record, String fieldName) {

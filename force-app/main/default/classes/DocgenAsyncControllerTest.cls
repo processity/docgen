@@ -21,6 +21,20 @@ private class DocgenAsyncControllerTest {
         return [SELECT Id, ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id];
     }
 
+    private static Map<String, Object> getRequestOptions(Id generatedDocumentId) {
+        Generated_Document__c doc = [
+            SELECT RequestJSON__c, RequestJSON02__c, RequestJSON03__c, RequestJSON04__c,
+                   RequestJSON05__c, RequestJSON06__c, RequestJSON07__c, RequestJSON08__c,
+                   RequestJSON09__c, RequestJSON10__c
+            FROM Generated_Document__c
+            WHERE Id = :generatedDocumentId
+        ];
+        Map<String, Object> request = (Map<String, Object>) JSON.deserializeUntyped(
+            DocgenEnvelopeService.reconstructRequestJSON(doc)
+        );
+        return (Map<String, Object>) request.get('options');
+    }
+
     @IsTest
     static void testStartGenerationCreatesQueuedDocument() {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
@@ -54,6 +68,26 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'Requester should be tracked');
         Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should start at 0');
         Assert.areEqual(0, Integer.valueOf(doc.Priority__c), 'Priority should default to 0');
+    }
+
+    @IsTest
+    static void testStartGenerationPassesReadOnlyWordOption() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+            template.Id,
+            null,
+            account.Id,
+            'DOCX',
+            false,
+            true
+        );
+        Test.stopTest();
+
+        Assert.areEqual(true, getRequestOptions(result.generatedDocumentId).get('readOnlyWord'),
+            'Queued direct generation should pass the read-only Word option');
     }
 
     @IsTest
@@ -149,6 +183,28 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual(UserInfo.getUserId(), doc.RequestedBy__c, 'Requester should be tracked');
         Assert.areEqual(0, Integer.valueOf(doc.Attempts__c), 'Attempts should start at 0');
         Assert.areEqual(0, Integer.valueOf(doc.Priority__c), 'Priority should default to 0');
+    }
+
+    @IsTest
+    static void testStartCompositeGenerationPassesReadOnlyWordOption() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 1, 'Concatenate Templates');
+        String recordIds = JSON.serialize(new Map<String, String>{
+            'accountId' => String.valueOf(scenario.testRecordId)
+        });
+
+        Test.startTest();
+        DocgenAsyncController.StartResult result = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'DOCX',
+            false,
+            true
+        );
+        Test.stopTest();
+
+        Assert.areEqual(true, getRequestOptions(result.generatedDocumentId).get('readOnlyWord'),
+            'Queued composite generation should pass the read-only Word option');
     }
 
     @IsTest

@@ -60,6 +60,20 @@ private class DocgenControllerTest {
         }
     }
 
+    private static Map<String, Object> getRequestOptions(Id generatedDocumentId) {
+        Generated_Document__c doc = [
+            SELECT RequestJSON__c, RequestJSON02__c, RequestJSON03__c, RequestJSON04__c,
+                   RequestJSON05__c, RequestJSON06__c, RequestJSON07__c, RequestJSON08__c,
+                   RequestJSON09__c, RequestJSON10__c
+            FROM Generated_Document__c
+            WHERE Id = :generatedDocumentId
+        ];
+        Map<String, Object> request = (Map<String, Object>) JSON.deserializeUntyped(
+            DocgenEnvelopeService.reconstructRequestJSON(doc)
+        );
+        return (Map<String, Object>) request.get('options');
+    }
+
     /**
      * Mock HTTP callout for server error (500)
      */
@@ -237,6 +251,21 @@ private class DocgenControllerTest {
             WHERE Id = :result.generatedDocumentId
         ];
         Assert.areEqual('DOCX', doc.OutputFormat__c, 'Generated document should store resolved template default');
+    }
+
+    @isTest
+    static void testGeneratePassesReadOnlyWordOption() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        Test.setMock(HttpCalloutMock.class, new MockDocgenSuccessCallout());
+
+        Test.startTest();
+        DocgenController.GenerateResult result = DocgenController.generate(template.Id, acc.Id, 'DOCX', true);
+        Test.stopTest();
+
+        Assert.isTrue(result.success, 'DOCX generation should succeed');
+        Assert.areEqual(true, getRequestOptions(result.generatedDocumentId).get('readOnlyWord'),
+            'The direct Apex API should pass the read-only Word option');
     }
 
     /**
@@ -1039,6 +1068,29 @@ private class DocgenControllerTest {
             LIMIT 1
         ];
         Assert.areEqual('PPTX', doc.OutputFormat__c, 'Composite generation should store resolved composite default');
+    }
+
+    @isTest
+    static void testGenerateCompositePassesReadOnlyWordOption() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        String recordIds = JSON.serialize(new Map<String, Id>{
+            'accountId' => scenario.testRecordId
+        });
+        Test.setMock(HttpCalloutMock.class, new MockCompositeDocgenSuccessCallout());
+
+        Test.startTest();
+        DocgenController.generateComposite(scenario.compositeDoc.Id, recordIds, 'DOCX', true);
+        Test.stopTest();
+
+        Generated_Document__c doc = [
+            SELECT Id
+            FROM Generated_Document__c
+            WHERE Composite_Document__c = :scenario.compositeDoc.Id
+            LIMIT 1
+        ];
+        Assert.areEqual(true, getRequestOptions(doc.Id).get('readOnlyWord'),
+            'The composite Apex API should pass the read-only Word option');
     }
 
     /**

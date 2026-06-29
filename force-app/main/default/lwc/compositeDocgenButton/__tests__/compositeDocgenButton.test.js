@@ -240,7 +240,7 @@ describe('c-composite-docgen-button', () => {
     expect(spinner).toBeNull();
   });
 
-  it('disables button and shows spinner during processing', () => {
+  it('disables button and shows progress without blocking spinner during processing', () => {
     // Arrange
     const element = createElement('c-composite-docgen-button', {
       is: CompositeDocgenButton
@@ -259,11 +259,13 @@ describe('c-composite-docgen-button', () => {
     const button = element.shadowRoot.querySelector('lightning-button');
     button.click();
 
-    // Assert - button disabled and spinner shown
+    // Assert - button disabled and progress shown without the blocking processing spinner
     return Promise.resolve().then(() => {
       expect(button.disabled).toBe(true);
+      expect(element.shadowRoot.querySelector('.docgen-progress__track')).not.toBeNull();
+      expect(element.shadowRoot.querySelector('.docgen-progress__bar').style.width).toBe('10%');
       const spinner = element.shadowRoot.querySelector('lightning-spinner');
-      expect(spinner).not.toBeNull();
+      expect(spinner).toBeNull();
     });
   });
 
@@ -351,7 +353,8 @@ describe('c-composite-docgen-button', () => {
     expect(generateComposite).toHaveBeenCalledWith({
       compositeDocId: 'a0Y1234567890ABC',
       recordIds: JSON.stringify({ accountId: '0011234567890ABC' }),
-      outputFormat: null
+      outputFormat: null,
+      readOnlyWord: false
     });
   });
 
@@ -384,14 +387,16 @@ describe('c-composite-docgen-button', () => {
     const result = await element.generate({
       compositeDocumentId: 'a0Y1234567890ABC',
       recordIds: { quoteId: 'a551234567890ABC' },
-      outputFormat: 'PDF'
+      outputFormat: 'DOCX',
+      readOnlyWord: true
     });
 
     expect(result).toBe(mockDownloadUrl);
     expect(generateComposite).toHaveBeenCalledWith({
       compositeDocId: 'a0Y1234567890ABC',
       recordIds: JSON.stringify({ quoteId: 'a551234567890ABC' }),
-      outputFormat: 'PDF'
+      outputFormat: 'DOCX',
+      readOnlyWord: true
     });
   });
 
@@ -436,7 +441,8 @@ describe('c-composite-docgen-button', () => {
       compositeDocumentId: 'a0Y1234567890ABC',
       recordIds: JSON.stringify({ accountId: '0011234567890ABC' }),
       outputFormat: 'PDF',
-      previewMode: true
+      previewMode: true,
+      readOnlyWord: false
     });
     expect(window.open).not.toHaveBeenCalled();
     expect(getPdfPreviewContent).toHaveBeenCalledWith({
@@ -444,7 +450,7 @@ describe('c-composite-docgen-button', () => {
     });
     const iframeSrc = element.shadowRoot.querySelector('iframe').src;
     expect(iframeSrc).toContain('blob:composite-pdf-preview');
-    expect(iframeSrc).toContain('#view=FitH&zoom=page-width&pagemode=none');
+    expect(iframeSrc).toContain('#page=1&zoom=100&navpanes=0&pagemode=none');
     expect(iframeSrc).not.toContain('/lightning/r/ContentDocument/');
     expect(iframeSrc).not.toContain('/version/download/');
     expect(previewHandler).toHaveBeenCalledTimes(1);

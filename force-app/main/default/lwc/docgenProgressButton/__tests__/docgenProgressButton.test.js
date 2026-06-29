@@ -101,6 +101,7 @@ describe('c-docgen-progress-button', () => {
     element.templateName = 'Account Template';
     element.recordId = '0011234567890ABC';
     element.outputFormat = 'DOCX';
+    element.readOnlyWord = true;
 
     startGeneration.mockResolvedValue({
       generatedDocumentId: 'a0G123',
@@ -121,6 +122,7 @@ describe('c-docgen-progress-button', () => {
       templateName: 'Account Template',
       recordId: '0011234567890ABC',
       outputFormat: 'DOCX',
+      readOnlyWord: true,
     });
   });
 
@@ -230,6 +232,7 @@ describe('c-docgen-progress-button', () => {
       templateName: null,
       recordId: '0011234567890ABC',
       outputFormat: 'PPTX',
+      readOnlyWord: false,
     });
   });
 
@@ -262,6 +265,7 @@ describe('c-docgen-progress-button', () => {
       templateName: 'Account Template',
       recordId: '0011234567890ABC',
       outputFormat: 'PDF',
+      readOnlyWord: false,
     });
   });
 
@@ -324,6 +328,7 @@ describe('c-docgen-progress-button', () => {
       templateName: 'Account Template',
       recordId: '0011234567890ABC',
       outputFormat: 'PDF',
+      readOnlyWord: false,
       previewMode: true,
     });
     expect(window.open).not.toHaveBeenCalled();
@@ -332,7 +337,7 @@ describe('c-docgen-progress-button', () => {
       generatedDocumentId: 'a0G123',
     });
     expect(iframeSrc).toContain('blob:docgen-pdf-preview');
-    expect(iframeSrc).toContain('#view=FitH&zoom=page-width&pagemode=none');
+    expect(iframeSrc).toContain('#page=1&zoom=100&navpanes=0&pagemode=none');
     expect(iframeSrc).not.toContain('/lightning/r/ContentDocument/');
     expect(iframeSrc).not.toContain('/version/download/');
     expect(element.shadowRoot.querySelectorAll('lightning-button')).toHaveLength(3);

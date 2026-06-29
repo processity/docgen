@@ -38,6 +38,13 @@ export default class DocgenButton extends LightningElement {
   @api outputFormat;
 
   /**
+   * Protect generated DOCX content while leaving supported form fields editable.
+   * Ignored for PDF and PPTX output.
+   * @type {boolean}
+   */
+  @api readOnlyWord = false;
+
+  /**
    * Current record ID (automatically provided by Lightning runtime)
    * @type {string}
    */
@@ -115,7 +122,8 @@ export default class DocgenButton extends LightningElement {
       const result = await generate({
         templateId: effectiveTemplateId,
         recordId: this.recordId,
-        outputFormat: this.normalizeOutputFormat(this.outputFormat)
+        outputFormat: this.normalizeOutputFormat(this.outputFormat),
+        readOnlyWord: this.normalizeBoolean(this.readOnlyWord)
       });
 
       // Check if result indicates success or error
@@ -163,6 +171,10 @@ export default class DocgenButton extends LightningElement {
 
   normalizeOutputFormat(value) {
     return value ? String(value).toUpperCase() : null;
+  }
+
+  normalizeBoolean(value) {
+    return value === true || String(value).toLowerCase() === 'true';
   }
 
   /**

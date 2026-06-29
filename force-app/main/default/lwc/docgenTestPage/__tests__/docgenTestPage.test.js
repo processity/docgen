@@ -119,4 +119,40 @@ describe('c-docgen-test-page', () => {
       .find((combobox) => combobox.label === 'Output Format');
     expect(outputFormatCombobox.value).toBe('PPTX');
   });
+
+  it('shows the read-only control only for DOCX and passes it to generation', async () => {
+    const element = await renderConfiguredPage();
+    const outputFormatCombobox = [...element.shadowRoot.querySelectorAll('lightning-combobox')]
+      .find((combobox) => combobox.label === 'Output Format');
+
+    expect([...element.shadowRoot.querySelectorAll('lightning-input')]
+      .find((input) => input.label === 'Read-only Word Document')).toBeUndefined();
+
+    outputFormatCombobox.dispatchEvent(new CustomEvent('change', {
+      detail: { value: 'DOCX' }
+    }));
+    await flushPromises();
+
+    const readOnlyToggle = [...element.shadowRoot.querySelectorAll('lightning-input')]
+      .find((input) => input.label === 'Read-only Word Document');
+    expect(readOnlyToggle).not.toBeUndefined();
+    expect(readOnlyToggle.checked).toBe(false);
+
+    readOnlyToggle.checked = true;
+    readOnlyToggle.dispatchEvent(new CustomEvent('change'));
+    await flushPromises();
+
+    const docgenButton = element.shadowRoot.querySelector('c-docgen-button');
+    expect(docgenButton.outputFormat).toBe('DOCX');
+    expect(docgenButton.readOnlyWord).toBe(true);
+
+    outputFormatCombobox.dispatchEvent(new CustomEvent('change', {
+      detail: { value: 'PDF' }
+    }));
+    await flushPromises();
+
+    expect([...element.shadowRoot.querySelectorAll('lightning-input')]
+      .find((input) => input.label === 'Read-only Word Document')).toBeUndefined();
+    expect(docgenButton.readOnlyWord).toBe(false);
+  });
 });

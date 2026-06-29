@@ -86,12 +86,26 @@
 	                            </lightning-combobox>
                         </div>
 
+                        <template if:true={isDocxSelected}>
+                            <div class="slds-m-bottom_medium">
+                                <lightning-input
+                                    type="toggle"
+                                    label="Read-only Word Document"
+                                    message-toggle-active="Read only"
+                                    message-toggle-inactive="Normal"
+                                    checked={readOnlyWord}
+                                    onchange={handleReadOnlyWordChange}>
+                                </lightning-input>
+                            </div>
+                        </template>
+
                         <!-- Generate Button (enabled when template is selected) -->
                         <template if:true={templateId}>
                             <c-docgen-button
                                 record-id={recordId}
                                 template-id={templateId}
                                 output-format={outputFormat}
+                                read-only-word={readOnlyWord}
                                 button-label="Generate Test Document"
                                 success-message="Test document generated successfully!">
                             </c-docgen-button>

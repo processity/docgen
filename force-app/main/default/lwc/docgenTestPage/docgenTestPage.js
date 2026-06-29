@@ -66,6 +66,7 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     @track selectedObjectConfig;
     @track supportedObjectsData = [];
     @track outputFormat = '';
+    @track readOnlyWord = false;
     columns = COLUMNS;
     pageRef;
 
@@ -177,6 +178,10 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
         return OUTPUT_FORMAT_OPTIONS;
     }
 
+    get isDocxSelected() {
+        return this.outputFormat === 'DOCX';
+    }
+
     // Handle object type selection
     handleObjectTypeChange(event) {
         const newObjectType = event.detail.value;
@@ -218,7 +223,14 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
     // Handle output format selection
     handleOutputFormatChange(event) {
         this.outputFormat = event.detail.value;
+        if (!this.isDocxSelected) {
+            this.readOnlyWord = false;
+        }
         this.updateUrlParams();
+    }
+
+    handleReadOnlyWordChange(event) {
+        this.readOnlyWord = event.target.checked;
     }
 
     normalizeOutputFormat(outputFormat) {
