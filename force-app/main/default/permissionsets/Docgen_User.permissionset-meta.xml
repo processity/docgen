@@ -321,6 +321,11 @@
         <field>Composite_Document_Template__c.Unique_Key__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Composite_Document_Template__c.Inclusion_Formula__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 
 
     <!-- External Credential Principal Access -->

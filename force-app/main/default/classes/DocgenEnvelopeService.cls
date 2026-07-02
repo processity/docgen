@@ -444,13 +444,15 @@ public with sharing class DocgenEnvelopeService {
             'returnDocxToBrowser' => composite.ReturnDocxToBrowser__c != null ? composite.ReturnDocxToBrowser__c : true
         };
 
-        // Get composite data from CompositeDocgenDataProvider
-        env.data = CompositeDocgenDataProvider.buildCompositeData(
-            compositeDocId,
-            recordIds,
-            locale,
-            timezone
-        );
+        // Build data and preserve the exact junction selection used for concatenation.
+        CompositeDocgenDataProvider.CompositeBuildResult compositeBuildResult =
+            CompositeDocgenDataProvider.buildCompositeDataWithSelection(
+                compositeDocId,
+                recordIds,
+                locale,
+                timezone
+            );
+        env.data = compositeBuildResult.data;
         env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String watermarkText = resolveWatermarkText(composite, env.data, null);
         if (String.isNotBlank(watermarkText)) {
@@ -469,7 +471,15 @@ public with sharing class DocgenEnvelopeService {
         } else if (composite.Template_Strategy__c == 'Concatenate Templates') {
             // Multiple templates to be merged individually then concatenated
             env.templateId = null;
-            env.templates = loadTemplateSequence(compositeDocId);
+            if (compositeBuildResult.includedJunctionIds.isEmpty()) {
+                throw new CompositeDocgenException(
+                    'No active composite templates matched their Inclusion Formula.'
+                );
+            }
+            env.templates = loadTemplateSequence(
+                compositeDocId,
+                compositeBuildResult.includedJunctionIds
+            );
         }
 
         // Extract parent IDs from all namespaces
@@ -520,13 +530,17 @@ public with sharing class DocgenEnvelopeService {
      * Load template sequence for concatenation strategy
      */
     @TestVisible
-    private static List<TemplateRef> loadTemplateSequence(Id compositeDocId) {
+    private static List<TemplateRef> loadTemplateSequence(
+        Id compositeDocId,
+        Set<Id> includedJunctionIds
+    ) {
         List<Composite_Document_Template__c> junctions = [
             SELECT Id, Namespace__c, Sequence__c,
                    Document_Template__r.TemplateContentVersionId__c
             FROM Composite_Document_Template__c
             WHERE Composite_Document__c = :compositeDocId
               AND IsActive__c = true
+              AND Id IN :includedJunctionIds
             ORDER BY Sequence__c ASC
         ];
 

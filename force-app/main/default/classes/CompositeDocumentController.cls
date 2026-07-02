@@ -167,6 +167,7 @@ public with sharing class CompositeDocumentController {
      * @param namespace Unique namespace for this template's data
      * @param sequence Order in which template is processed (lower first)
      * @param isActive Whether the junction record is active
+     * @param inclusionFormula Optional Salesforce Boolean formula controlling whether the template is merged
      * @return ID of the created junction record
      * @throws AuraHandledException if validation fails or DML error occurs
      */
@@ -176,7 +177,8 @@ public with sharing class CompositeDocumentController {
         Id templateId,
         String namespace,
         Integer sequence,
-        Boolean isActive
+        Boolean isActive,
+        String inclusionFormula
     ) {
         // Validate inputs
         if (compositeDocId == null) {
@@ -226,7 +228,8 @@ public with sharing class CompositeDocumentController {
                 Document_Template__c = templateId,
                 Namespace__c = namespace,
                 Sequence__c = sequence,
-                IsActive__c = isActive
+                IsActive__c = isActive,
+                Inclusion_Formula__c = String.isBlank(inclusionFormula) ? null : inclusionFormula.trim()
             );
 
             insert junction;
@@ -257,6 +260,26 @@ public with sharing class CompositeDocumentController {
     }
 
     /**
+     * Backward-compatible Apex overload for callers that do not set an inclusion formula.
+     */
+    public static String addTemplateToComposite(
+        Id compositeDocId,
+        Id templateId,
+        String namespace,
+        Integer sequence,
+        Boolean isActive
+    ) {
+        return addTemplateToComposite(
+            compositeDocId,
+            templateId,
+            namespace,
+            sequence,
+            isActive,
+            null
+        );
+    }
+
+    /**
      * Get existing templates for a composite document (for edit/manage UI)
      *
      * @param compositeDocId ID of the Composite_Document__c record
@@ -266,7 +289,7 @@ public with sharing class CompositeDocumentController {
     public static List<Composite_Document_Template__c> getCompositeTemplates(Id compositeDocId) {
         try {
             return [
-                SELECT Id, Name, Namespace__c, Sequence__c, IsActive__c,
+                SELECT Id, Name, Namespace__c, Sequence__c, IsActive__c, Inclusion_Formula__c,
                        Document_Template__c, Document_Template__r.Name,
                        Document_Template__r.PrimaryParent__c,
                        Document_Template__r.DataSource__c

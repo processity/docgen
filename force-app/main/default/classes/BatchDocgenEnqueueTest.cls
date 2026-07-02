@@ -441,6 +441,12 @@ private class BatchDocgenEnqueueTest {
 
         // Get existing template
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        DocgenTestDataFactory.createCompositeDocumentTemplate(
+            composite.Id,
+            template.Id,
+            'Account',
+            10
+        );
 
         // Create a Terms__c custom object record (simulated with Contact for testing)
         Contact termsRecord = DocgenTestDataFactory.createContact('Standard', 'Terms and Conditions', null);

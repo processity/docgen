@@ -22,6 +22,19 @@
 public class CompositeDocgenDataProvider implements DocgenDataProvider {
 
     /**
+     * Composite data plus the junction records selected for concatenation.
+     */
+    public class CompositeBuildResult {
+        public Map<String, Object> data;
+        public Set<Id> includedJunctionIds;
+
+        public CompositeBuildResult() {
+            data = new Map<String, Object>();
+            includedJunctionIds = new Set<Id>();
+        }
+    }
+
+    /**
      * NOT SUPPORTED - Use buildCompositeData() instead
      *
      * The standard buildData() signature doesn't support composite context
@@ -56,19 +69,37 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
         String locale,
         String timezone
     ) {
+        return buildCompositeDataWithSelection(
+            compositeDocId,
+            recordIds,
+            locale,
+            timezone
+        ).data;
+    }
+
+    /**
+     * Build composite data and record which junctions passed their inclusion formulas.
+     */
+    public static CompositeBuildResult buildCompositeDataWithSelection(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String locale,
+        String timezone
+    ) {
         // Load junction records ordered by Sequence__c
         List<Composite_Document_Template__c> junctions = queryJunctionRecords(compositeDocId);
+        CompositeBuildResult result = new CompositeBuildResult();
 
         // Return empty map if no templates configured
         if (junctions.isEmpty()) {
-            return new Map<String, Object>();
+            return result;
         }
 
         // Validate no namespace collisions
         validateNamespaceUniqueness(junctions);
+        validateInclusionFormulaStrategy(junctions);
 
         // Execute each template's data provider and merge results
-        Map<String, Object> compositeData = new Map<String, Object>();
         Map<String, Id> variablePool = new Map<String, Id>(recordIds); // Shared variable pool
 
         for (Composite_Document_Template__c junction : junctions) {
@@ -76,6 +107,10 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
 
             // Determine record ID for this template
             Id templateRecordId = determineRecordId(tmpl, variablePool);
+
+            if (!shouldIncludeTemplate(junction, templateRecordId)) {
+                continue;
+            }
 
             // Get data provider (SOQL or Custom)
             DocgenDataProvider provider = getProvider(tmpl);
@@ -95,13 +130,14 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
             Object unwrappedData = unwrapSingleObjectData(namespaceData);
 
             // Store in namespace key
-            compositeData.put(junction.Namespace__c, unwrappedData);
+            result.data.put(junction.Namespace__c, unwrappedData);
+            result.includedJunctionIds.add(junction.Id);
 
             // Extract new variables for subsequent templates
             extractVariablesFromData(namespaceData, variablePool);
         }
 
-        return compositeData;
+        return result;
     }
 
     /**
@@ -112,7 +148,9 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
      */
     private static List<Composite_Document_Template__c> queryJunctionRecords(Id compositeDocId) {
         return [
-            SELECT Id, Namespace__c, Sequence__c, Document_Template__c,
+            SELECT Id, Name, Namespace__c, Sequence__c, Document_Template__c,
+                   Inclusion_Formula__c, Composite_Document__r.Template_Strategy__c,
+                   Document_Template__r.Name,
                    Document_Template__r.TemplateContentVersionId__c,
                    Document_Template__r.DataSource__c,
                    Document_Template__r.SOQL__c,
@@ -123,6 +161,87 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
               AND IsActive__c = true
             ORDER BY Sequence__c ASC
         ];
+    }
+
+    /**
+     * Inclusion formulas represent child-file selection and are unsupported for Own Template.
+     */
+    private static void validateInclusionFormulaStrategy(
+        List<Composite_Document_Template__c> junctions
+    ) {
+        for (Composite_Document_Template__c junction : junctions) {
+            if (
+                String.isNotBlank(junction.Inclusion_Formula__c) &&
+                junction.Composite_Document__r.Template_Strategy__c != 'Concatenate Templates'
+            ) {
+                throw new CompositeDocgenException(
+                    'Inclusion Formula on junction ' + junction.Name +
+                    ' is supported only when the Composite Document strategy is Concatenate Templates.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Evaluate a junction's Salesforce Boolean formula against its source record.
+     */
+    private static Boolean shouldIncludeTemplate(
+        Composite_Document_Template__c junction,
+        Id sourceRecordId
+    ) {
+        if (String.isBlank(junction.Inclusion_Formula__c)) {
+            return true;
+        }
+
+        if (sourceRecordId == null) {
+            throw inclusionFormulaError(junction, 'No source record ID was available.');
+        }
+
+        try {
+            Schema.SObjectType sourceType = sourceRecordId.getSObjectType();
+            FormulaEval.FormulaInstance formulaInstance = Formula.builder()
+                .withType(sourceType)
+                .withReturnType(FormulaEval.FormulaReturnType.BOOLEAN)
+                .withFormula(junction.Inclusion_Formula__c.trim())
+                .treatNumericNullAsZero(false)
+                .build();
+
+            Set<String> referencedFields = new Set<String>(formulaInstance.getReferencedFields());
+            referencedFields.add('Id');
+            List<String> queryFields = new List<String>(referencedFields);
+            queryFields.sort();
+
+            String objectApiName = sourceType.getDescribe().getName();
+            String query = 'SELECT ' + String.join(queryFields, ', ') +
+                ' FROM ' + objectApiName +
+                ' WHERE Id = :sourceRecordId LIMIT 1';
+            List<SObject> sourceRecords = Database.query(query);
+
+            if (sourceRecords.isEmpty()) {
+                throw inclusionFormulaError(
+                    junction,
+                    'Source record ' + sourceRecordId + ' was not found or is not accessible.'
+                );
+            }
+
+            Object formulaResult = formulaInstance.evaluate(sourceRecords[0]);
+            return formulaResult != null && (Boolean) formulaResult;
+        } catch (CompositeDocgenException e) {
+            throw e;
+        } catch (Exception e) {
+            throw inclusionFormulaError(junction, e.getMessage());
+        }
+    }
+
+    private static CompositeDocgenException inclusionFormulaError(
+        Composite_Document_Template__c junction,
+        String detail
+    ) {
+        return new CompositeDocgenException(
+            'Unable to evaluate Inclusion Formula for junction ' + junction.Name +
+            ' (namespace ' + junction.Namespace__c + ', template ' +
+            junction.Document_Template__r.Name + '): ' + detail
+        );
     }
 
     /**

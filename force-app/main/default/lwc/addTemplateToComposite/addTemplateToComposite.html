@@ -47,10 +47,22 @@
           class="slds-m-top_small"
         ></lightning-input>
 
+        <!-- Conditional Inclusion -->
+        <lightning-textarea
+          label="Inclusion Formula"
+          value={inclusionFormula}
+          onchange={handleInclusionFormulaChange}
+          max-length="3900"
+          placeholder='e.g., CONTAINS(Additional_Templates__c, "ABC")'
+          field-level-help="Salesforce Boolean formula evaluated against this template's source record. Leave blank to always include."
+          class="slds-m-top_small"
+        ></lightning-textarea>
+
         <!-- Help Text -->
         <div class="slds-m-top_medium slds-text-body_small slds-text-color_weak">
           <p><strong>Namespace:</strong> Unique key for this template's data in the merged document (e.g., "Account", "Terms")</p>
           <p><strong>Sequence:</strong> Order in which templates are processed (lower numbers first)</p>
+          <p><strong>Inclusion Formula:</strong> Optional Salesforce Boolean formula. The template is merged only when it evaluates to true.</p>
         </div>
 
         <!-- Action Buttons -->

@@ -204,7 +204,8 @@ private class CompositeDocumentControllerTest {
             template.Id,
             'Account',
             10,
-            true
+            true,
+            'CONTAINS(Name, "Acme")'
         );
         Test.stopTest();
 
@@ -212,7 +213,8 @@ private class CompositeDocumentControllerTest {
         System.assertNotEquals(null, junctionId, 'Junction record ID should be returned');
 
         Composite_Document_Template__c junction = [
-            SELECT Id, Namespace__c, Sequence__c, IsActive__c, Document_Template__c
+            SELECT Id, Namespace__c, Sequence__c, IsActive__c, Document_Template__c,
+                   Inclusion_Formula__c
             FROM Composite_Document_Template__c
             WHERE Id = :junctionId
         ];
@@ -221,6 +223,11 @@ private class CompositeDocumentControllerTest {
         System.assertEquals(10, junction.Sequence__c, 'Sequence should match');
         System.assertEquals(true, junction.IsActive__c, 'IsActive should match');
         System.assertEquals(template.Id, junction.Document_Template__c, 'Template should match');
+        System.assertEquals(
+            'CONTAINS(Name, "Acme")',
+            junction.Inclusion_Formula__c,
+            'Inclusion formula should match'
+        );
     }
 
     @isTest
@@ -235,7 +242,8 @@ private class CompositeDocumentControllerTest {
             templates[0].Id,
             'Account',
             10,
-            true
+            true,
+            null
         );
 
         // Act & Assert
@@ -247,7 +255,8 @@ private class CompositeDocumentControllerTest {
                 templates[1].Id,
                 'Account', // Duplicate namespace
                 20,
-                true
+                true,
+                null
             );
         } catch (Exception e) {
             exceptionThrown = true;
@@ -271,7 +280,8 @@ private class CompositeDocumentControllerTest {
                 template.Id,
                 '123Invalid', // Starts with number
                 10,
-                true
+                true,
+                null
             );
         } catch (Exception e) {
             exceptionThrown = true;
@@ -291,7 +301,7 @@ private class CompositeDocumentControllerTest {
         // Test null composite ID
         Boolean exception1 = false;
         try {
-            CompositeDocumentController.addTemplateToComposite(null, template.Id, 'Account', 10, true);
+            CompositeDocumentController.addTemplateToComposite(null, template.Id, 'Account', 10, true, null);
         } catch (Exception e) {
             exception1 = true;
         }
@@ -300,7 +310,7 @@ private class CompositeDocumentControllerTest {
         // Test null template ID
         Boolean exception2 = false;
         try {
-            CompositeDocumentController.addTemplateToComposite(composite.Id, null, 'Account', 10, true);
+            CompositeDocumentController.addTemplateToComposite(composite.Id, null, 'Account', 10, true, null);
         } catch (Exception e) {
             exception2 = true;
         }
@@ -309,7 +319,7 @@ private class CompositeDocumentControllerTest {
         // Test blank namespace
         Boolean exception3 = false;
         try {
-            CompositeDocumentController.addTemplateToComposite(composite.Id, template.Id, '', 10, true);
+            CompositeDocumentController.addTemplateToComposite(composite.Id, template.Id, '', 10, true, null);
         } catch (Exception e) {
             exception3 = true;
         }
@@ -318,7 +328,7 @@ private class CompositeDocumentControllerTest {
         // Test invalid sequence
         Boolean exception4 = false;
         try {
-            CompositeDocumentController.addTemplateToComposite(composite.Id, template.Id, 'Account', 0, true);
+            CompositeDocumentController.addTemplateToComposite(composite.Id, template.Id, 'Account', 0, true, null);
         } catch (Exception e) {
             exception4 = true;
         }
@@ -334,8 +344,8 @@ private class CompositeDocumentControllerTest {
         List<Docgen_Template__c> templates = [SELECT Id FROM Docgen_Template__c ORDER BY Name LIMIT 2];
 
         // Create junction records
-        CompositeDocumentController.addTemplateToComposite(composite.Id, templates[0].Id, 'Account', 10, true);
-        CompositeDocumentController.addTemplateToComposite(composite.Id, templates[1].Id, 'Terms', 20, true);
+        CompositeDocumentController.addTemplateToComposite(composite.Id, templates[0].Id, 'Account', 10, true, null);
+        CompositeDocumentController.addTemplateToComposite(composite.Id, templates[1].Id, 'Terms', 20, true, null);
 
         // Act
         Test.startTest();
@@ -361,7 +371,8 @@ private class CompositeDocumentControllerTest {
             template.Id,
             'Account',
             10,
-            true
+            true,
+            null
         );
 
         // Act
@@ -400,7 +411,8 @@ private class CompositeDocumentControllerTest {
             template.Id,
             'Account',
             10,
-            true
+            true,
+            null
         );
 
         // Act

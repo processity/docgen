@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Inclusion_Formula__c</fullName>
+    <description>Boolean Salesforce formula evaluated against this template's source record. The template is merged only when the formula evaluates to true. Leave blank to always include the template.</description>
+    <inlineHelpText>Salesforce Boolean formula evaluated against this template's source record. Leave blank to always include.</inlineHelpText>
+    <label>Inclusion Formula</label>
+    <length>3900</length>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
+</CustomField>

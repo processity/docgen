@@ -84,6 +84,7 @@
         <fields>Namespace__c</fields>
         <fields>Sequence__c</fields>
         <fields>IsActive__c</fields>
+        <fields>Inclusion_Formula__c</fields>
         <relatedList>Composite_Document_Template__c.Composite_Document__c</relatedList>
     </relatedLists>
     <relatedLists>

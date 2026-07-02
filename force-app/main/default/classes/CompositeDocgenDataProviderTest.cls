@@ -684,4 +684,258 @@ private class CompositeDocgenDataProviderTest {
         }
         Test.stopTest();
     }
+
+    @isTest
+    static void testInclusionFormulaFiltersDataAndTemplateSequence() {
+        Account parentAccount = DocgenTestDataFactory.createAccount('Global Parent');
+        Account sourceAccount = DocgenTestDataFactory.createAccount('Acme Customer');
+        sourceAccount.AnnualRevenue = 5000;
+        sourceAccount.Type = 'Customer - Direct';
+        sourceAccount.ParentId = parentAccount.Id;
+        update sourceAccount;
+
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Conditional sections',
+            Template_Strategy__c = 'Concatenate Templates',
+            IsActive__c = true
+        );
+        insert composite;
+
+        Docgen_Template__c headerTemplate = DocgenTestDataFactory.createTemplate(
+            'Conditional Header',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        Docgen_Template__c clausesTemplate = DocgenTestDataFactory.createTemplate(
+            'Conditional Clauses',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        Docgen_Template__c optionalTemplate = DocgenTestDataFactory.createTemplate(
+            'Conditional Optional',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+
+        String matchingFormula =
+            'IF(AND(' +
+            'CONTAINS(Name, "Acme"), ' +
+            'AnnualRevenue > 1000, ' +
+            'ISPICKVAL(Type, "Customer - Direct"), ' +
+            'Parent.Name = "Global Parent", ' +
+            'ISBLANK(NumberOfEmployees)' +
+            '), TRUE, FALSE)';
+
+        insert new List<Composite_Document_Template__c>{
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = headerTemplate.Id,
+                Namespace__c = 'Header',
+                Sequence__c = 10,
+                IsActive__c = true
+            ),
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = clausesTemplate.Id,
+                Namespace__c = 'Clauses',
+                Sequence__c = 20,
+                IsActive__c = true,
+                Inclusion_Formula__c = matchingFormula
+            ),
+            new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = optionalTemplate.Id,
+                Namespace__c = 'Optional',
+                Sequence__c = 30,
+                IsActive__c = true,
+                Inclusion_Formula__c = 'AnnualRevenue < 100'
+            )
+        };
+
+        Test.startTest();
+        DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.buildForComposite(
+            composite.Id,
+            new Map<String, Id>{ 'accountId' => sourceAccount.Id },
+            'PDF',
+            'en-GB',
+            'Europe/London'
+        );
+        Test.stopTest();
+
+        Assert.areEqual(2, envelope.templates.size(), 'Only blank and true formulas should be included');
+        Assert.areEqual('Header', envelope.templates[0].namespace, 'Blank formula should include the header');
+        Assert.areEqual(10, envelope.templates[0].sequence, 'Header sequence should be preserved');
+        Assert.areEqual('Clauses', envelope.templates[1].namespace, 'Matching formula should include clauses');
+        Assert.areEqual(20, envelope.templates[1].sequence, 'Clauses sequence should be preserved');
+        Assert.isTrue(envelope.data.containsKey('Header'), 'Header data should be present');
+        Assert.isTrue(envelope.data.containsKey('Clauses'), 'Clauses data should be present');
+        Assert.isFalse(envelope.data.containsKey('Optional'), 'False formula data should be omitted');
+    }
+
+    @isTest
+    static void testInvalidAndUnknownFieldFormulasFailClearly() {
+        Account sourceAccount = DocgenTestDataFactory.createAccount('Formula Error Account');
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Formula errors',
+            Template_Strategy__c = 'Concatenate Templates',
+            IsActive__c = true
+        );
+        insert composite;
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Formula Error Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        Composite_Document_Template__c junction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'InvalidSection',
+            Sequence__c = 10,
+            IsActive__c = true,
+            Inclusion_Formula__c = 'CONTAINS(Name, "Account"'
+        );
+        insert junction;
+
+        try {
+            CompositeDocgenDataProvider.buildCompositeData(
+                composite.Id,
+                new Map<String, Id>{ 'accountId' => sourceAccount.Id },
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('Invalid formula should fail generation');
+        } catch (CompositeDocgenException e) {
+            Assert.isTrue(e.getMessage().contains('InvalidSection'), 'Error should identify the namespace');
+            Assert.isTrue(e.getMessage().contains('Formula Error Template'), 'Error should identify the template');
+        }
+
+        junction.Inclusion_Formula__c = 'Missing_Field__c = "ABC"';
+        update junction;
+
+        try {
+            CompositeDocgenDataProvider.buildCompositeData(
+                composite.Id,
+                new Map<String, Id>{ 'accountId' => sourceAccount.Id },
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('Unknown formula fields should fail generation');
+        } catch (CompositeDocgenException e) {
+            Assert.isTrue(e.getMessage().contains('Missing_Field__c'), 'Error should retain the field problem');
+        }
+    }
+
+    @isTest
+    static void testFormulaWithoutSourceRecordFailsClearly() {
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Missing source record',
+            Template_Strategy__c = 'Concatenate Templates',
+            IsActive__c = true
+        );
+        insert composite;
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Missing Source Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        insert new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'MissingSource',
+            Sequence__c = 10,
+            IsActive__c = true,
+            Inclusion_Formula__c = 'CONTAINS(Name, "Acme")'
+        );
+
+        try {
+            CompositeDocgenDataProvider.buildCompositeData(
+                composite.Id,
+                new Map<String, Id>(),
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('A formula without a source record should fail');
+        } catch (CompositeDocgenException e) {
+            Assert.isTrue(e.getMessage().contains('No source record ID'), 'Error should explain missing source record');
+        }
+    }
+
+    @isTest
+    static void testAllFalseFormulasFailBeforeBackendRequest() {
+        Account sourceAccount = DocgenTestDataFactory.createAccount('No Match Account');
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'No matching sections',
+            Template_Strategy__c = 'Concatenate Templates',
+            IsActive__c = true
+        );
+        insert composite;
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'No Match Template',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        insert new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'NoMatch',
+            Sequence__c = 10,
+            IsActive__c = true,
+            Inclusion_Formula__c = 'CONTAINS(Name, "Definitely Missing")'
+        );
+
+        try {
+            DocgenEnvelopeService.buildForComposite(
+                composite.Id,
+                new Map<String, Id>{ 'accountId' => sourceAccount.Id },
+                'PDF',
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('An all-false composite should not produce a backend envelope');
+        } catch (CompositeDocgenException e) {
+            Assert.isTrue(e.getMessage().contains('No active composite templates matched'),
+                'Error should explain that no sections matched');
+        }
+    }
+
+    @isTest
+    static void testOwnTemplateRuntimeGuardRejectsLegacyFormula() {
+        Account sourceAccount = DocgenTestDataFactory.createAccount('Own Template Account');
+        Composite_Document__c composite = new Composite_Document__c(
+            Description__c = 'Legacy conditional own template',
+            Template_Strategy__c = 'Concatenate Templates',
+            IsActive__c = true
+        );
+        insert composite;
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
+            'Own Strategy Child',
+            'Account',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId'
+        );
+        insert new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = template.Id,
+            Namespace__c = 'OwnSection',
+            Sequence__c = 10,
+            IsActive__c = true,
+            Inclusion_Formula__c = 'CONTAINS(Name, "Account")'
+        );
+
+        composite.Template_Strategy__c = 'Own Template';
+        composite.TemplateContentVersionId__c = '068000000000000AAA';
+        update composite;
+
+        try {
+            CompositeDocgenDataProvider.buildCompositeData(
+                composite.Id,
+                new Map<String, Id>{ 'accountId' => sourceAccount.Id },
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('Own Template strategy should reject child inclusion formulas');
+        } catch (CompositeDocgenException e) {
+            Assert.isTrue(e.getMessage().contains('Concatenate Templates'),
+                'Error should explain the supported strategy');
+        }
+    }
 }

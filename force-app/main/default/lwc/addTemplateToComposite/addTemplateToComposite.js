@@ -41,6 +41,12 @@ export default class AddTemplateToComposite extends NavigationMixin(LightningEle
   @track isActive = true;
 
   /**
+   * Optional Salesforce Boolean formula controlling template inclusion
+   * @type {string}
+   */
+  @track inclusionFormula = '';
+
+  /**
    * Loading state
    * @type {boolean}
    */
@@ -124,6 +130,13 @@ export default class AddTemplateToComposite extends NavigationMixin(LightningEle
   }
 
   /**
+   * Handle inclusion formula change
+   */
+  handleInclusionFormulaChange(event) {
+    this.inclusionFormula = event.detail.value;
+  }
+
+  /**
    * Validate form inputs
    * @returns {boolean} True if valid
    */
@@ -181,7 +194,8 @@ export default class AddTemplateToComposite extends NavigationMixin(LightningEle
         templateId: this.selectedTemplateId,
         namespace: this.namespace.trim(),
         sequence: this.sequence,
-        isActive: this.isActive
+        isActive: this.isActive,
+        inclusionFormula: this.inclusionFormula.trim()
       });
 
       // Success
@@ -230,6 +244,7 @@ export default class AddTemplateToComposite extends NavigationMixin(LightningEle
     this.namespace = '';
     this.sequence = this.sequence + 10; // Auto-increment for next template
     this.isActive = true;
+    this.inclusionFormula = '';
   }
 
   /**

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Inclusion_Formula_Requires_Concatenate</fullName>
+    <active>true</active>
+    <description>Inclusion formulas can skip individual files only when the parent composite uses Concatenate Templates.</description>
+    <errorConditionFormula>AND(
+    NOT(ISBLANK(Inclusion_Formula__c)),
+    NOT(ISPICKVAL(Composite_Document__r.Template_Strategy__c, &quot;Concatenate Templates&quot;))
+)</errorConditionFormula>
+    <errorDisplayField>Inclusion_Formula__c</errorDisplayField>
+    <errorMessage>Inclusion Formula is supported only when the Composite Document strategy is 'Concatenate Templates'.</errorMessage>
+</ValidationRule>
