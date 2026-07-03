@@ -10,6 +10,7 @@ info:
     - Template caching by ContentVersionId
     - Idempotency via RequestHash
     - LibreOffice-based DOCX→PDF conversion
+    - Optional Salesforce PDF page attachments appended to PDF output
 
     **Authentication:**
     - Inbound (Salesforce → Node): Azure AD OAuth2 client credentials
@@ -119,9 +120,10 @@ paths:
         3. Fetch template from Salesforce Files (by ContentVersionId)
         4. Merge template with data using docx-templates
         5. Convert DOCX→PDF via LibreOffice (if outputFormat=PDF)
-        6. Upload result to Salesforce Files
-        7. Link file to parent records (Account/Opportunity/Case)
-        8. Return download URL and ContentVersionId
+        6. Append optional Salesforce PDF ContentVersions (if outputFormat=PDF)
+        7. Upload result to Salesforce Files
+        8. Link file to parent records (Account/Opportunity/Case)
+        9. Return download URL and ContentVersionId
 
         **Data Contract:**
         - Apex is responsible for building the JSON envelope
@@ -153,6 +155,9 @@ paths:
                   templateId: '068xx000000abcdXXX'
                   outputFileName: 'Account_Summary.pdf'
                   outputFormat: PDF
+                  additionalPdfContentVersionIds:
+                    - '068xx000000extraAXX'
+                    - '068xx000000extraBXX'
                   locale: en-GB
                   timezone: Europe/London
                   options:
@@ -563,6 +568,20 @@ components:
             - PPTX
           description: |
             Output format. PDF requires LibreOffice DOCX conversion. DOCX and PPTX return the merged template as-is.
+        additionalPdfContentVersionIds:
+          type: array
+          items:
+            type: string
+            pattern: '^([a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$'
+          description: |
+            Optional ordered Salesforce ContentVersion IDs for PDF files whose pages are appended after
+            the generated PDF. Duplicate IDs are removed after their first occurrence. At most 20 unique
+            PDFs are accepted and the aggregate source
+            size is limited to 50 MiB. Permanent per-file problems are returned as attachment warnings.
+            This property is ignored completely for DOCX and PPTX output.
+          example:
+            - '068xx000000extraAXX'
+            - '068xx000000extraBXX'
         locale:
           type: string
           description: |
@@ -693,6 +712,40 @@ components:
             Correlation ID for tracking this request across logs, traces, and metrics.
             Extracted from `x-correlation-id` header or generated as UUIDv4.
           example: '12345678-1234-4567-89ab-123456789012'
+        appendedAttachmentCount:
+          type: integer
+          minimum: 0
+          description: Number of additional PDF files successfully appended to the generated PDF.
+          example: 2
+        attachmentWarnings:
+          type: array
+          description: Permanent per-file attachment problems that were skipped without failing generation.
+          items:
+            type: object
+            required:
+              - contentVersionId
+              - code
+              - message
+            properties:
+              contentVersionId:
+                type: string
+                example: '068xx000000extraAXX'
+              title:
+                type: string
+                nullable: true
+                example: Appendix
+              code:
+                type: string
+                enum:
+                  - INVALID_CONTENT_VERSION_ID
+                  - CONTENT_VERSION_NOT_FOUND
+                  - NOT_A_PDF
+                  - DOWNLOAD_FORBIDDEN
+                  - INVALID_PDF
+                  - EMPTY_PDF
+              message:
+                type: string
+                example: The ContentVersion is not a PDF and was skipped.
 
     Error:
       type: object

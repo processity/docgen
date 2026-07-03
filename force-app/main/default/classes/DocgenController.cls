@@ -14,6 +14,7 @@ public with sharing class DocgenController {
         @AuraEnabled public String errorMessage { get; set; }
         @AuraEnabled public String correlationId { get; set; }
         @AuraEnabled public String generatedDocumentId { get; set; }
+        @AuraEnabled public String attachmentWarnings { get; set; }
 
         public GenerateResult() {
             this.success = false;
@@ -21,12 +22,18 @@ public with sharing class DocgenController {
     }
 
     // Factory methods for GenerateResult (must be at class level, not in inner class)
-    private static GenerateResult successResult(String downloadUrl, String correlationId, String docId) {
+    private static GenerateResult successResult(
+        String downloadUrl,
+        String correlationId,
+        String docId,
+        String attachmentWarnings
+    ) {
         GenerateResult result = new GenerateResult();
         result.success = true;
         result.downloadUrl = downloadUrl;
         result.correlationId = correlationId;
         result.generatedDocumentId = docId;
+        result.attachmentWarnings = attachmentWarnings;
         return result;
     }
 
@@ -76,7 +83,8 @@ public with sharing class DocgenController {
         Id templateId,
         Id recordId,
         String outputFormat,
-        Boolean readOnlyWord
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
     ) {
         Generated_Document__c doc;
         String effectiveOutputFormat = outputFormat;
@@ -92,7 +100,8 @@ public with sharing class DocgenController {
                 recordId,
                 outputFormat,
                 correlationId,
-                readOnlyWord
+                readOnlyWord,
+                additionalPdfContentVersionIds
             );
             effectiveOutputFormat = envelope.outputFormat;
 
@@ -103,7 +112,8 @@ public with sharing class DocgenController {
                 return successResult(
                     buildDownloadUrl(existingDoc.OutputFileId__c),
                     existingDoc.CorrelationId__c,
-                    existingDoc.Id
+                    existingDoc.Id,
+                    existingDoc.Attachment_Warnings__c
                 );
             }
 
@@ -143,6 +153,31 @@ public with sharing class DocgenController {
             String errorMessage = formatErrorMessageWithDetails(e, correlationId);
             return errorResult(errorMessage, correlationId, docId);
         }
+    }
+
+    public static GenerateResult generate(
+        Id templateId,
+        Id recordId,
+        String outputFormat,
+        Boolean readOnlyWord
+    ) {
+        return generate(templateId, recordId, outputFormat, readOnlyWord, (List<Id>) null);
+    }
+
+    public static GenerateResult generate(
+        Id templateId,
+        Id recordId,
+        String outputFormat,
+        Boolean readOnlyWord,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        return generate(
+            templateId,
+            recordId,
+            outputFormat,
+            readOnlyWord,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
     }
 
     /**
@@ -241,6 +276,90 @@ public with sharing class DocgenController {
         }
     }
 
+    @AuraEnabled
+    public static GenerateResult generateCompositeWithAttachments(
+        Id compositeDocId,
+        String recordIds,
+        String outputFormat,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
+    ) {
+        Generated_Document__c doc;
+        String effectiveOutputFormat = outputFormat;
+        String correlationId = generateCorrelationId();
+
+        try {
+            Map<String, Id> recordIdsMap = parseRecordIds(recordIds);
+            DocgenEnvelopeService.Envelope envelope = buildCompositeEnvelope(
+                compositeDocId,
+                recordIdsMap,
+                outputFormat,
+                correlationId,
+                readOnlyWord,
+                additionalPdfContentVersionIds
+            );
+            effectiveOutputFormat = envelope.outputFormat;
+
+            Generated_Document__c existingDoc = checkExistingDocument(envelope.requestHash);
+            if (existingDoc != null) {
+                return successResult(
+                    buildDownloadUrl(existingDoc.OutputFileId__c),
+                    existingDoc.CorrelationId__c,
+                    existingDoc.Id,
+                    existingDoc.Attachment_Warnings__c
+                );
+            }
+
+            HTTPResponse response = callNodeApi(envelope);
+            doc = createGeneratedDocumentForComposite(
+                envelope,
+                compositeDocId,
+                recordIdsMap,
+                correlationId
+            );
+            return handleResponseWithResult(response, doc, correlationId);
+        } catch (Exception e) {
+            String docId = null;
+            if (doc != null && doc.Id != null) {
+                docId = doc.Id;
+                try {
+                    markAsFailed(doc.Id, e.getMessage(), correlationId);
+                } catch (Exception updateEx) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to update record: ' + updateEx.getMessage());
+                }
+            } else {
+                try {
+                    docId = createFailedCompositeDocument(
+                        compositeDocId,
+                        recordIds,
+                        effectiveOutputFormat,
+                        e,
+                        correlationId
+                    );
+                } catch (Exception insertEx) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to create error tracking record: ' + insertEx.getMessage());
+                }
+            }
+            return errorResult(formatErrorMessageWithDetails(e, correlationId), correlationId, docId);
+        }
+    }
+
+    public static GenerateResult generateCompositeWithAttachments(
+        Id compositeDocId,
+        String recordIds,
+        String outputFormat,
+        Boolean readOnlyWord,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        return generateCompositeWithAttachments(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            readOnlyWord,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
+    }
+
     /**
      * Get template ID by name
      * Used by LWC component to resolve template name to ID
@@ -283,7 +402,8 @@ public with sharing class DocgenController {
      */
     private static Generated_Document__c checkExistingDocument(String requestHash) {
         List<Generated_Document__c> existing = [
-            SELECT Id, OutputFileId__c, Status__c, CreatedDate, CorrelationId__c
+            SELECT Id, OutputFileId__c, Status__c, CreatedDate, CorrelationId__c,
+                   Attachment_Warnings__c
             FROM Generated_Document__c
             WHERE RequestHash__c = :requestHash
             AND Status__c = 'SUCCEEDED'
@@ -361,7 +481,8 @@ public with sharing class DocgenController {
         Id recordId,
         String outputFormat,
         String correlationId,
-        Boolean readOnlyWord
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
     ) {
         // Use en-GB locale and Europe/London timezone per spec
         String locale = 'en-GB';
@@ -373,7 +494,8 @@ public with sharing class DocgenController {
             outputFormat,
             locale,
             timezone,
-            readOnlyWord
+            readOnlyWord,
+            additionalPdfContentVersionIds
         );
 
         return envelope;
@@ -428,6 +550,24 @@ public with sharing class DocgenController {
         String correlationId,
         Boolean readOnlyWord
     ) {
+        return buildCompositeEnvelope(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            correlationId,
+            readOnlyWord,
+            null
+        );
+    }
+
+    private static DocgenEnvelopeService.Envelope buildCompositeEnvelope(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String correlationId,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
+    ) {
         // Use en-GB locale and Europe/London timezone per spec
         String locale = 'en-GB';
         String timezone = 'Europe/London';
@@ -438,7 +578,8 @@ public with sharing class DocgenController {
             outputFormat,
             locale,
             timezone,
-            readOnlyWord
+            readOnlyWord,
+            additionalPdfContentVersionIds
         );
 
         return envelope;
@@ -469,6 +610,7 @@ public with sharing class DocgenController {
         doc.Attempts__c = 0;
         doc.RequestedBy__c = UserInfo.getUserId();
         doc.CorrelationId__c = correlationId;
+        doc.Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings);
 
         // Set parent lookup dynamically based on composite's PrimaryParent
         // Load composite to get PrimaryParent__c
@@ -557,6 +699,7 @@ public with sharing class DocgenController {
         doc.Attempts__c = 0;
         doc.RequestedBy__c = UserInfo.getUserId();
         doc.CorrelationId__c = correlationId;
+        doc.Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings);
 
         // Set parent lookup dynamically based on object configuration
         String objectApiName = recordId.getSObjectType().getDescribe().getName();
@@ -602,13 +745,18 @@ public with sharing class DocgenController {
             String contentVersionId = (String) body.get('contentVersionId');
             String responseCorrelationId = (String) body.get('correlationId');
             String docxContentVersionId = getOptionalString(body, 'docxContentVersionId');
+            String attachmentWarnings = combineAttachmentWarnings(
+                doc.Attachment_Warnings__c,
+                body.get('attachmentWarnings')
+            );
 
             // Update record to SUCCEEDED
             // Note: CorrelationId__c was already set during insert and should not be modified
             Generated_Document__c updateDoc = new Generated_Document__c(
                 Id = doc.Id,
                 Status__c = 'SUCCEEDED',
-                OutputFileId__c = contentVersionId
+                OutputFileId__c = contentVersionId,
+                Attachment_Warnings__c = attachmentWarnings
             );
             if (String.isNotBlank(docxContentVersionId)) {
                 updateDoc.MergedDocxFileId__c = docxContentVersionId;
@@ -671,12 +819,17 @@ public with sharing class DocgenController {
 
                 String contentVersionId = (String) contentVersionIdObj;
                 String docxContentVersionId = getOptionalString(body, 'docxContentVersionId');
+                String attachmentWarnings = combineAttachmentWarnings(
+                    doc.Attachment_Warnings__c,
+                    body.get('attachmentWarnings')
+                );
 
                 // Update record to SUCCEEDED
                 Generated_Document__c updateDoc = new Generated_Document__c(
                     Id = doc.Id,
                     Status__c = 'SUCCEEDED',
-                    OutputFileId__c = contentVersionId
+                    OutputFileId__c = contentVersionId,
+                    Attachment_Warnings__c = attachmentWarnings
                 );
                 if (String.isNotBlank(docxContentVersionId)) {
                     updateDoc.MergedDocxFileId__c = docxContentVersionId;
@@ -687,7 +840,8 @@ public with sharing class DocgenController {
                 return successResult(
                     buildDownloadUrl(contentVersionId),
                     correlationId,
-                    doc.Id
+                    doc.Id,
+                    attachmentWarnings
                 );
             } catch (Exception parseEx) {
                 // Failed to parse response - treat as error
@@ -715,6 +869,20 @@ public with sharing class DocgenController {
         }
         Object value = body.get(key);
         return value instanceof String ? (String) value : null;
+    }
+
+    private static String combineAttachmentWarnings(String existingWarnings, Object backendWarnings) {
+        List<Object> combined = new List<Object>();
+        if (String.isNotBlank(existingWarnings)) {
+            Object parsedExisting = JSON.deserializeUntyped(existingWarnings);
+            if (parsedExisting instanceof List<Object>) {
+                combined.addAll((List<Object>) parsedExisting);
+            }
+        }
+        if (backendWarnings instanceof List<Object>) {
+            combined.addAll((List<Object>) backendWarnings);
+        }
+        return combined.isEmpty() ? null : JSON.serialize(combined);
     }
 
     /**
@@ -985,7 +1153,7 @@ public with sharing class DocgenController {
     /**
      * Create a FAILED Generated_Document__c record for composite document errors
      */
-    private static void createFailedCompositeDocument(Id compositeDocId, String recordIdsJson, String outputFormat, Exception e, String correlationId) {
+    private static String createFailedCompositeDocument(Id compositeDocId, String recordIdsJson, String outputFormat, Exception e, String correlationId) {
         Generated_Document__c doc = new Generated_Document__c();
         doc.Composite_Document__c = compositeDocId;
         doc.Status__c = 'FAILED';
@@ -1034,6 +1202,7 @@ public with sharing class DocgenController {
         }
 
         insert doc;
+        return doc.Id;
     }
 
     /**

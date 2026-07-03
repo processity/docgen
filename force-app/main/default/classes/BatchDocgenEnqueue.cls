@@ -53,6 +53,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
     private Composite_Document__c composite;
     private String recordIdFieldName;
     private Map<String, Id> additionalRecordIds;
+    private DocgenAttachmentService.ValidationResult attachmentValidation =
+        new DocgenAttachmentService.ValidationResult();
 
     // Statistics (tracked across batches via Database.Stateful)
     private Integer successCount = 0;
@@ -67,6 +69,29 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * @throws QueryException if template not found
      */
     public BatchDocgenEnqueue(Id templateId, List<Id> recordIds, String outputFormat) {
+        this(templateId, recordIds, outputFormat, (List<Id>) null);
+    }
+
+    public BatchDocgenEnqueue(
+        Id templateId,
+        List<Id> recordIds,
+        String outputFormat,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        this(
+            templateId,
+            recordIds,
+            outputFormat,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
+    }
+
+    public BatchDocgenEnqueue(
+        Id templateId,
+        List<Id> recordIds,
+        String outputFormat,
+        List<Id> additionalPdfContentVersionIds
+    ) {
         this.templateId = templateId;
         this.recordIds = recordIds;
         this.outputFormat = outputFormat;
@@ -99,6 +124,10 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         }
 
         this.template = templates[0];
+        this.attachmentValidation = DocgenAttachmentService.validateForGeneration(
+            additionalPdfContentVersionIds,
+            outputFormat
+        );
     }
 
     /**
@@ -115,7 +144,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         String outputFormat,
         String recordIdFieldName
     ) {
-        this(compositeDocId, recordIds, outputFormat, recordIdFieldName, null);
+        this(compositeDocId, recordIds, outputFormat, recordIdFieldName, null, (List<Id>) null);
     }
 
     /**
@@ -133,6 +162,76 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         String outputFormat,
         String recordIdFieldName,
         Map<String, Id> additionalRecordIds
+    ) {
+        this(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            recordIdFieldName,
+            additionalRecordIds,
+            (List<Id>) null
+        );
+    }
+
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName,
+        List<Id> additionalPdfContentVersionIds
+    ) {
+        this(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            recordIdFieldName,
+            null,
+            additionalPdfContentVersionIds
+        );
+    }
+
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        this(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            recordIdFieldName,
+            null,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
+    }
+
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName,
+        Map<String, Id> additionalRecordIds,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        this(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            recordIdFieldName,
+            additionalRecordIds,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
+    }
+
+    public BatchDocgenEnqueue(
+        Id compositeDocId,
+        List<Id> recordIds,
+        String outputFormat,
+        String recordIdFieldName,
+        Map<String, Id> additionalRecordIds,
+        List<Id> additionalPdfContentVersionIds
     ) {
         this.isComposite = true;
         this.compositeDocId = compositeDocId;
@@ -175,6 +274,10 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         if (!this.composite.IsActive__c) {
             throw new IllegalArgumentException('Composite Document is not active: ' + compositeDocId);
         }
+        this.attachmentValidation = DocgenAttachmentService.validateForGeneration(
+            additionalPdfContentVersionIds,
+            outputFormat
+        );
     }
 
     /**
@@ -213,7 +316,9 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                         recordIdsMap,
                         this.outputFormat,
                         'en-GB', // Default locale (could be parameterized in future)
-                        'Europe/London' // Default timezone (could be parameterized in future)
+                        'Europe/London', // Default timezone (could be parameterized in future)
+                        false,
+                        this.attachmentValidation
                     );
                 } else {
                     // SINGLE TEMPLATE MODE: Use existing build method
@@ -222,7 +327,9 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                         this.template,
                         this.outputFormat,
                         'en-GB', // Default locale (could be parameterized in future)
-                        'Europe/London' // Default timezone (could be parameterized in future)
+                        'Europe/London', // Default timezone (could be parameterized in future)
+                        false,
+                        this.attachmentValidation
                     );
                 }
 
@@ -240,7 +347,10 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                     OutputFormat__c = envelope.outputFormat,
                     Priority__c = 0, // Default priority
                     Attempts__c = 0,  // Start with 0 attempts
-                    RequestedBy__c = UserInfo.getUserId()
+                    RequestedBy__c = UserInfo.getUserId(),
+                    Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(
+                        envelope.attachmentWarnings
+                    )
                 );
                 DocgenEnvelopeService.setRequestJSONSegments(doc, requestJSON);
 

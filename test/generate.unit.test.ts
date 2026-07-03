@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { FastifyInstance } from 'fastify';
 import nock from 'nock';
 import { generateKeyPairSync } from 'crypto';
+import { PDFDocument } from 'pdf-lib';
 import { build } from '../src/server';
 import type { DocgenRequest, DocgenResponse } from '../src/types';
 import { createTestDocxBuffer, createTestDocxWithContent } from './helpers/test-docx';
@@ -9,9 +10,14 @@ import { createTestPptxBuffer } from './helpers/test-pptx';
 
 jest.mock('../src/convert/soffice', () => {
   const actual = jest.requireActual('../src/convert/soffice');
+  const { PDFDocument: MockPdfDocument } = jest.requireActual('pdf-lib');
   return {
     ...actual,
-    convertDocxToPdf: jest.fn(async () => Buffer.from('%PDF-1.4\n%docgen-test\n')),
+    convertDocxToPdf: jest.fn(async () => {
+      const document = await MockPdfDocument.create();
+      document.addPage([200, 200]);
+      return Buffer.from(await document.save());
+    }),
   };
 });
 
@@ -84,6 +90,12 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       const testTemplateId = '068000000000001AAA';
       const testContentVersionId = '068000000000002AAA';
       const testContentDocumentId = '069000000000001AAA';
+      const attachmentId = '068000000000090AAA';
+      const attachmentPdf = await PDFDocument.create();
+      attachmentPdf.addPage([300, 200]);
+      attachmentPdf.addPage([400, 200]);
+      const attachmentBytes = Buffer.from(await attachmentPdf.save());
+      let uploadedVersionData = '';
 
       // Pre-generate test DOCX buffer
       const testDocxBuffer = await createTestDocxBuffer();
@@ -102,9 +114,29 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
         .matchHeader('authorization', 'Bearer test-access-token')
         .reply(200, testDocxBuffer);
 
+      nock('https://test.salesforce.com')
+        .get('/services/data/v59.0/query')
+        .query((query) => typeof query.q === 'string' && query.q.includes(attachmentId))
+        .reply(200, {
+          records: [{
+            Id: attachmentId,
+            Title: 'Appendix',
+            FileExtension: 'pdf',
+            FileType: 'PDF',
+            ContentSize: attachmentBytes.length,
+          }],
+        });
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${attachmentId}/VersionData`)
+        .reply(200, attachmentBytes);
+
       // Mock ContentVersion creation for PDF upload
       nock('https://test.salesforce.com')
-        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          uploadedVersionData = body.VersionData;
+          return true;
+        })
         .matchHeader('authorization', 'Bearer test-access-token')
         .reply(201, {
           id: testContentVersionId,
@@ -148,6 +180,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
           Account: { Name: 'Test Account' },
           GeneratedDate__formatted: '5 Nov 2025',
         },
+        additionalPdfContentVersionIds: [attachmentId, attachmentId],
         generatedDocumentId,
       };
 
@@ -171,7 +204,11 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body).toHaveProperty('correlationId');
       expect(body.correlationId).toBe('test-correlation-123');
       expect(body.contentVersionId).toBe(testContentVersionId);
+      expect(body.appendedAttachmentCount).toBe(1);
+      expect(body.attachmentWarnings).toBeUndefined();
       expect(body.downloadUrl).toBe(`https://test.salesforce.com/sfc/servlet.shepherd/version/download/${testContentVersionId}`);
+      const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
+      expect(uploadedPdf.getPages().map((page) => page.getWidth())).toEqual([200, 300, 400]);
 
       // Verify all mocks were called
       expect(nock.isDone()).toBe(true);
@@ -232,6 +269,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
           Account: { Name: 'Test Account' },
           GeneratedDate__formatted: '5 Nov 2025',
         },
+        additionalPdfContentVersionIds: ['068000000000090AAA'],
       };
 
       const response = await app.inject({
@@ -247,6 +285,8 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
 
       const body: DocgenResponse = JSON.parse(response.body);
       expect(body.contentVersionId).toBe(testContentVersionId);
+      expect(body.appendedAttachmentCount).toBeUndefined();
+      expect(body.attachmentWarnings).toBeUndefined();
     });
 
     it('should return stored merged DOCX ContentVersion ID when requested', async () => {

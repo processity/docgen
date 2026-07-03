@@ -20,6 +20,7 @@ export default class DocgenProgressButton extends LightningElement {
   @api successMessage = 'Document generated successfully!';
   @api maxPollSeconds = DEFAULT_MAX_POLL_SECONDS;
   @api pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
+  @api additionalPdfContentVersionIds = [];
 
   _openOnSuccess = true;
   _hideButton = false;
@@ -45,6 +46,10 @@ export default class DocgenProgressButton extends LightningElement {
 
   get showProgressPanel() {
     return this.isProcessing || this.status;
+  }
+
+  get showAttachmentSelector() {
+    return !this.isProcessing && !this.status;
   }
 
   get showButton() {
@@ -228,6 +233,11 @@ export default class DocgenProgressButton extends LightningElement {
         config.readOnlyWord !== undefined ? config.readOnlyWord : this.readOnlyWord,
         false
       ),
+      additionalPdfContentVersionIds: this.normalizeContentVersionIds(
+        config.additionalPdfContentVersionIds !== undefined
+          ? config.additionalPdfContentVersionIds
+          : this.additionalPdfContentVersionIds
+      )
     };
 
     if (previewMode) {
@@ -317,7 +327,7 @@ export default class DocgenProgressButton extends LightningElement {
       if (this.openOnSuccess && statusResult.downloadUrl) {
         window.open(statusResult.downloadUrl, '_blank');
       }
-      this.showToast('Success', this.successMessage, 'success');
+      this.showCompletionToast(statusResult, 'Success', this.successMessage);
       this.dispatchDocgenEvent('docgensuccess', statusResult);
     } else {
       const errorMessage =
@@ -338,6 +348,53 @@ export default class DocgenProgressButton extends LightningElement {
     this.generatedDocumentId = result?.generatedDocumentId || this.generatedDocumentId;
   }
 
+  handleAttachmentSelection(event) {
+    this.additionalPdfContentVersionIds = event.detail.contentVersionIds;
+  }
+
+  normalizeContentVersionIds(value) {
+    if (!value) {
+      return [];
+    }
+    let values = value;
+    if (typeof value === 'string') {
+      try {
+        values = JSON.parse(value);
+      } catch {
+        values = [];
+      }
+    }
+    return Array.isArray(values) ? [...new Set(values.filter(Boolean).map(String))] : [];
+  }
+
+  showCompletionToast(result, successTitle, successMessage) {
+    const warnings = this.parseAttachmentWarnings(result?.attachmentWarnings);
+    if (warnings.length) {
+      this.showToast(
+        'Generated with Attachment Warnings',
+        `${warnings.length} additional PDF file${warnings.length === 1 ? ' was' : 's were'} skipped.`,
+        'warning'
+      );
+      return;
+    }
+    this.showToast(successTitle, successMessage, 'success');
+  }
+
+  parseAttachmentWarnings(value) {
+    if (!value) {
+      return [];
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
   async handleSavePreview() {
     if (!this.generatedDocumentId || this.disablePreviewActions) {
       return;
@@ -351,7 +408,7 @@ export default class DocgenProgressButton extends LightningElement {
       });
       this.applyStatus(result);
       this.setSavedDownloadState(result, currentDownloadUrl);
-      this.showToast('Saved', this.successMessage, 'success');
+      this.showCompletionToast(result, 'Saved', this.successMessage);
       this.dispatchDocgenEvent('docgensave', result);
       this.dispatchDocgenEvent('docgensuccess', result);
     } catch (error) {

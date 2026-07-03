@@ -1,4 +1,12 @@
 <template>
+  <template if:true={showAttachmentSelector}>
+    <c-docgen-additional-pdf-selector
+      record-id={recordId}
+      composite-document-id={compositeDocumentId}
+      output-format={outputFormat}
+      onselectionchange={handleAttachmentSelection}>
+    </c-docgen-additional-pdf-selector>
+  </template>
   <template if:true={showButton}>
     <lightning-button
       label={buttonLabel}

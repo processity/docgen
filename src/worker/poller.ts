@@ -6,6 +6,7 @@ import { TemplateService } from '../templates/service';
 import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templates';
 import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
+import { appendAdditionalPdfPages } from '../pdf/attachments';
 import {
   uploadContentVersion,
   updateGeneratedDocument,
@@ -26,6 +27,7 @@ import type {
   DocgenRequest,
   AppConfig,
   TemplateSection,
+  PdfAttachmentWarning,
 } from '../types';
 
 const logger = pino();
@@ -297,7 +299,7 @@ export class PollerService {
                RequestJSON04__c, RequestJSON05__c, RequestJSON06__c, RequestJSON07__c,
                RequestJSON08__c, RequestJSON09__c, RequestJSON10__c,
                Attempts__c, CorrelationId__c,
-               Template__c, RequestHash__c, CreatedDate
+               Template__c, RequestHash__c, CreatedDate, Attachment_Warnings__c
         FROM Generated_Document__c
         WHERE Status__c = 'QUEUED'
           AND (LockedUntil__c < ${now} OR LockedUntil__c = null)
@@ -355,6 +357,7 @@ export class PollerService {
 
     const startTime = Date.now(); // Track start time for metrics
     const request: DocgenRequest = JSON.parse(reconstructRequestJson(doc)); // Parse once for the whole function
+    const initialAttachmentWarnings = parseAttachmentWarnings(doc.Attachment_Warnings__c);
 
     try {
       // Initialize Salesforce API and template service
@@ -493,6 +496,7 @@ export class PollerService {
 
       // Convert to PDF if needed
       let outputBuffer: Buffer;
+      let attachmentWarnings: PdfAttachmentWarning[] = initialAttachmentWarnings;
       if (request.outputFormat === 'PDF') {
         log.debug('Converting DOCX to PDF');
         outputBuffer = await convertDocxToPdf(mergedDocx!, {
@@ -500,6 +504,14 @@ export class PollerService {
           workdir: getConfig().conversionWorkdir,
           correlationId: doc.CorrelationId__c,
         });
+        const attachmentResult = await appendAdditionalPdfPages(
+          outputBuffer,
+          request.additionalPdfContentVersionIds,
+          sfApi,
+          doc.CorrelationId__c
+        );
+        outputBuffer = attachmentResult.buffer;
+        attachmentWarnings = initialAttachmentWarnings.concat(attachmentResult.warnings);
       } else if (request.outputFormat === 'PPTX') {
         outputBuffer = mergedPptx!;
       } else {
@@ -535,7 +547,12 @@ export class PollerService {
       }
 
       // Update document status to SUCCEEDED
-      await this.handleSuccess(doc.Id, uploadResult.contentVersionId, mergedDocxFileId);
+      await this.handleSuccess(
+        doc.Id,
+        uploadResult.contentVersionId,
+        mergedDocxFileId,
+        attachmentWarnings
+      );
 
       // Track success metrics
       const duration = Date.now() - startTime;
@@ -609,7 +626,8 @@ export class PollerService {
   async handleSuccess(
     documentId: string,
     contentVersionId: string,
-    mergedDocxFileId?: string
+    mergedDocxFileId?: string,
+    attachmentWarnings: PdfAttachmentWarning[] = []
   ): Promise<void> {
     try {
       const sfAuth = getSalesforceAuth();
@@ -624,6 +642,9 @@ export class PollerService {
           Status__c: 'SUCCEEDED',
           OutputFileId__c: contentVersionId,
           MergedDocxFileId__c: mergedDocxFileId,
+          Attachment_Warnings__c: attachmentWarnings.length
+            ? JSON.stringify(attachmentWarnings)
+            : null,
         },
         sfApi
       );
@@ -724,6 +745,18 @@ function reconstructRequestJson(doc: QueuedDocument): string {
     .map((fieldName) => doc[fieldName])
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join('');
+}
+
+function parseAttachmentWarnings(value?: string | null): PdfAttachmentWarning[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as PdfAttachmentWarning[] : [];
+  } catch {
+    return [];
+  }
 }
 
 function optionsWithoutWatermark(options: DocgenRequest['options']): DocgenRequest['options'] {

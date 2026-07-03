@@ -8,6 +8,7 @@ import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templat
 import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
+import { appendAdditionalPdfPages } from '../pdf/attachments';
 import { loadConfig } from '../config';
 import { trackMetric } from '../obs';
 import {
@@ -132,6 +133,11 @@ const docgenRequestSchema = {
         'Parent record IDs for file linking. Keys: "{ObjectType}Id" (e.g., ContactId, LeadId). Values: Salesforce ID (15/18 chars) or null.',
       additionalProperties: true,
     },
+    additionalPdfContentVersionIds: {
+      type: 'array',
+      description: 'Optional ordered ContentVersion IDs for PDF files appended after generated PDF pages. Ignored for DOCX/PPTX.',
+      items: { type: 'string' },
+    },
     requestHash: {
       type: 'string',
       description: 'SHA-256 hash for idempotency (computed by Apex)',
@@ -171,6 +177,7 @@ async function generateHandler(
       timezone: request.body.timezone,
       hasRequestHash: !!request.body.requestHash,
       generatedDocumentId: request.body.generatedDocumentId,
+      additionalPdfCount: request.body.additionalPdfContentVersionIds?.length || 0,
     },
     'Received document generation request'
   );
@@ -369,6 +376,8 @@ async function generateHandler(
 
     // Step 3: Convert to PDF if needed (same for both single and composite)
     let pdfBuffer: Buffer | null = null;
+    let appendedAttachmentCount = 0;
+    let attachmentWarnings: DocgenResponse['attachmentWarnings'] = [];
 
     if (request.body.outputFormat === 'PDF') {
       request.log.info({ correlationId }, 'Converting DOCX to PDF');
@@ -377,6 +386,16 @@ async function generateHandler(
         workdir: config.conversionWorkdir,
         correlationId,
       });
+
+      const attachmentResult = await appendAdditionalPdfPages(
+        pdfBuffer,
+        request.body.additionalPdfContentVersionIds,
+        sfApi,
+        correlationId
+      );
+      pdfBuffer = attachmentResult.buffer;
+      appendedAttachmentCount = attachmentResult.appendedAttachmentCount;
+      attachmentWarnings = attachmentResult.warnings;
     }
 
     // Step 4: Upload to Salesforce and create links
@@ -462,6 +481,15 @@ async function generateHandler(
       contentVersionId: downloadContentVersionId,
       correlationId,
     };
+    if (
+      request.body.outputFormat === 'PDF' &&
+      request.body.additionalPdfContentVersionIds?.length
+    ) {
+      response.appendedAttachmentCount = appendedAttachmentCount;
+      if (attachmentWarnings.length) {
+        response.attachmentWarnings = attachmentWarnings;
+      }
+    }
     if (uploadResult.docxContentVersionId) {
       response.docxContentVersionId = uploadResult.docxContentVersionId;
     }
@@ -592,6 +620,23 @@ export const generateRoutes: FastifyPluginAsync = async (fastify) => {
               correlationId: {
                 type: 'string',
                 description: 'Correlation ID for tracking',
+              },
+              appendedAttachmentCount: {
+                type: 'number',
+                description: 'Number of additional PDF files appended to the generated PDF',
+              },
+              attachmentWarnings: {
+                type: 'array',
+                description: 'Permanent attachment problems skipped during PDF generation',
+                items: {
+                  type: 'object',
+                  properties: {
+                    contentVersionId: { type: 'string' },
+                    title: { type: 'string' },
+                    code: { type: 'string' },
+                    message: { type: 'string' },
+                  },
+                },
               },
             },
           },

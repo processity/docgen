@@ -1,5 +1,14 @@
 <template>
   <div class="slds-m-around_medium">
+    <template if:true={showAttachmentSelector}>
+      <c-docgen-additional-pdf-selector
+        record-id={recordId}
+        template-id={templateId}
+        template-name={templateName}
+        output-format={outputFormat}
+        onselectionchange={handleAttachmentSelection}>
+      </c-docgen-additional-pdf-selector>
+    </template>
     <template if:true={showButton}>
       <lightning-button
         label={buttonLabel}

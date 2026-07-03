@@ -156,6 +156,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Generated_Document__c.Attachment_Warnings__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Generated_Document__c.CorrelationId__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -351,6 +356,10 @@
     </classAccesses>
     <classAccesses>
         <apexClass>DocgenAsyncController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>DocgenAttachmentService</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

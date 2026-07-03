@@ -113,7 +113,8 @@ describe('c-docgen-button', () => {
         templateId: 'a0X1234567890ABC',
         recordId: '0011234567890ABC',
         outputFormat: 'PDF',
-        readOnlyWord: false
+        readOnlyWord: false,
+        additionalPdfContentVersionIds: []
       });
     });
   });
@@ -349,7 +350,8 @@ describe('c-docgen-button', () => {
       templateId: 'a0X1234567890ABC',
       recordId: '0011234567890ABC',
       outputFormat: null,
-      readOnlyWord: false
+      readOnlyWord: false,
+      additionalPdfContentVersionIds: []
     });
   });
 
@@ -374,7 +376,46 @@ describe('c-docgen-button', () => {
       templateId: 'a0X1234567890ABC',
       recordId: '0011234567890ABC',
       outputFormat: 'DOCX',
-      readOnlyWord: true
+      readOnlyWord: true,
+      additionalPdfContentVersionIds: []
     });
+  });
+
+  it('passes ordered additional PDF IDs and shows attachment warnings', async () => {
+    const element = createElement('c-docgen-button', {
+      is: DocgenButton
+    });
+    element.templateId = 'a0X1234567890ABC';
+    element.recordId = '0011234567890ABC';
+    generate.mockResolvedValue({
+      success: true,
+      downloadUrl: '/sfc/servlet.shepherd/version/download/0681234567890ABC',
+      attachmentWarnings: JSON.stringify([
+        { contentVersionId: '068000000000003AAA', code: 'NOT_PDF', message: 'Skipped' }
+      ])
+    });
+    document.body.appendChild(element);
+    const toastHandler = jest.fn();
+    element.addEventListener('lightning__showtoast', toastHandler);
+
+    await element.generate({
+      outputFormat: 'PDF',
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA',
+        '068000000000002AAA'
+      ]
+    });
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA'
+      ]
+    }));
+    expect(toastHandler.mock.calls[0][0].detail).toEqual(expect.objectContaining({
+      title: 'Generated with Attachment Warnings',
+      variant: 'warning'
+    }));
   });
 });

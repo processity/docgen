@@ -191,6 +191,48 @@ private class BatchDocgenEnqueueTest {
         System.assertEquals('PDF', envelope.get('outputFormat'), 'OutputFormat should be PDF');
     }
 
+    @isTest
+    static void testAdditionalPdfIdsAreAddedToEveryBatchEnvelopeInOrder() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        ContentVersion firstPdf = new ContentVersion(
+            Title = 'First Appendix',
+            PathOnClient = 'first-appendix.pdf',
+            VersionData = Blob.valueOf('%PDF-1.4 first')
+        );
+        ContentVersion secondPdf = new ContentVersion(
+            Title = 'Second Appendix',
+            PathOnClient = 'second-appendix.pdf',
+            VersionData = Blob.valueOf('%PDF-1.4 second')
+        );
+        insert new List<ContentVersion>{ firstPdf, secondPdf };
+
+        Test.startTest();
+        Database.executeBatch(
+            new BatchDocgenEnqueue(
+                template.Id,
+                new List<Id>{ account.Id },
+                'PDF',
+                new List<Id>{ secondPdf.Id, firstPdf.Id, secondPdf.Id }
+            ),
+            200
+        );
+        Test.stopTest();
+
+        Generated_Document__c doc = [
+            SELECT RequestJSON__c, Attachment_Warnings__c
+            FROM Generated_Document__c
+            LIMIT 1
+        ];
+        Map<String, Object> envelope = (Map<String, Object>) JSON.deserializeUntyped(doc.RequestJSON__c);
+        List<Object> ids = (List<Object>) envelope.get('additionalPdfContentVersionIds');
+
+        Assert.areEqual(2, ids.size(), 'Duplicate ContentVersion IDs should be removed');
+        Assert.areEqual(String.valueOf(secondPdf.Id), (String) ids[0], 'List order should be preserved');
+        Assert.areEqual(String.valueOf(firstPdf.Id), (String) ids[1], 'List order should be preserved');
+        Assert.isNull(doc.Attachment_Warnings__c, 'Valid PDFs should not create warnings');
+    }
+
     /**
      * Test: Missing template throws exception
      * Given invalid template ID

@@ -63,6 +63,21 @@ export interface DocgenOptions {
 
 export type DocgenOutputFormat = 'PDF' | 'DOCX' | 'PPTX';
 
+export type PdfAttachmentWarningCode =
+  | 'INVALID_CONTENT_VERSION_ID'
+  | 'CONTENT_VERSION_NOT_FOUND'
+  | 'NOT_A_PDF'
+  | 'DOWNLOAD_FORBIDDEN'
+  | 'INVALID_PDF'
+  | 'EMPTY_PDF';
+
+export interface PdfAttachmentWarning {
+  contentVersionId: string;
+  title?: string;
+  code: PdfAttachmentWarningCode;
+  message: string;
+}
+
 /**
  * Parent record IDs for ContentDocumentLink creation
  * Dynamic map supporting any Salesforce object type configured in Custom Metadata
@@ -161,6 +176,8 @@ export interface DocgenRequest {
   options: DocgenOptions;
   data: Record<string, any>;
   parents?: DocgenParents;
+  /** Optional PDF ContentVersions appended after generated PDF pages. Ignored for DOCX/PPTX. */
+  additionalPdfContentVersionIds?: string[];
   requestHash?: string;
   generatedDocumentId?: string; // T-12: Apex passes this for status updates
 }
@@ -169,6 +186,8 @@ export interface DocgenResponse {
   downloadUrl: string;
   contentVersionId: string;
   docxContentVersionId?: string;
+  appendedAttachmentCount?: number;
+  attachmentWarnings?: PdfAttachmentWarning[];
   correlationId: string;
 }
 
@@ -253,6 +272,7 @@ export interface ContentVersionMetadata {
   Title: string;
   VersionData?: string; // URL to binary data
   FileExtension?: string;
+  FileType?: string;
   ContentSize?: number;
 }
 
@@ -445,6 +465,7 @@ export interface QueuedDocument {
   LockedUntil__c?: string | null;
   Priority__c?: number;
   Error__c?: string | null;
+  Attachment_Warnings__c?: string | null;
 }
 
 /**

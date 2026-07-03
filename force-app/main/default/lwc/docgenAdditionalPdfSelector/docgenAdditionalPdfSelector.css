@@ -1,0 +1,91 @@
+.selector {
+  display: block;
+  margin: 0 0 1rem;
+  border-top: 1px solid var(--lwc-colorBorder, #c9c9c9);
+  padding-top: 0.75rem;
+}
+
+.selector__header,
+.file-list__item,
+.selected-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selector__header {
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.selector__title {
+  font-weight: 700;
+}
+
+.selector__summary,
+.file-list__size,
+.selected-list__size,
+.empty-state {
+  color: var(--lwc-colorTextWeak, #5c5c5c);
+  font-size: 0.75rem;
+}
+
+.file-list,
+.selected-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file-list {
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--lwc-colorBorder, #c9c9c9);
+}
+
+.file-list__item {
+  justify-content: space-between;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--lwc-colorBorder, #c9c9c9);
+}
+
+.file-list__item:last-child {
+  border-bottom: 0;
+}
+
+.file-list__item lightning-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.selected-list {
+  margin-top: 0.5rem;
+}
+
+.selected-list__item {
+  min-height: 2rem;
+}
+
+.selected-list__order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--lwc-colorBackgroundAlt, #f3f3f3);
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+
+.selected-list__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.empty-state {
+  margin: 0.5rem 0;
+}

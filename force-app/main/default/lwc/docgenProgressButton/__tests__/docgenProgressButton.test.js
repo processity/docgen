@@ -123,6 +123,7 @@ describe('c-docgen-progress-button', () => {
       recordId: '0011234567890ABC',
       outputFormat: 'DOCX',
       readOnlyWord: true,
+      additionalPdfContentVersionIds: [],
     });
   });
 
@@ -233,6 +234,7 @@ describe('c-docgen-progress-button', () => {
       recordId: '0011234567890ABC',
       outputFormat: 'PPTX',
       readOnlyWord: false,
+      additionalPdfContentVersionIds: [],
     });
   });
 
@@ -266,6 +268,7 @@ describe('c-docgen-progress-button', () => {
       recordId: '0011234567890ABC',
       outputFormat: 'PDF',
       readOnlyWord: false,
+      additionalPdfContentVersionIds: [],
     });
   });
 
@@ -329,6 +332,7 @@ describe('c-docgen-progress-button', () => {
       recordId: '0011234567890ABC',
       outputFormat: 'PDF',
       readOnlyWord: false,
+      additionalPdfContentVersionIds: [],
       previewMode: true,
     });
     expect(window.open).not.toHaveBeenCalled();
@@ -568,5 +572,40 @@ describe('c-docgen-progress-button', () => {
         }),
       })
     );
+  });
+
+  it('passes ordered additional PDF IDs to queued preview generation', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton,
+    });
+    element.recordId = '0011234567890ABC';
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      downloadUrl: '/sfc/servlet.shepherd/version/download/068123',
+    });
+    document.body.appendChild(element);
+
+    await element.generate({
+      templateId: 'a0T1234567890ABC',
+      outputFormat: 'PDF',
+      previewBeforeSave: true,
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA',
+        '068000000000002AAA',
+      ],
+    });
+
+    expect(startGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      previewMode: true,
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA',
+      ],
+    }));
   });
 });

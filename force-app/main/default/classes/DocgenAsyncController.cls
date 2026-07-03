@@ -18,6 +18,7 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String previewUrl { get; set; }
         @AuraEnabled public Boolean canInlinePreview { get; set; }
         @AuraEnabled public Boolean isPreviewPending { get; set; }
+        @AuraEnabled public String attachmentWarnings { get; set; }
     }
 
     public class StatusResult {
@@ -34,6 +35,7 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String previewUrl { get; set; }
         @AuraEnabled public Boolean canInlinePreview { get; set; }
         @AuraEnabled public Boolean isPreviewPending { get; set; }
+        @AuraEnabled public String attachmentWarnings { get; set; }
     }
 
     public class PreviewContent {
@@ -63,7 +65,8 @@ public with sharing class DocgenAsyncController {
         Id recordId,
         String outputFormat,
         Boolean previewMode,
-        Boolean readOnlyWord
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
     ) {
         try {
             if (recordId == null) {
@@ -84,7 +87,8 @@ public with sharing class DocgenAsyncController {
                 normalizedOutputFormat,
                 'en-GB',
                 'Europe/London',
-                readOnlyWord
+                readOnlyWord,
+                additionalPdfContentVersionIds
             );
 
             if (isPreviewMode) {
@@ -114,6 +118,45 @@ public with sharing class DocgenAsyncController {
         }
     }
 
+    public static StartResult startGeneration(
+        Id templateId,
+        String templateName,
+        Id recordId,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord
+    ) {
+        return startGeneration(
+            templateId,
+            templateName,
+            recordId,
+            outputFormat,
+            previewMode,
+            readOnlyWord,
+            (List<Id>) null
+        );
+    }
+
+    public static StartResult startGeneration(
+        Id templateId,
+        String templateName,
+        Id recordId,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        return startGeneration(
+            templateId,
+            templateName,
+            recordId,
+            outputFormat,
+            previewMode,
+            readOnlyWord,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
+    }
+
     public static StartResult startCompositeGeneration(
         Id compositeDocumentId,
         String recordIds,
@@ -129,7 +172,8 @@ public with sharing class DocgenAsyncController {
         String recordIds,
         String outputFormat,
         Boolean previewMode,
-        Boolean readOnlyWord
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
     ) {
         try {
             if (compositeDocumentId == null) {
@@ -146,7 +190,8 @@ public with sharing class DocgenAsyncController {
                 outputFormat,
                 'en-GB',
                 'Europe/London',
-                readOnlyWord
+                readOnlyWord,
+                additionalPdfContentVersionIds
             );
 
             if (isPreviewMode) {
@@ -180,6 +225,41 @@ public with sharing class DocgenAsyncController {
             throwAuraException(e.getMessage());
             return null;
         }
+    }
+
+    public static StartResult startCompositeGeneration(
+        Id compositeDocumentId,
+        String recordIds,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord
+    ) {
+        return startCompositeGeneration(
+            compositeDocumentId,
+            recordIds,
+            outputFormat,
+            previewMode,
+            readOnlyWord,
+            (List<Id>) null
+        );
+    }
+
+    public static StartResult startCompositeGeneration(
+        Id compositeDocumentId,
+        String recordIds,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord,
+        Set<Id> additionalPdfContentVersionIds
+    ) {
+        return startCompositeGeneration(
+            compositeDocumentId,
+            recordIds,
+            outputFormat,
+            previewMode,
+            readOnlyWord,
+            DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
+        );
     }
 
     @AuraEnabled
@@ -328,7 +408,7 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c findExistingDocument(String requestHash) {
         List<Generated_Document__c> existing = [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c, PendingPreview__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c, Attachment_Warnings__c
             FROM Generated_Document__c
             WHERE RequestHash__c = :requestHash
             LIMIT 1
@@ -339,7 +419,7 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c queryGeneratedDocument(Id generatedDocumentId) {
         return [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c, PendingPreview__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c, Attachment_Warnings__c
             FROM Generated_Document__c
             WHERE Id = :generatedDocumentId
             LIMIT 1
@@ -362,6 +442,7 @@ public with sharing class DocgenAsyncController {
             Attempts__c = 0,
             RequestedBy__c = UserInfo.getUserId(),
             CorrelationId__c = correlationId,
+            Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             PendingPreview__c = pendingPreview == true
         );
         DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
@@ -387,6 +468,7 @@ public with sharing class DocgenAsyncController {
             Attempts__c = 0,
             RequestedBy__c = UserInfo.getUserId(),
             CorrelationId__c = correlationId,
+            Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             PendingPreview__c = pendingPreview == true
         );
         DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
@@ -414,6 +496,7 @@ public with sharing class DocgenAsyncController {
             RequestedBy__c = UserInfo.getUserId(),
             CorrelationId__c = correlationId,
             Error__c = null,
+            Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             OutputFileId__c = null,
             MergedDocxFileId__c = null,
             LockedUntil__c = null,
@@ -445,6 +528,7 @@ public with sharing class DocgenAsyncController {
             RequestedBy__c = UserInfo.getUserId(),
             CorrelationId__c = correlationId,
             Error__c = null,
+            Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             OutputFileId__c = null,
             MergedDocxFileId__c = null,
             LockedUntil__c = null,
@@ -642,6 +726,7 @@ public with sharing class DocgenAsyncController {
         result.previewUrl = status.previewUrl;
         result.canInlinePreview = status.canInlinePreview;
         result.isPreviewPending = status.isPreviewPending;
+        result.attachmentWarnings = status.attachmentWarnings;
         return result;
     }
 
@@ -655,6 +740,7 @@ public with sharing class DocgenAsyncController {
         result.correlationId = doc.CorrelationId__c;
         result.outputFormat = doc.OutputFormat__c;
         result.isPreviewPending = doc.PendingPreview__c;
+        result.attachmentWarnings = doc.Attachment_Warnings__c;
         result.canInlinePreview = doc.OutputFormat__c == 'PDF';
 
         if (doc.Status__c == 'SUCCEEDED' && String.isNotBlank(doc.OutputFileId__c)) {

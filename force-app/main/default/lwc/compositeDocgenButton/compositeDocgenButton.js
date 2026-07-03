@@ -1,5 +1,5 @@
 import { LightningElement, api } from 'lwc';
-import generateComposite from '@salesforce/apex/DocgenController.generateComposite';
+import generateCompositeWithAttachments from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
 import getPdfPreviewContent from '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent';
@@ -45,6 +45,7 @@ export default class CompositeDocgenButton extends LightningElement {
    * @type {boolean}
    */
   @api readOnlyWord = false;
+  @api additionalPdfContentVersionIds = [];
 
   /**
    * Current record ID (automatically provided by Lightning runtime)
@@ -110,6 +111,10 @@ export default class CompositeDocgenButton extends LightningElement {
 
   get showProgressPanel() {
     return this.isProcessing || this.status;
+  }
+
+  get showAttachmentSelector() {
+    return !this.isProcessing && !this.status;
   }
 
   get showPreviewPanel() {
@@ -267,18 +272,24 @@ export default class CompositeDocgenButton extends LightningElement {
     this.dispatchDocgenEvent('docgenstart', request);
 
     try {
-      const downloadUrl = await generateComposite({
+      const result = await generateCompositeWithAttachments({
         compositeDocId: request.compositeDocumentId,
         recordIds: JSON.stringify(request.recordIds),
         outputFormat: request.outputFormat,
-        readOnlyWord: request.readOnlyWord
+        readOnlyWord: request.readOnlyWord,
+        additionalPdfContentVersionIds: request.additionalPdfContentVersionIds
       });
+
+      if (!result?.success) {
+        throw new Error(result?.errorMessage || 'Composite document generation failed');
+      }
+      const downloadUrl = result.downloadUrl;
 
       this.progressValue = 100;
       if (this.openOnSuccess && downloadUrl) {
         window.open(downloadUrl, '_blank');
       }
-      this.showToast('Success', this.successMessage, 'success');
+      this.showCompletionToast(result, 'Success', this.successMessage);
       this.dispatchDocgenEvent('docgensuccess', {
         ...request,
         downloadUrl
@@ -309,7 +320,8 @@ export default class CompositeDocgenButton extends LightningElement {
         recordIds: JSON.stringify(request.recordIds),
         outputFormat: request.outputFormat,
         previewMode: true,
-        readOnlyWord: request.readOnlyWord
+        readOnlyWord: request.readOnlyWord,
+        additionalPdfContentVersionIds: request.additionalPdfContentVersionIds
       });
 
       this.applyStatus(startResult);
@@ -389,7 +401,7 @@ export default class CompositeDocgenButton extends LightningElement {
       if (this.openOnSuccess && statusResult.downloadUrl) {
         window.open(statusResult.downloadUrl, '_blank');
       }
-      this.showToast('Success', this.successMessage, 'success');
+      this.showCompletionToast(statusResult, 'Success', this.successMessage);
       this.dispatchDocgenEvent('docgensuccess', statusResult);
     } else {
       const errorMessage =
@@ -423,7 +435,7 @@ export default class CompositeDocgenButton extends LightningElement {
       });
       this.applyStatus(result);
       this.setSavedDownloadState(result, currentDownloadUrl);
-      this.showToast('Saved', this.successMessage, 'success');
+      this.showCompletionToast(result, 'Saved', this.successMessage);
       this.dispatchDocgenEvent('docgensave', result);
       this.dispatchDocgenEvent('docgensuccess', result);
     } catch (error) {
@@ -490,11 +502,63 @@ export default class CompositeDocgenButton extends LightningElement {
       compositeDocumentId: config.compositeDocumentId || this.compositeDocumentId || null,
       recordIds: this.buildRecordIdsMap(config),
       outputFormat: outputFormat ? outputFormat.toUpperCase() : null,
+      additionalPdfContentVersionIds: this.normalizeContentVersionIds(
+        config.additionalPdfContentVersionIds !== undefined
+          ? config.additionalPdfContentVersionIds
+          : this.additionalPdfContentVersionIds
+      ),
       readOnlyWord: this.normalizeBoolean(
         config.readOnlyWord !== undefined ? config.readOnlyWord : this.readOnlyWord,
         false
       )
     };
+  }
+
+  handleAttachmentSelection(event) {
+    this.additionalPdfContentVersionIds = event.detail.contentVersionIds;
+  }
+
+  normalizeContentVersionIds(value) {
+    if (!value) {
+      return [];
+    }
+    let values = value;
+    if (typeof value === 'string') {
+      try {
+        values = JSON.parse(value);
+      } catch {
+        values = [];
+      }
+    }
+    return Array.isArray(values) ? [...new Set(values.filter(Boolean).map(String))] : [];
+  }
+
+  showCompletionToast(result, successTitle, successMessage) {
+    const warnings = this.parseAttachmentWarnings(result?.attachmentWarnings);
+    if (warnings.length) {
+      this.showToast(
+        'Generated with Attachment Warnings',
+        `${warnings.length} additional PDF file${warnings.length === 1 ? ' was' : 's were'} skipped.`,
+        'warning'
+      );
+      return;
+    }
+    this.showToast(successTitle, successMessage, 'success');
+  }
+
+  parseAttachmentWarnings(value) {
+    if (!value) {
+      return [];
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   validateRequest(request) {

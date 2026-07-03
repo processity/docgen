@@ -50,6 +50,8 @@ public with sharing class DocgenEnvelopeService {
         public Map<String, String> parents;
         public String requestHash;
         public String generatedDocumentId; // T-12: For status tracking
+        public List<String> additionalPdfContentVersionIds;
+        public List<DocgenAttachmentService.AttachmentWarning> attachmentWarnings;
 
         // T-20: Composite document fields
         public String compositeDocumentId;
@@ -98,14 +100,55 @@ public with sharing class DocgenEnvelopeService {
         String timezone,
         Boolean readOnlyWord
     ) {
+        return build(recordId, template, outputFormat, locale, timezone, readOnlyWord, (List<Id>) null);
+    }
+
+    public static Envelope build(
+        Id recordId,
+        Docgen_Template__c template,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
+    ) {
+        String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(template));
+        return build(
+            recordId,
+            template,
+            effectiveOutputFormat,
+            locale,
+            timezone,
+            readOnlyWord,
+            DocgenAttachmentService.validateForGeneration(
+                additionalPdfContentVersionIds,
+                effectiveOutputFormat
+            )
+        );
+    }
+
+    public static Envelope build(
+        Id recordId,
+        Docgen_Template__c template,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord,
+        DocgenAttachmentService.ValidationResult attachmentValidation
+    ) {
         Envelope env = new Envelope();
         String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(template));
+        if (attachmentValidation == null) {
+            attachmentValidation = new DocgenAttachmentService.ValidationResult();
+        }
 
         // Set basic fields
         env.templateId = template.TemplateContentVersionId__c;
         env.outputFormat = effectiveOutputFormat;
         env.locale = locale;
         env.timezone = timezone;
+        env.additionalPdfContentVersionIds = toStringIds(attachmentValidation.contentVersionIds);
+        env.attachmentWarnings = attachmentValidation.warnings;
 
         // Build options from template settings
         env.options = new Map<String, Object>{
@@ -136,6 +179,9 @@ public with sharing class DocgenEnvelopeService {
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
         String optionsJson = JSON.serialize(env.options);
+        if (!env.additionalPdfContentVersionIds.isEmpty()) {
+            optionsJson += '|' + JSON.serialize(env.additionalPdfContentVersionIds);
+        }
         env.requestHash = computeHash(
             env.templateId,
             env.outputFormat,
@@ -216,6 +262,9 @@ public with sharing class DocgenEnvelopeService {
         }
         if (env.parents != null && !env.parents.isEmpty()) {
             jsonMap.put('parents', env.parents);
+        }
+        if (env.additionalPdfContentVersionIds != null && !env.additionalPdfContentVersionIds.isEmpty()) {
+            jsonMap.put('additionalPdfContentVersionIds', env.additionalPdfContentVersionIds);
         }
         if (env.requestHash != null) {
             jsonMap.put('requestHash', env.requestHash);
@@ -425,11 +474,59 @@ public with sharing class DocgenEnvelopeService {
         String timezone,
         Boolean readOnlyWord
     ) {
+        return buildForComposite(
+            compositeDocId,
+            recordIds,
+            outputFormat,
+            locale,
+            timezone,
+            readOnlyWord,
+            (List<Id>) null
+        );
+    }
+
+    public static Envelope buildForComposite(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds
+    ) {
+        Composite_Document__c composite = loadCompositeConfig(compositeDocId);
+        String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(composite));
+        return buildForComposite(
+            compositeDocId,
+            recordIds,
+            effectiveOutputFormat,
+            locale,
+            timezone,
+            readOnlyWord,
+            DocgenAttachmentService.validateForGeneration(
+                additionalPdfContentVersionIds,
+                effectiveOutputFormat
+            )
+        );
+    }
+
+    public static Envelope buildForComposite(
+        Id compositeDocId,
+        Map<String, Id> recordIds,
+        String outputFormat,
+        String locale,
+        String timezone,
+        Boolean readOnlyWord,
+        DocgenAttachmentService.ValidationResult attachmentValidation
+    ) {
         Envelope env = new Envelope();
 
         // Load composite configuration
         Composite_Document__c composite = loadCompositeConfig(compositeDocId);
         String effectiveOutputFormat = resolveOutputFormat(outputFormat, getDefaultOutputFormat(composite));
+        if (attachmentValidation == null) {
+            attachmentValidation = new DocgenAttachmentService.ValidationResult();
+        }
 
         // Set basic fields
         env.compositeDocumentId = compositeDocId;
@@ -437,6 +534,8 @@ public with sharing class DocgenEnvelopeService {
         env.locale = locale;
         env.timezone = timezone;
         env.templateStrategy = composite.Template_Strategy__c;
+        env.additionalPdfContentVersionIds = toStringIds(attachmentValidation.contentVersionIds);
+        env.attachmentWarnings = attachmentValidation.warnings;
 
         // Build options from composite settings
         env.options = new Map<String, Object>{
@@ -492,6 +591,9 @@ public with sharing class DocgenEnvelopeService {
         String dataJson = JSON.serialize(env.data);
         String recordIdsJson = JSON.serialize(recordIds);
         String optionsJson = JSON.serialize(env.options);
+        if (!env.additionalPdfContentVersionIds.isEmpty()) {
+            optionsJson += '|' + JSON.serialize(env.additionalPdfContentVersionIds);
+        }
         env.requestHash = computeCompositeHash(
             compositeDocId,
             effectiveOutputFormat,
@@ -502,6 +604,16 @@ public with sharing class DocgenEnvelopeService {
         );
 
         return env;
+    }
+
+    private static List<String> toStringIds(List<Id> ids) {
+        List<String> values = new List<String>();
+        if (ids != null) {
+            for (Id value : ids) {
+                values.add(String.valueOf(value));
+            }
+        }
+        return values;
     }
 
     /**

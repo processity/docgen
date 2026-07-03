@@ -43,6 +43,7 @@ export default class DocgenButton extends LightningElement {
    * @type {boolean}
    */
   @api readOnlyWord = false;
+  @api additionalPdfContentVersionIds = [];
 
   /**
    * Current record ID (automatically provided by Lightning runtime)
@@ -84,8 +85,15 @@ export default class DocgenButton extends LightningElement {
    * @private
    */
   async handleGenerateClick() {
+    await this.generate();
+  }
+
+  @api
+  async generate(config = {}) {
+    const configuredTemplateId = config.templateId || this.templateId;
+    const configuredTemplateName = config.templateName || this.templateName;
     // Validate required properties
-    if (!this.templateId && !this.templateName) {
+    if (!configuredTemplateId && !configuredTemplateName) {
       this.showToast(
         'Configuration Error',
         'Either Template ID or Template Name is required. Please configure the component.',
@@ -99,18 +107,18 @@ export default class DocgenButton extends LightningElement {
 
     try {
       // Resolve template ID if using template name
-      let effectiveTemplateId = this.templateId;
+      let effectiveTemplateId = configuredTemplateId;
 
-      if (!effectiveTemplateId && this.templateName) {
+      if (!effectiveTemplateId && configuredTemplateName) {
         // Resolve template name to ID
         try {
-          effectiveTemplateId = await getTemplateIdByName({ templateName: this.templateName });
+          effectiveTemplateId = await getTemplateIdByName({ templateName: configuredTemplateName });
           this.resolvedTemplateId = effectiveTemplateId;
         } catch (error) {
           this.isProcessing = false;
           this.showToast(
             'Template Not Found',
-            `Template with name "${this.templateName}" not found. Please check the template name.`,
+            `Template with name "${configuredTemplateName}" not found. Please check the template name.`,
             'error'
           );
           console.error('Template resolution error:', error);
@@ -121,9 +129,16 @@ export default class DocgenButton extends LightningElement {
       // Call Apex method - returns GenerateResult wrapper
       const result = await generate({
         templateId: effectiveTemplateId,
-        recordId: this.recordId,
-        outputFormat: this.normalizeOutputFormat(this.outputFormat),
-        readOnlyWord: this.normalizeBoolean(this.readOnlyWord)
+        recordId: config.recordId || this.recordId,
+        outputFormat: this.normalizeOutputFormat(config.outputFormat || this.outputFormat),
+        readOnlyWord: this.normalizeBoolean(
+          config.readOnlyWord !== undefined ? config.readOnlyWord : this.readOnlyWord
+        ),
+        additionalPdfContentVersionIds: this.normalizeContentVersionIds(
+          config.additionalPdfContentVersionIds !== undefined
+            ? config.additionalPdfContentVersionIds
+            : this.additionalPdfContentVersionIds
+        )
       });
 
       // Check if result indicates success or error
@@ -132,7 +147,7 @@ export default class DocgenButton extends LightningElement {
         window.open(result.downloadUrl, '_blank');
 
         // Show success toast
-        this.showToast('Success', this.successMessage, 'success');
+        this.showCompletionToast(result);
       } else if (result && result.success === true) {
         // Success flag but invalid downloadUrl - backend issue
         const errorMsg = result?.errorMessage || 'Document generation completed but download URL is invalid';
@@ -150,6 +165,57 @@ export default class DocgenButton extends LightningElement {
     } finally {
       // Always re-enable button
       this.isProcessing = false;
+    }
+  }
+
+  get showAttachmentSelector() {
+    return !this.isProcessing;
+  }
+
+  handleAttachmentSelection(event) {
+    this.additionalPdfContentVersionIds = event.detail.contentVersionIds;
+  }
+
+  normalizeContentVersionIds(value) {
+    if (!value) {
+      return [];
+    }
+    let values = value;
+    if (typeof value === 'string') {
+      try {
+        values = JSON.parse(value);
+      } catch {
+        values = [];
+      }
+    }
+    return Array.isArray(values) ? [...new Set(values.filter(Boolean).map(String))] : [];
+  }
+
+  showCompletionToast(result) {
+    const warnings = this.parseAttachmentWarnings(result?.attachmentWarnings);
+    if (warnings.length) {
+      this.showToast(
+        'Generated with Attachment Warnings',
+        `${warnings.length} additional PDF file${warnings.length === 1 ? ' was' : 's were'} skipped.`,
+        'warning'
+      );
+      return;
+    }
+    this.showToast('Success', this.successMessage, 'success');
+  }
+
+  parseAttachmentWarnings(value) {
+    if (!value) {
+      return [];
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
     }
   }
 

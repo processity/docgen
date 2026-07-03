@@ -1,6 +1,6 @@
 import { createElement } from 'lwc';
 import CompositeDocgenButton from 'c/compositeDocgenButton';
-import generateComposite from '@salesforce/apex/DocgenController.generateComposite';
+import generateComposite from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
 import getPdfPreviewContent from '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent';
@@ -9,7 +9,7 @@ import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.canc
 
 // Mock the Apex method
 jest.mock(
-  '@salesforce/apex/DocgenController.generateComposite',
+  '@salesforce/apex/DocgenController.generateCompositeWithAttachments',
   () => {
     return {
       default: jest.fn()
@@ -106,7 +106,7 @@ describe('c-composite-docgen-button', () => {
     element.outputFormat = 'PDF';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generateComposite.mockResolvedValue(mockDownloadUrl);
+    generateComposite.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -140,7 +140,7 @@ describe('c-composite-docgen-button', () => {
     element.outputFormat = 'PDF';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generateComposite.mockResolvedValue(mockDownloadUrl);
+    generateComposite.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -175,7 +175,7 @@ describe('c-composite-docgen-button', () => {
     element.successMessage = 'Composite document generated!';
 
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generateComposite.mockResolvedValue(mockDownloadUrl);
+    generateComposite.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
 
     document.body.appendChild(element);
 
@@ -338,7 +338,10 @@ describe('c-composite-docgen-button', () => {
     element.compositeDocumentId = 'a0Y1234567890ABC';
     element.recordId = '0011234567890ABC';
     element.recordIdField = 'accountId';
-    generateComposite.mockResolvedValue('/sfc/servlet.shepherd/version/download/0681234567890ABC');
+    generateComposite.mockResolvedValue({
+      success: true,
+      downloadUrl: '/sfc/servlet.shepherd/version/download/0681234567890ABC'
+    });
 
     document.body.appendChild(element);
 
@@ -354,7 +357,8 @@ describe('c-composite-docgen-button', () => {
       compositeDocId: 'a0Y1234567890ABC',
       recordIds: JSON.stringify({ accountId: '0011234567890ABC' }),
       outputFormat: null,
-      readOnlyWord: false
+      readOnlyWord: false,
+      additionalPdfContentVersionIds: []
     });
   });
 
@@ -381,7 +385,7 @@ describe('c-composite-docgen-button', () => {
       is: CompositeDocgenButton
     });
     const mockDownloadUrl = '/sfc/servlet.shepherd/version/download/0681234567890ABC';
-    generateComposite.mockResolvedValue(mockDownloadUrl);
+    generateComposite.mockResolvedValue({ success: true, downloadUrl: mockDownloadUrl });
     document.body.appendChild(element);
 
     const result = await element.generate({
@@ -396,7 +400,8 @@ describe('c-composite-docgen-button', () => {
       compositeDocId: 'a0Y1234567890ABC',
       recordIds: JSON.stringify({ quoteId: 'a551234567890ABC' }),
       outputFormat: 'DOCX',
-      readOnlyWord: true
+      readOnlyWord: true,
+      additionalPdfContentVersionIds: []
     });
   });
 
@@ -442,7 +447,8 @@ describe('c-composite-docgen-button', () => {
       recordIds: JSON.stringify({ accountId: '0011234567890ABC' }),
       outputFormat: 'PDF',
       previewMode: true,
-      readOnlyWord: false
+      readOnlyWord: false,
+      additionalPdfContentVersionIds: []
     });
     expect(window.open).not.toHaveBeenCalled();
     expect(getPdfPreviewContent).toHaveBeenCalledWith({
@@ -615,7 +621,10 @@ describe('c-composite-docgen-button', () => {
       is: CompositeDocgenButton
     });
     element.hideButton = true;
-    generateComposite.mockResolvedValue('/sfc/servlet.shepherd/version/download/0681234567890ABC');
+    generateComposite.mockResolvedValue({
+      success: true,
+      downloadUrl: '/sfc/servlet.shepherd/version/download/0681234567890ABC'
+    });
     document.body.appendChild(element);
 
     expect(element.shadowRoot.querySelector('lightning-button')).toBeNull();
@@ -627,5 +636,40 @@ describe('c-composite-docgen-button', () => {
     });
 
     expect(generateComposite).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes ordered additional PDF IDs to composite preview generation', async () => {
+    const element = createElement('c-composite-docgen-button', {
+      is: CompositeDocgenButton
+    });
+    startCompositeGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+      outputFormat: 'PDF',
+      downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
+    });
+    document.body.appendChild(element);
+
+    await element.generate({
+      compositeDocumentId: 'a0Y1234567890ABC',
+      recordIds: { quoteId: 'a551234567890ABC' },
+      outputFormat: 'PDF',
+      previewBeforeSave: true,
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA',
+        '068000000000002AAA'
+      ]
+    });
+
+    expect(startCompositeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      previewMode: true,
+      additionalPdfContentVersionIds: [
+        '068000000000002AAA',
+        '068000000000001AAA'
+      ]
+    }));
   });
 });

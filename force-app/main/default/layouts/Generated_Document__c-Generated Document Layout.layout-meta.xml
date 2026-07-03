@@ -186,6 +186,10 @@
                 <behavior>Edit</behavior>
                 <field>Error__c</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Attachment_Warnings__c</field>
+            </layoutItems>
         </layoutColumns>
         <layoutColumns/>
         <style>TwoColumnsTopToBottom</style>

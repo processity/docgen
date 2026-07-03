@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import nock from 'nock';
+import { PDFDocument } from 'pdf-lib';
 import { PollerService } from '../../src/worker/poller';
 import { loadConfig } from '../../src/config';
 import { createSalesforceAuth } from '../../src/sf/auth';
@@ -8,9 +9,14 @@ import type { QueuedDocument, PollerStats } from '../../src/types';
 
 jest.mock('../../src/convert/soffice', () => {
   const actual = jest.requireActual('../../src/convert/soffice');
+  const { PDFDocument: MockPdfDocument } = jest.requireActual('pdf-lib');
   return {
     ...actual,
-    convertDocxToPdf: jest.fn(async () => Buffer.from('%PDF-1.4\n%docgen-test\n')),
+    convertDocxToPdf: jest.fn(async () => {
+      const document = await MockPdfDocument.create();
+      document.addPage([200, 200]);
+      return Buffer.from(await document.save());
+    }),
   };
 });
 
@@ -265,6 +271,13 @@ describeTests('PollerService', () => {
 
   describe('processDocument', () => {
     it('should successfully process a document and update status to SUCCEEDED', async () => {
+      const attachmentId = '068000000000090AAA';
+      const attachmentPdf = await PDFDocument.create();
+      attachmentPdf.addPage([300, 200]);
+      attachmentPdf.addPage([400, 200]);
+      const attachmentBytes = Buffer.from(await attachmentPdf.save());
+      let uploadedVersionData = '';
+      let successUpdateBody: Record<string, unknown> = {};
       const mockDoc: QueuedDocument = {
         Id: 'a00000000000001AAA',
         Status__c: 'PROCESSING',
@@ -281,8 +294,14 @@ describeTests('PollerService', () => {
           },
           parents: { AccountId: '001000000000001AAA', OpportunityId: null, CaseId: null },
           requestHash: 'sha256:test-hash',
+          additionalPdfContentVersionIds: [attachmentId],
           generatedDocumentId: 'a00000000000001AAA',
         }),
+        Attachment_Warnings__c: JSON.stringify([{
+          contentVersionId: '068000000000091AAA',
+          code: 'NOT_A_PDF',
+          message: 'Skipped non-PDF file',
+        }]),
         Attempts__c: 0,
         CorrelationId__c: 'test-corr-id',
         Template__c: 'a01000000000001AAA',
@@ -298,9 +317,29 @@ describeTests('PollerService', () => {
         .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
         .reply(200, validDocx);
 
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query((query) => typeof query.q === 'string' && query.q.includes(attachmentId))
+        .reply(200, {
+          records: [{
+            Id: attachmentId,
+            Title: 'Appendix',
+            FileExtension: 'pdf',
+            FileType: 'PDF',
+            ContentSize: attachmentBytes.length,
+          }],
+        });
+
+      nock(baseUrl)
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${attachmentId}/VersionData`)
+        .reply(200, attachmentBytes);
+
       // Mock file upload
       nock(baseUrl)
-        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          uploadedVersionData = body.VersionData;
+          return true;
+        })
         .reply(201, {
           id: '068000000000002AAA',
           success: true,
@@ -323,13 +362,21 @@ describeTests('PollerService', () => {
 
       // Mock status update (success or failure)
       nock(baseUrl)
-        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`, (body) => {
+          successUpdateBody = body;
+          return true;
+        })
         .reply(204);
 
       const result = await poller.processDocument(mockDoc);
 
       expect(result.success).toBe(true);
       expect(result.documentId).toBe(mockDoc.Id);
+      const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
+      expect(uploadedPdf.getPages().map((page) => page.getWidth())).toEqual([200, 300, 400]);
+      expect(JSON.parse(String(successUpdateBody.Attachment_Warnings__c))).toEqual([
+        expect.objectContaining({ code: 'NOT_A_PDF' }),
+      ]);
     }, 60000); // 60 second timeout for LibreOffice PDF conversion
 
     it('should handle template not found (404) and mark as FAILED', async () => {

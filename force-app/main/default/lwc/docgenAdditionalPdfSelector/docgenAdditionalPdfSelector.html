@@ -1,0 +1,58 @@
+<template>
+  <template if:true={showSelector}>
+    <section class="selector" aria-label="Additional PDF pages">
+      <div class="selector__header">
+        <span class="selector__title">Additional PDF pages</span>
+        <span class="selector__summary">{selectionSummary}</span>
+      </div>
+
+      <template if:true={isLoading}>
+        <lightning-spinner size="small" alternative-text="Loading related PDF files"></lightning-spinner>
+      </template>
+
+      <template if:true={hasFiles}>
+        <ul class="file-list">
+          <template for:each={files} for:item="file">
+            <li key={file.contentVersionId} class="file-list__item">
+              <lightning-input
+                type="checkbox"
+                label={file.title}
+                data-id={file.contentVersionId}
+                checked={file.selected}
+                disabled={file.disabled}
+                onchange={handleSelectionChange}>
+              </lightning-input>
+              <span class="file-list__size">{file.formattedSize}</span>
+            </li>
+          </template>
+        </ul>
+      </template>
+
+      <template if:false={hasFiles}>
+        <template if:false={isLoading}>
+          <p class="empty-state">No related PDF files</p>
+        </template>
+      </template>
+
+      <template if:true={hasSelectedFiles}>
+        <ol class="selected-list">
+          <template for:each={selectedFiles} for:item="file">
+            <li key={file.contentVersionId} class="selected-list__item">
+              <span class="selected-list__order">{file.order}</span>
+              <span class="selected-list__name" title={file.title}>{file.title}</span>
+              <span class="selected-list__size">{file.formattedSize}</span>
+              <lightning-button-icon
+                icon-name="utility:close"
+                alternative-text="Remove"
+                title="Remove"
+                size="small"
+                data-id={file.contentVersionId}
+                onclick={handleRemove}>
+              </lightning-button-icon>
+            </li>
+          </template>
+        </ol>
+      </template>
+    </section>
+  </template>
+</template>
