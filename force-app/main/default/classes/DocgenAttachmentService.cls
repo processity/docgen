@@ -144,7 +144,7 @@ public with sharing class DocgenAttachmentService {
         return files;
     }
 
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static AttachmentContext getAttachmentContext(
         Id recordId,
         Id templateId,

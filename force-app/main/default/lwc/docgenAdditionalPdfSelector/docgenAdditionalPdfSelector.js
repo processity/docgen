@@ -1,4 +1,4 @@
-import { LightningElement, api, wire } from 'lwc';
+import { LightningElement, api } from 'lwc';
 import getAttachmentContext from '@salesforce/apex/DocgenAttachmentService.getAttachmentContext';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
@@ -6,44 +6,90 @@ const MAX_FILE_COUNT = 20;
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 export default class DocgenAdditionalPdfSelector extends LightningElement {
-  @api recordId;
   @api templateId;
   @api templateName;
   @api compositeDocumentId;
   @api outputFormat;
 
+  _recordId;
+  isConnectedToDom = false;
+  loadSequence = 0;
   files = [];
   selectedIds = [];
   isLoading = true;
   effectiveOutputFormat = null;
   loadError = null;
 
-  @wire(getAttachmentContext, {
-    recordId: '$recordId',
-    templateId: '$templateId',
-    templateName: '$templateName',
-    compositeDocumentId: '$compositeDocumentId',
-    requestedOutputFormat: '$outputFormat'
-  })
-  wiredContext({ data, error }) {
-    this.isLoading = false;
-    if (data) {
+  @api
+  get recordId() {
+    return this._recordId;
+  }
+
+  set recordId(value) {
+    if (value === this._recordId) {
+      return;
+    }
+    this._recordId = value;
+    if (this.isConnectedToDom) {
+      this.loadContext();
+    }
+  }
+
+  connectedCallback() {
+    this.isConnectedToDom = true;
+    this.loadContext();
+  }
+
+  disconnectedCallback() {
+    this.isConnectedToDom = false;
+    this.loadSequence += 1;
+  }
+
+  async loadContext() {
+    const sequence = ++this.loadSequence;
+    this.isLoading = true;
+    try {
+      const data = await getAttachmentContext({
+        recordId: this.recordId || null,
+        templateId: this.templateId || null,
+        templateName: this.templateName || null,
+        compositeDocumentId: this.compositeDocumentId || null,
+        requestedOutputFormat: this.outputFormat || null
+      });
+      if (!this.isConnectedToDom || sequence !== this.loadSequence) {
+        return;
+      }
       this.loadError = null;
+      if (!data) {
+        this.effectiveOutputFormat = this.outputFormat
+          ? String(this.outputFormat).toUpperCase()
+          : null;
+        this.files = [];
+        return;
+      }
       this.effectiveOutputFormat = data.effectiveOutputFormat;
       this.files = (data.files || []).map((file) => ({
         ...file,
         formattedSize: this.formatBytes(file.contentSize)
       }));
       this.refreshFileState();
-    } else if (error) {
+    } catch (error) {
+      if (!this.isConnectedToDom || sequence !== this.loadSequence) {
+        return;
+      }
       this.files = [];
       this.loadError = this.extractErrorMessage(error);
       this.showToast('Unable to Load PDF Files', this.loadError, 'error');
+    } finally {
+      if (this.isConnectedToDom && sequence === this.loadSequence) {
+        this.isLoading = false;
+      }
     }
   }
 
   get showSelector() {
-    return this.effectiveOutputFormat === 'PDF';
+    const requestedFormat = this.outputFormat ? String(this.outputFormat).toUpperCase() : null;
+    return requestedFormat === 'PDF' || this.effectiveOutputFormat === 'PDF';
   }
 
   get hasFiles() {

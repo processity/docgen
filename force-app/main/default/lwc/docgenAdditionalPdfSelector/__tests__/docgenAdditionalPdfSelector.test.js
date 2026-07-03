@@ -4,10 +4,7 @@ import getAttachmentContext from '@salesforce/apex/DocgenAttachmentService.getAt
 
 jest.mock(
   '@salesforce/apex/DocgenAttachmentService.getAttachmentContext',
-  () => {
-    const { createApexTestWireAdapter } = require('@salesforce/wire-service-jest-util');
-    return { default: createApexTestWireAdapter(jest.fn()) };
-  },
+  () => ({ default: jest.fn() }),
   { virtual: true }
 );
 
@@ -27,6 +24,13 @@ const FILE_2 = {
 };
 
 describe('c-docgen-additional-pdf-selector', () => {
+  beforeEach(() => {
+    getAttachmentContext.mockResolvedValue({
+      effectiveOutputFormat: 'PDF',
+      files: []
+    });
+  });
+
   afterEach(() => {
     while (document.body.firstChild) {
       document.body.removeChild(document.body.firstChild);
@@ -34,7 +38,7 @@ describe('c-docgen-additional-pdf-selector', () => {
     jest.clearAllMocks();
   });
 
-  it('shows related PDFs and preserves selection order', async () => {
+  it('renders immediately while explicit PDF context is loading', () => {
     const element = createElement('c-docgen-additional-pdf-selector', {
       is: DocgenAdditionalPdfSelector
     });
@@ -42,10 +46,21 @@ describe('c-docgen-additional-pdf-selector', () => {
     element.outputFormat = 'PDF';
     document.body.appendChild(element);
 
-    getAttachmentContext.emit({
+    expect(element.shadowRoot.querySelector('.selector')).not.toBeNull();
+  });
+
+  it('shows related PDFs and preserves selection order', async () => {
+    getAttachmentContext.mockResolvedValue({
       effectiveOutputFormat: 'PDF',
       files: [FILE_1, FILE_2]
     });
+    const element = createElement('c-docgen-additional-pdf-selector', {
+      is: DocgenAdditionalPdfSelector
+    });
+    element.recordId = '001000000000001AAA';
+    element.outputFormat = 'PDF';
+    document.body.appendChild(element);
+
     await flushPromises();
 
     const changes = [];
@@ -70,6 +85,7 @@ describe('c-docgen-additional-pdf-selector', () => {
   });
 
   it('does not render the selector for non-PDF output', async () => {
+    getAttachmentContext.mockResolvedValue({ effectiveOutputFormat: 'DOCX', files: [] });
     const element = createElement('c-docgen-additional-pdf-selector', {
       is: DocgenAdditionalPdfSelector
     });
@@ -77,10 +93,31 @@ describe('c-docgen-additional-pdf-selector', () => {
     element.outputFormat = 'DOCX';
     document.body.appendChild(element);
 
-    getAttachmentContext.emit({ effectiveOutputFormat: 'DOCX', files: [] });
     await flushPromises();
 
     expect(element.shadowRoot.querySelector('.selector')).toBeNull();
+  });
+
+  it('reloads related PDFs when a quick action supplies recordId after connection', async () => {
+    getAttachmentContext
+      .mockResolvedValueOnce({ effectiveOutputFormat: 'PDF', files: [] })
+      .mockResolvedValueOnce({ effectiveOutputFormat: 'PDF', files: [FILE_1, FILE_2] });
+
+    const element = createElement('c-docgen-additional-pdf-selector', {
+      is: DocgenAdditionalPdfSelector
+    });
+    element.outputFormat = 'PDF';
+    document.body.appendChild(element);
+    await flushPromises();
+
+    element.recordId = '001000000000001AAA';
+    await flushPromises();
+
+    expect(getAttachmentContext).toHaveBeenLastCalledWith(expect.objectContaining({
+      recordId: '001000000000001AAA',
+      requestedOutputFormat: 'PDF'
+    }));
+    expect(element.shadowRoot.querySelectorAll('lightning-input')).toHaveLength(2);
   });
 
   it('deduplicates programmatically supplied IDs', async () => {
