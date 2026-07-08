@@ -584,6 +584,8 @@ For each data source / template, create a junction record:
 4. Click the button
 5. PDF should open with both Account data and Terms
 
+> **Tip:** Alternatively, add the `docgenDocumentSelector` component to the record page. It lets users search and pick any template or active composite document configured for the object at runtime - no hardcoded record IDs. See the [LWC Document Selector Guide](lwc-document-selector-guide.md).
+
 **Option B: Apex (Developer Console)**
 
 ```apex

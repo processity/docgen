@@ -47,6 +47,75 @@ private class CompositeDocumentControllerTest {
     }
 
     @isTest
+    static void testSearchActiveCompositeDocuments_FiltersByObjectApiName() {
+        // Arrange
+        Composite_Document__c quoteComposite = createQuoteComposite('Quote composite');
+        Composite_Document__c accountComposite = createAccountComposite('Account composite');
+        insert new List<Composite_Document__c>{ quoteComposite, accountComposite };
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveCompositeDocuments('Account', '', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(2, results.size(), 'Should return active Account composites including the setup record');
+        Set<Id> resultIds = new Set<Id>();
+        for (CompositeDocumentController.CompositeDocumentSearchResult result : results) {
+            resultIds.add(result.id);
+        }
+        System.assert(resultIds.contains(accountComposite.Id), 'Should return the Account composite');
+        System.assert(!resultIds.contains(quoteComposite.Id), 'Should not return the Quote composite');
+    }
+
+    @isTest
+    static void testSearchActiveCompositeDocuments_BlankObjectApiNameThrows() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            CompositeDocumentController.searchActiveCompositeDocuments('', '', 10);
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw exception for blank object API name');
+    }
+
+    @isTest
+    static void testSearchActiveTemplates_FiltersByObjectApiName() {
+        // Arrange
+        DocgenTestDataFactory.createTemplate(
+            'Quote Template Not Returned',
+            'SBQQ__Quote__c',
+            'SELECT Id FROM SBQQ__Quote__c WHERE Id = :recordId'
+        );
+
+        // Act
+        Test.startTest();
+        List<CompositeDocumentController.CompositeDocumentSearchResult> results =
+            CompositeDocumentController.searchActiveTemplates('Account', 'Summary', 10);
+        Test.stopTest();
+
+        // Assert
+        System.assertEquals(1, results.size(), 'Should return only the name-matched Account template');
+        System.assertEquals('Account Summary Template', results[0].name, 'Should return the Account template');
+    }
+
+    @isTest
+    static void testSearchActiveTemplates_BlankObjectApiNameThrows() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            CompositeDocumentController.searchActiveTemplates(null, '', 10);
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw exception for blank object API name');
+    }
+
+    @isTest
     static void testSearchActiveQuoteCompositeDocuments_BlankFallsBackToActiveRecords() {
         // Arrange
         Composite_Document__c quoteComposite = createQuoteComposite('Quote Template EN Composite');

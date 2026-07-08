@@ -85,6 +85,7 @@ export default class CompositeDocgenButton extends LightningElement {
   @api pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
 
   _hideButton = false;
+  _hideFilePicker = false;
   _openOnSuccess = true;
   _previewBeforeSave = false;
   isProcessing = false;
@@ -114,7 +115,7 @@ export default class CompositeDocgenButton extends LightningElement {
   }
 
   get showAttachmentSelector() {
-    return !this.isProcessing && !this.status;
+    return !this.hideFilePicker && !this.isProcessing && !this.status;
   }
 
   get showPreviewPanel() {
@@ -200,6 +201,15 @@ export default class CompositeDocgenButton extends LightningElement {
 
   set hideButton(value) {
     this._hideButton = this.normalizeBoolean(value, false);
+  }
+
+  @api
+  get hideFilePicker() {
+    return this._hideFilePicker;
+  }
+
+  set hideFilePicker(value) {
+    this._hideFilePicker = this.normalizeBoolean(value, false);
   }
 
   @api

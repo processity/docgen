@@ -6,6 +6,8 @@ The **Composite Document Generation Button** (`compositeDocgenButton`) is a Ligh
 
 This component is designed for admin configuration via the Lightning App Builder without requiring code.
 
+> Looking for a runtime selection UI instead of a fixed composite document ID? See the [LWC Document Selector Guide](lwc-document-selector-guide.md) - it lets users search and pick a template or composite document and embeds this component for generation.
+
 ---
 
 ## Component Properties
@@ -26,6 +28,7 @@ This component is designed for admin configuration via the Lightning App Builder
 | **Button Label** | String | Custom text displayed on the button | `Generate Account Report` |
 | **Success Message** | String | Custom message shown in success toast notification | `Report generated successfully!` |
 | **Hide Internal Button** | Boolean | Hides the component's button when generation is controlled by a parent LWC | `true` |
+| **Hide Additional PDF Picker** | Boolean | Hides the additional PDF file picker shown before generation (PDF output only). Attachments can still be passed programmatically via `additionalPdfContentVersionIds`. | `true` |
 
 ---
 
@@ -49,7 +52,7 @@ await generator.generate({
 });
 ```
 
-The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, and optional `readOnlyWord`. Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF and PPTX. It emits
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, optional `readOnlyWord`, and optional `additionalPdfContentVersionIds` (array of ContentVersion IDs merged after the generated PDF; overrides any file picker selection). Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF and PPTX. It emits
 `docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)

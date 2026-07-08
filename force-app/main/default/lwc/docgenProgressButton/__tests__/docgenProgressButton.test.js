@@ -94,6 +94,21 @@ describe('c-docgen-progress-button', () => {
     expect(button.label).toBe('Generate Account PDF');
   });
 
+  it('shows the additional PDF picker by default and hides it with hideFilePicker', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton,
+    });
+    element.templateName = 'Account Template';
+    element.recordId = '0011234567890ABC';
+
+    document.body.appendChild(element);
+    expect(element.shadowRoot.querySelector('c-docgen-additional-pdf-selector')).not.toBeNull();
+
+    element.hideFilePicker = 'true';
+    await flushPromises();
+    expect(element.shadowRoot.querySelector('c-docgen-additional-pdf-selector')).toBeNull();
+  });
+
   it('starts generation with configured template and output format', async () => {
     const element = createElement('c-docgen-progress-button', {
       is: DocgenProgressButton,

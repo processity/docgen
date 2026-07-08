@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>60.0</apiVersion>
+    <description>Template or composite document selection UI with optional preset lock, embedding the docgen generator buttons. recordId and objectApiName are provided by the Lightning runtime on record pages.</description>
+    <isExposed>true</isExposed>
+    <masterLabel>Docgen Document Selector</masterLabel>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property name="objectLabel" type="String" label="Object Label" description="Display label used in lookup labels and messages (e.g. Quote). Defaults to a label derived from the object API name." />
+            <property name="recordIdField" type="String" label="Record ID Field" description="Variable name for the record ID in composite generation (e.g. quoteId). Must match the record ID variable expected by the composite document." default="recordId" />
+            <property name="outputFormat" type="String" label="Output Format" description="Document output format" datasource="PDF,DOCX,PPTX" default="PDF" />
+            <property name="previewBeforeSave" type="Boolean" label="Preview Before Save" description="Show the generated file for review and require Save or Cancel before linking it to parent records" default="false" />
+            <property name="docgenType" type="String" label="Preset Document Type" description="Optional: 'template' or 'composite'. With Preset Document Name, locks the selection to that document." datasource="template,composite" />
+            <property name="docgenName" type="String" label="Preset Document Name" description="Optional: name of the template, or composite document number/description. Locks the selection when a match is found." />
+            <property name="hideFilePicker" type="Boolean" label="Hide Additional PDF Picker" description="Hide the additional PDF file picker. Attachments can still be preset via additionalPdfContentVersionIds." default="false" />
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

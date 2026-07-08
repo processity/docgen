@@ -1,0 +1,56 @@
+.docgen-controls {
+  margin: 0 0 0.75rem;
+}
+
+.source-selector {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.docgen-lookup {
+  position: relative;
+}
+
+.selected-docgen-record {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #c9c9c9;
+  border-radius: 0.25rem;
+  background: #ffffff;
+}
+
+.selected-docgen-record__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.docgen-results {
+  display: block;
+  width: 100%;
+  max-height: 15rem;
+  overflow-y: auto;
+  margin-top: 0.125rem;
+  z-index: 9000;
+}
+
+.docgen-result {
+  width: 100%;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.docgen-result:hover,
+.docgen-result:focus {
+  background: #f3f3f3;
+}
+
+.docgen-results__status {
+  color: #444444;
+}
+
+.option-action {
+  margin-top: 0.75rem;
+}

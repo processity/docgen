@@ -291,6 +291,7 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 | **[Admin Runbook](docs/admin-runbook.md)**                           | Administrative operations and troubleshooting                                        |
 | **[Named Credential Setup](docs/named-credential-setup.md)**         | Configuring Azure AD authentication from Salesforce                                  |
 | **[LWC Composite Button Guide](docs/lwc-composite-button-guide.md)** | Configuring compositeDocgenButton component on Lightning pages                       |
+| **[LWC Document Selector Guide](docs/lwc-document-selector-guide.md)** | Configuring the docgenDocumentSelector component (template/composite selection UI, preset lock, embedding) |
 | **[Composite Batch Examples](docs/composite-batch-examples.md)**     | Batch generation patterns for composite documents                                    |
 
 ## Project Structure
@@ -341,7 +342,10 @@ docgen/
 ### Lightning Web Components
 
 - **docgenButton**: Single-template document generation button (deployable to any record page)
+- **docgenProgressButton**: Queued single-template generation with progress bar, inline PDF preview, and Save/Cancel
 - **compositeDocgenButton**: Composite document generation button with recordIds mapping
+- **docgenDocumentSelector**: Template/composite document selection UI with search lookups and optional preset lock; embeds the generator buttons for a complete generation flow on any supported object
+- **docgenAdditionalPdfSelector**: Attach additional PDF files to a generation request
 - **docgenTestPage**: E2E testing wrapper component
 
 ### Custom App

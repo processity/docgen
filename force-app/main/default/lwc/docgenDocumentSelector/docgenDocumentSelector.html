@@ -1,0 +1,212 @@
+<template>
+  <template if:true={isResolvingPreset}>
+    <div class="slds-is-relative slds-p-around_medium">
+      <lightning-spinner size="small" alternative-text="Loading..."></lightning-spinner>
+    </div>
+  </template>
+  <template if:false={isResolvingPreset}>
+  <div class="docgen-controls">
+    <lightning-radio-group
+      class="source-selector"
+      label="Document configuration"
+      options={docgenSourceOptions}
+      value={docgenSource}
+      type="button"
+      disabled={isSelectionLocked}
+      onchange={handleDocgenSourceChange}
+    ></lightning-radio-group>
+    <template if:true={isTemplateSource}>
+      <div class="docgen-lookup">
+        <template if:true={isSelectionEditable}>
+          <lightning-input
+            type="search"
+            label={templateLookupLabel}
+            placeholder={templateSearchPlaceholder}
+            value={templateSearchTerm}
+            disabled={isGeneratingDocgen}
+            onfocus={handleTemplateSearchFocus}
+            onchange={handleTemplateSearchInput}
+          ></lightning-input>
+        </template>
+        <template if:true={templateId}>
+          <div class="selected-docgen-record slds-m-top_x-small">
+            <lightning-icon icon-name="standard:document" size="small" alternative-text="Selected"></lightning-icon>
+            <div class="selected-docgen-record__text">
+              <p class="slds-truncate" title={templateSearchTerm}>{templateSearchTerm}</p>
+              <p class="slds-text-body_small slds-text-color_weak" title={templateSelectedCaption}>
+                {templateSelectedCaption}
+              </p>
+            </div>
+            <template if:true={isSelectionEditable}>
+              <lightning-button-icon
+                icon-name="utility:close"
+                variant="bare"
+                alternative-text="Clear selected template"
+                title="Clear selected template"
+                onclick={clearTemplateSelection}
+              ></lightning-button-icon>
+            </template>
+          </div>
+        </template>
+        <template if:true={showTemplateSearchResults}>
+          <div class="docgen-results slds-dropdown slds-dropdown_fluid" role="listbox">
+            <template if:true={templateSearchLoading}>
+              <div class="docgen-results__status slds-p-around_small">Searching...</div>
+            </template>
+            <template if:false={templateSearchLoading}>
+              <template if:true={hasTemplateSearchResults}>
+                <ul class="slds-listbox slds-listbox_vertical" role="presentation">
+                  <template for:each={templateSearchResults} for:item="result">
+                    <li key={result.id} role="presentation" class="slds-listbox__item">
+                      <button
+                        type="button"
+                        class="docgen-result slds-button"
+                        data-id={result.id}
+                        onclick={handleTemplateResultSelect}
+                      >
+                        <span class="slds-media slds-listbox__option slds-listbox__option_entity">
+                          <span class="slds-media__figure slds-listbox__option-icon">
+                            <lightning-icon
+                              icon-name="standard:document"
+                              size="small"
+                              alternative-text="Template"
+                            ></lightning-icon>
+                          </span>
+                          <span class="slds-media__body">
+                            <span class="slds-listbox__option-text slds-listbox__option-text_entity" title={result.label}>
+                              {result.label}
+                            </span>
+                            <span class="slds-listbox__option-meta slds-listbox__option-meta_entity" title={result.subLabel}>
+                              {result.subLabel}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <template if:false={hasTemplateSearchResults}>
+                <div class="docgen-results__status slds-p-around_small">{templateSearchStatusText}</div>
+              </template>
+            </template>
+          </div>
+        </template>
+      </div>
+    </template>
+    <template if:true={isCompositeSource}>
+      <div class="docgen-lookup">
+        <template if:true={isSelectionEditable}>
+          <lightning-input
+            type="search"
+            label="Composite document"
+            placeholder="Search by description or composite number..."
+            value={compositeSearchTerm}
+            disabled={isGeneratingDocgen}
+            onfocus={handleCompositeSearchFocus}
+            onchange={handleCompositeSearchInput}
+          ></lightning-input>
+        </template>
+        <template if:true={compositeDocumentId}>
+          <div class="selected-docgen-record slds-m-top_x-small">
+            <lightning-icon icon-name="standard:document" size="small" alternative-text="Selected"></lightning-icon>
+            <div class="selected-docgen-record__text">
+              <p class="slds-truncate" title={compositeSearchTerm}>{compositeSearchTerm}</p>
+              <p class="slds-text-body_small slds-text-color_weak" title={compositeSelectedCaption}>
+                {compositeSelectedCaption}
+              </p>
+            </div>
+            <template if:true={isSelectionEditable}>
+              <lightning-button-icon
+                icon-name="utility:close"
+                variant="bare"
+                alternative-text="Clear selected composite document"
+                title="Clear selected composite document"
+                onclick={clearCompositeSelection}
+              ></lightning-button-icon>
+            </template>
+          </div>
+        </template>
+        <template if:true={showCompositeSearchResults}>
+          <div class="docgen-results slds-dropdown slds-dropdown_fluid" role="listbox">
+            <template if:true={compositeSearchLoading}>
+              <div class="docgen-results__status slds-p-around_small">Searching...</div>
+            </template>
+            <template if:false={compositeSearchLoading}>
+              <template if:true={hasCompositeSearchResults}>
+                <ul class="slds-listbox slds-listbox_vertical" role="presentation">
+                  <template for:each={compositeSearchResults} for:item="result">
+                    <li key={result.id} role="presentation" class="slds-listbox__item">
+                      <button
+                        type="button"
+                        class="docgen-result slds-button"
+                        data-id={result.id}
+                        onclick={handleCompositeResultSelect}
+                      >
+                        <span class="slds-media slds-listbox__option slds-listbox__option_entity">
+                          <span class="slds-media__figure slds-listbox__option-icon">
+                            <lightning-icon
+                              icon-name="standard:document"
+                              size="small"
+                              alternative-text="Composite document"
+                            ></lightning-icon>
+                          </span>
+                          <span class="slds-media__body">
+                            <span class="slds-listbox__option-text slds-listbox__option-text_entity" title={result.label}>
+                              {result.label}
+                            </span>
+                            <span class="slds-listbox__option-meta slds-listbox__option-meta_entity" title={result.subLabel}>
+                              {result.subLabel}
+                            </span>
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  </template>
+                </ul>
+              </template>
+              <template if:false={hasCompositeSearchResults}>
+                <div class="docgen-results__status slds-p-around_small">{compositeSearchStatusText}</div>
+              </template>
+            </template>
+          </div>
+        </template>
+      </div>
+      <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+        Composite generation combines the templates configured in the selected document.
+      </p>
+    </template>
+  </div>
+  <template if:true={showDocgenProgress}>
+    <c-docgen-progress-button
+      record-id={recordId}
+      template-id={templateId}
+      output-format={outputFormat}
+      preview-before-save={previewBeforeSave}
+      hide-file-picker={hideFilePicker}
+      additional-pdf-content-version-ids={additionalPdfContentVersionIds}
+      hide-button="true"
+    ></c-docgen-progress-button>
+  </template>
+  <template if:true={showCompositeProgress}>
+    <c-composite-docgen-button
+      record-id={recordId}
+      record-id-field={recordIdField}
+      composite-document-id={compositeDocumentId}
+      output-format={outputFormat}
+      preview-before-save={previewBeforeSave}
+      hide-file-picker={hideFilePicker}
+      additional-pdf-content-version-ids={additionalPdfContentVersionIds}
+      hide-button="true"
+    ></c-composite-docgen-button>
+  </template>
+  <div class="option-action">
+    <lightning-button
+      variant="brand"
+      label={docgenActionLabel}
+      disabled={isGenerateDocgenDisabled}
+      onclick={generateWithDocgen}
+    ></lightning-button>
+  </div>
+  </template>
+</template>

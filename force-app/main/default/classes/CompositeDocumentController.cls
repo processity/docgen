@@ -29,24 +29,30 @@ public with sharing class CompositeDocumentController {
     }
 
     /**
-     * Search active Quote composite documents for the Conga Draft Quote quick action.
+     * Search active composite documents configured for a primary parent object.
      * Blank search terms return recently viewed records when available, then fall back
-     * to the latest active Quote composite documents.
+     * to the latest active composite documents for that object.
      *
+     * @param objectApiName API name of the primary parent object (e.g. 'Account', 'SBQQ__Quote__c')
      * @param searchTerm optional user-entered search text
      * @param limitSize maximum number of results to return
      * @return List of lightweight search result DTOs
      */
     @AuraEnabled(cacheable=true)
-    public static List<CompositeDocumentSearchResult> searchActiveQuoteCompositeDocuments(
+    public static List<CompositeDocumentSearchResult> searchActiveCompositeDocuments(
+        String objectApiName,
         String searchTerm,
         Integer limitSize
     ) {
+        if (String.isBlank(objectApiName)) {
+            throw new AuraHandledException('Object API name is required to search composite documents.');
+        }
+
         Integer safeLimit = normalizeSearchLimit(limitSize);
 
         try {
             if (String.isBlank(searchTerm)) {
-                List<Composite_Document__c> recentDocs = getRecentlyViewedQuoteCompositeDocuments(safeLimit);
+                List<Composite_Document__c> recentDocs = getRecentlyViewedCompositeDocuments(objectApiName, safeLimit);
                 if (!recentDocs.isEmpty()) {
                     return toSearchResults(recentDocs, safeLimit);
                 }
@@ -54,7 +60,7 @@ public with sharing class CompositeDocumentController {
                 return toSearchResults([
                     SELECT Id, Name, Description__c
                     FROM Composite_Document__c
-                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                    WHERE PrimaryParent__c = :objectApiName
                       AND IsActive__c = true
                     ORDER BY LastModifiedDate DESC
                     LIMIT :safeLimit
@@ -70,7 +76,7 @@ public with sharing class CompositeDocumentController {
                 FIND :soslTerm IN ALL FIELDS
                 RETURNING Composite_Document__c(
                     Id, Name, Description__c
-                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                    WHERE PrimaryParent__c = :objectApiName
                       AND IsActive__c = true
                     LIMIT 20
                 )
@@ -83,24 +89,30 @@ public with sharing class CompositeDocumentController {
     }
 
     /**
-     * Search Quote DocGen templates for quick action lookup selection.
-     * Blank search terms return recently viewed Quote templates when available,
-     * then fall back to the latest Quote templates.
+     * Search DocGen templates configured for a primary parent object.
+     * Blank search terms return recently viewed templates when available,
+     * then fall back to the latest templates for that object.
      *
+     * @param objectApiName API name of the primary parent object (e.g. 'Account', 'SBQQ__Quote__c')
      * @param searchTerm optional user-entered search text
      * @param limitSize maximum number of results to return
      * @return List of lightweight search result DTOs
      */
     @AuraEnabled(cacheable=true)
-    public static List<CompositeDocumentSearchResult> searchActiveQuoteTemplates(
+    public static List<CompositeDocumentSearchResult> searchActiveTemplates(
+        String objectApiName,
         String searchTerm,
         Integer limitSize
     ) {
+        if (String.isBlank(objectApiName)) {
+            throw new AuraHandledException('Object API name is required to search templates.');
+        }
+
         Integer safeLimit = normalizeSearchLimit(limitSize);
 
         try {
             if (String.isBlank(searchTerm)) {
-                List<Docgen_Template__c> recentTemplates = getRecentlyViewedQuoteTemplates(safeLimit);
+                List<Docgen_Template__c> recentTemplates = getRecentlyViewedTemplates(objectApiName, safeLimit);
                 if (!recentTemplates.isEmpty()) {
                     return toTemplateSearchResults(recentTemplates, safeLimit);
                 }
@@ -108,7 +120,7 @@ public with sharing class CompositeDocumentController {
                 return toTemplateSearchResults([
                     SELECT Id, Name
                     FROM Docgen_Template__c
-                    WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                    WHERE PrimaryParent__c = :objectApiName
                     ORDER BY LastModifiedDate DESC
                     LIMIT :safeLimit
                 ], safeLimit);
@@ -118,7 +130,7 @@ public with sharing class CompositeDocumentController {
             return toTemplateSearchResults([
                 SELECT Id, Name
                 FROM Docgen_Template__c
-                WHERE PrimaryParent__c = 'SBQQ__Quote__c'
+                WHERE PrimaryParent__c = :objectApiName
                   AND Name LIKE :likeTerm
                 ORDER BY Name ASC
                 LIMIT :safeLimit
@@ -126,6 +138,30 @@ public with sharing class CompositeDocumentController {
         } catch (Exception e) {
             throw new AuraHandledException('Error searching templates: ' + e.getMessage());
         }
+    }
+
+    /**
+     * Backward-compatible Quote-scoped search retained for existing subscribers.
+     * Delegates to searchActiveCompositeDocuments with SBQQ__Quote__c.
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<CompositeDocumentSearchResult> searchActiveQuoteCompositeDocuments(
+        String searchTerm,
+        Integer limitSize
+    ) {
+        return searchActiveCompositeDocuments('SBQQ__Quote__c', searchTerm, limitSize);
+    }
+
+    /**
+     * Backward-compatible Quote-scoped search retained for existing subscribers.
+     * Delegates to searchActiveTemplates with SBQQ__Quote__c.
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<CompositeDocumentSearchResult> searchActiveQuoteTemplates(
+        String searchTerm,
+        Integer limitSize
+    ) {
+        return searchActiveTemplates('SBQQ__Quote__c', searchTerm, limitSize);
     }
 
     public class CompositeDocumentSearchResult {
@@ -389,7 +425,10 @@ public with sharing class CompositeDocumentController {
         return cleanedTerm + '*';
     }
 
-    private static List<Composite_Document__c> getRecentlyViewedQuoteCompositeDocuments(Integer safeLimit) {
+    private static List<Composite_Document__c> getRecentlyViewedCompositeDocuments(
+        String objectApiName,
+        Integer safeLimit
+    ) {
         List<RecentlyViewed> recentRecords = [
             SELECT Id
             FROM RecentlyViewed
@@ -411,7 +450,7 @@ public with sharing class CompositeDocumentController {
             SELECT Id, Name, Description__c
             FROM Composite_Document__c
             WHERE Id IN :recentIds
-              AND PrimaryParent__c = 'SBQQ__Quote__c'
+              AND PrimaryParent__c = :objectApiName
               AND IsActive__c = true
         ]);
 
@@ -429,7 +468,10 @@ public with sharing class CompositeDocumentController {
         return orderedComposites;
     }
 
-    private static List<Docgen_Template__c> getRecentlyViewedQuoteTemplates(Integer safeLimit) {
+    private static List<Docgen_Template__c> getRecentlyViewedTemplates(
+        String objectApiName,
+        Integer safeLimit
+    ) {
         List<RecentlyViewed> recentRecords = [
             SELECT Id
             FROM RecentlyViewed
@@ -451,7 +493,7 @@ public with sharing class CompositeDocumentController {
             SELECT Id, Name
             FROM Docgen_Template__c
             WHERE Id IN :recentIds
-              AND PrimaryParent__c = 'SBQQ__Quote__c'
+              AND PrimaryParent__c = :objectApiName
         ]);
 
         List<Docgen_Template__c> orderedTemplates = new List<Docgen_Template__c>();

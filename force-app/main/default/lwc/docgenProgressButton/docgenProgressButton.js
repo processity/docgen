@@ -24,6 +24,7 @@ export default class DocgenProgressButton extends LightningElement {
 
   _openOnSuccess = true;
   _hideButton = false;
+  _hideFilePicker = false;
   _previewBeforeSave = false;
   _readOnlyWord = false;
   isProcessing = false;
@@ -49,7 +50,7 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   get showAttachmentSelector() {
-    return !this.isProcessing && !this.status;
+    return !this.hideFilePicker && !this.isProcessing && !this.status;
   }
 
   get showButton() {
@@ -129,6 +130,15 @@ export default class DocgenProgressButton extends LightningElement {
 
   set hideButton(value) {
     this._hideButton = this.normalizeBoolean(value, false);
+  }
+
+  @api
+  get hideFilePicker() {
+    return this._hideFilePicker;
+  }
+
+  set hideFilePicker(value) {
+    this._hideFilePicker = this.normalizeBoolean(value, false);
   }
 
   @api

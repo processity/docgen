@@ -128,6 +128,22 @@ describe('c-composite-docgen-button', () => {
     expect(recordIdsMap.accountId).toBe('0011234567890ABC');
   });
 
+  it('shows the additional PDF picker by default and hides it with hideFilePicker', async () => {
+    const element = createElement('c-composite-docgen-button', {
+      is: CompositeDocgenButton
+    });
+    element.compositeDocumentId = 'a0Y1234567890ABC';
+    element.recordId = '0011234567890ABC';
+    element.recordIdField = 'accountId';
+
+    document.body.appendChild(element);
+    expect(element.shadowRoot.querySelector('c-docgen-additional-pdf-selector')).not.toBeNull();
+
+    element.hideFilePicker = 'true';
+    await flushPromises();
+    expect(element.shadowRoot.querySelector('c-docgen-additional-pdf-selector')).toBeNull();
+  });
+
   it('constructs recordIds map from component properties correctly', async () => {
     // Arrange
     const element = createElement('c-composite-docgen-button', {
