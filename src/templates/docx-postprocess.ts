@@ -605,7 +605,7 @@ function watermarkShapeXml(escapedText: string, style: WatermarkStyle): string {
   const rotation = formatWatermarkNumber(toVmlRotation(style.rotation));
   const color = escapeXmlAttribute(style.color);
   const font = escapeXmlAttribute(style.font);
-  return `<v:shape id="DocgenWatermark" o:spid="_x0000_s1025" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:${width}pt;height:${height}pt;rotation:${rotation};z-index:251659264;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin;mso-wrap-edited:f" fillcolor="${color}" stroked="f"><v:fill opacity=".22"/><v:textpath style="font-family:&quot;${font}&quot;;font-size:1pt" string="${escapedText}"/><w10:wrap anchorx="margin" anchory="margin"/></v:shape>`;
+  return `<v:shape id="DocgenWatermark" o:spid="_x0000_s1025" type="#_x0000_t136" style="position:absolute;margin-left:0;margin-top:0;width:${width}pt;height:${height}pt;rotation:${rotation};z-index:251659264;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin;mso-wrap-edited:f" fillcolor="${color}" stroked="f"><v:fill/><v:textpath style="font-family:&quot;${font}&quot;;font-size:1pt" string="${escapedText}"/><w10:wrap anchorx="margin" anchory="margin"/></v:shape>`;
 }
 
 function resolveWatermarkStyle(styleText?: string | null): WatermarkStyle {
