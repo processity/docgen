@@ -17,6 +17,7 @@ A production-ready document generation service that creates PDF documents from S
 Docgen enables both **interactive** and **batch** document generation directly from Salesforce records:
 
 - **Interactive Generation**: Users click a Lightning Web Component button to instantly generate and download PDFs
+- **Flow Automation**: Invocable action queues document generation from record-triggered, scheduled, or screen flows
 - **Batch Processing**: Apex Batch/Queueable classes enqueue thousands of documents for background processing
 - **Template-Based**: Use familiar Microsoft Word (DOCX) templates with merge fields for data population
 - **Multi-Object Support**: Generate documents from Accounts, Opportunities, Cases, Contacts, Leads, and custom objects
@@ -291,6 +292,7 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 | **[Admin Runbook](docs/admin-runbook.md)**                           | Administrative operations and troubleshooting                                        |
 | **[Named Credential Setup](docs/named-credential-setup.md)**         | Configuring Azure AD authentication from Salesforce                                  |
 | **[LWC Composite Button Guide](docs/lwc-composite-button-guide.md)** | Configuring compositeDocgenButton component on Lightning pages                       |
+| **[Flow Invocable Guide](docs/flow-invocable-guide.md)**             | Generating documents from Flow with the Docgen: Generate Document invocable action  |
 | **[LWC Document Selector Guide](docs/lwc-document-selector-guide.md)** | Configuring the docgenDocumentSelector component (template/composite selection UI, preset lock, embedding) |
 | **[Composite Batch Examples](docs/composite-batch-examples.md)**     | Batch generation patterns for composite documents                                    |
 
@@ -332,6 +334,7 @@ docgen/
 ### Apex Classes
 
 - **DocgenController**: Interactive generation controller for LWC (including composite generation)
+- **DocgenInvocable**: Invocable action for queued document generation from Flow
 - **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing (single and composite)
 - **StandardSOQLProvider**: Data collection with locale-aware formatting
 - **CompositeDocgenDataProvider**: Orchestrates multiple data providers with namespace isolation

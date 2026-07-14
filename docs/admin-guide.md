@@ -982,9 +982,11 @@ Map<String, Id> recordIds = new Map<String, Id>{
 
 ---
 
-#### Q: Can I use composite documents in Flow/Process Builder?
+#### Q: Can I generate documents from Flow?
 
-**A:** Not directly. Use Apex-invocable actions or invoke the batch class from Flow. For interactive generation, use the LWC button component on record pages.
+**A:** Yes - for single-template documents, use the **Docgen: Generate Document** invocable action. It queues generation for a record and the worker attaches the file when processing completes. See the [Flow Invocable Guide](flow-invocable-guide.md).
+
+Composite documents are not supported by the invocable action - invoke `BatchDocgenEnqueue` from Apex instead. For interactive generation, use the LWC button component on record pages.
 
 ---
 

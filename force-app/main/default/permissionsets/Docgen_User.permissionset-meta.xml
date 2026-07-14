@@ -367,6 +367,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>DocgenInvocable</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>DocgenStatusController</apexClass>
         <enabled>true</enabled>
     </classAccesses>

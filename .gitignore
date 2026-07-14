@@ -74,3 +74,5 @@ keys/server.csr
 sf-conn.md
 t14-PLAN.MD
 T14-COMPLETION-SUMMARY.md
+.agents/
+.claude/

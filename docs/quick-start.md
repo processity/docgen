@@ -281,6 +281,7 @@ After deploying, you'll have access to:
 
 ### Apex Classes
 - **DocgenController** - Interactive generation controller
+- **DocgenInvocable** - Invocable action for document generation from Flow
 - **DocgenEnvelopeService** - Request envelope builder
 - **DocgenDataProvider** - Data collection interface
 - **StandardSOQLProvider** - Default SOQL-based provider
