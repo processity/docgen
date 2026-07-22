@@ -38,6 +38,8 @@ tags:
     description: Document generation endpoints
   - name: worker
     description: Worker poller control endpoints
+  - name: preview
+    description: Authorized image previews for pending generated PDFs
 
 paths:
   /healthz:
@@ -106,6 +108,90 @@ paths:
                 checks:
                   salesforce: false
                   keyVault: true
+
+  /preview/pdf-page:
+    post:
+      summary: Render one pending PDF page as a JPEG preview
+      description: |
+        Returns one rendered page image for an authenticated Salesforce request. The service verifies
+        that the generated document succeeded, is pending preview, is PDF output, belongs to the
+        requesting Salesforce user, and has an output ContentVersion before downloading the PDF
+        internally. The original PDF bytes and Salesforce file identifiers are never returned.
+
+        Preview navigation is hard-capped at 20 pages. A lower `maxPreviewPages` value may be requested;
+        values above 20 are reduced to the server limit.
+      tags:
+        - preview
+      security:
+        - oauth2: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfPagePreviewRequest'
+            example:
+              generatedDocumentId: 'aGTxx000000abcdXXX'
+              requestingUserId: '005xx000000abcdXXX'
+              pageNumber: 1
+              maxPreviewPages: 20
+      responses:
+        '200':
+          description: One JPEG page plus PDF page-count metadata
+          headers:
+            Cache-Control:
+              description: Prevents the preview response from being cached
+              schema:
+                type: string
+                example: no-store, private
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfPagePreviewResponse'
+        '400':
+          description: Invalid request, document state, PDF, or page number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The requesting Salesforce user does not own the pending preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Generated document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Rendered preview page remains too large after the safe fallback render
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Generated PDF is malformed, encrypted, or cannot be rendered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Salesforce download or Ghostscript rendering failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: PDF page rendering timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /generate:
     post:
@@ -537,6 +623,70 @@ components:
           scopes: {}
 
   schemas:
+    PdfPagePreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - generatedDocumentId
+        - requestingUserId
+        - pageNumber
+      properties:
+        generatedDocumentId:
+          type: string
+          pattern: '^([A-Za-z0-9]{15}|[A-Za-z0-9]{18})$'
+          description: Generated_Document__c record waiting for preview confirmation.
+          example: 'aGTxx000000abcdXXX'
+        requestingUserId:
+          type: string
+          pattern: '^005([A-Za-z0-9]{12}|[A-Za-z0-9]{15})$'
+          description: Salesforce User ID making the preview request.
+          example: '005xx000000abcdXXX'
+        pageNumber:
+          type: integer
+          minimum: 1
+          description: One-based PDF page number to render.
+          example: 1
+        maxPreviewPages:
+          type: integer
+          minimum: 1
+          description: Optional requested preview limit. The server always caps this value at 20.
+          example: 20
+
+    PdfPagePreviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - contentType
+        - base64Data
+        - pageNumber
+        - pageCount
+        - previewPageCount
+        - previewTruncated
+      properties:
+        contentType:
+          type: string
+          enum:
+            - image/jpeg
+        base64Data:
+          type: string
+          format: byte
+          description: Base64-encoded JPEG bytes for only the requested page.
+        pageNumber:
+          type: integer
+          minimum: 1
+        pageCount:
+          type: integer
+          minimum: 1
+          description: Total page count in the source PDF.
+        previewPageCount:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Number of pages available through preview navigation.
+        previewTruncated:
+          type: boolean
+          description: True when the PDF contains pages beyond the preview limit.
+
     DocgenRequest:
       type: object
       required:

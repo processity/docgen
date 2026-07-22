@@ -4,6 +4,7 @@ import { healthRoutes } from './routes/health';
 import { generateRoutes } from './routes/generate';
 import { authTestRoutes } from './routes/auth-test';
 import { workerRoutes } from './routes/worker';
+import { previewRoutes } from './routes/preview';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { createSalesforceAuth } from './sf/auth';
@@ -66,6 +67,7 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(generateRoutes);
   await app.register(authTestRoutes);
   await app.register(workerRoutes, { prefix: '/worker' });
+  await app.register(previewRoutes, { prefix: '/preview' });
 
   return app;
 }

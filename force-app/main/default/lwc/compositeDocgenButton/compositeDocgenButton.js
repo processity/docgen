@@ -2,14 +2,12 @@ import { LightningElement, api } from 'lwc';
 import generateCompositeWithAttachments from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
-import getPdfPreviewContent from '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
-const PDF_INLINE_PREVIEW_FRAGMENT = '#page=1&zoom=100&navpanes=0&pagemode=none';
 
 /**
  * LWC component for interactive composite document generation
@@ -94,13 +92,8 @@ export default class CompositeDocgenButton extends LightningElement {
   progressValue = 0;
   status = null;
   generatedDocumentId = null;
-  previewUrl = null;
-  fileRecordUrl = null;
-  downloadUrl = null;
+  isPreviewPending = false;
   savedDownloadUrl = null;
-  previewObjectUrl = null;
-  isLoadingInlinePreview = false;
-  canInlinePreview = false;
   outputFormatLabel = null;
   pollTimer = null;
   currentRunPromise = null;
@@ -122,8 +115,8 @@ export default class CompositeDocgenButton extends LightningElement {
     return Boolean(
       this.status === 'SUCCEEDED' &&
         this.generatedDocumentId &&
-        !this.savedDownloadUrl &&
-        (this.previewUrl || this.fileRecordUrl || this.downloadUrl || this.isLoadingInlinePreview)
+        this.isPreviewPending &&
+        !this.savedDownloadUrl
     );
   }
 
@@ -131,20 +124,16 @@ export default class CompositeDocgenButton extends LightningElement {
     return this.status === 'SUCCEEDED' && this.savedDownloadUrl && this.generatedDocumentId;
   }
 
-  get showInlinePreview() {
-    return this.showPreviewPanel && this.canInlinePreview && this.previewUrl;
+  get showPdfPreview() {
+    return this.showPreviewPanel && this.normalizedPreviewFormat === 'PDF';
   }
 
-  get showPreviewLoading() {
-    return this.showPreviewPanel && this.isLoadingInlinePreview;
+  get showUnsupportedPreview() {
+    return this.showPreviewPanel && !this.showPdfPreview;
   }
 
-  get showPreviewFallback() {
-    return this.showPreviewPanel && !this.canInlinePreview && !this.isLoadingInlinePreview;
-  }
-
-  get openPreviewUrl() {
-    return this.fileRecordUrl || this.downloadUrl;
+  get normalizedPreviewFormat() {
+    return String(this.outputFormatLabel || this.outputFormat || '').toUpperCase();
   }
 
   get disablePreviewActions() {
@@ -171,8 +160,8 @@ export default class CompositeDocgenButton extends LightningElement {
   }
 
   get fallbackMessage() {
-    const format = this.outputFormatLabel || 'this file type';
-    return `${format} files cannot be previewed inline in this panel.`;
+    const format = this.normalizedPreviewFormat || 'This file type';
+    return `${format} preview is not supported. Save the document to download and review it.`;
   }
 
   get displayStatus() {
@@ -439,12 +428,11 @@ export default class CompositeDocgenButton extends LightningElement {
 
     this.isSavingPreview = true;
     try {
-      const currentDownloadUrl = this.downloadUrl;
       const result = await saveGeneratedDocument({
         generatedDocumentId: this.generatedDocumentId
       });
       this.applyStatus(result);
-      this.setSavedDownloadState(result, currentDownloadUrl);
+      this.setSavedDownloadState(result);
       this.showCompletionToast(result, 'Saved', this.successMessage);
       this.dispatchDocgenEvent('docgensave', result);
       this.dispatchDocgenEvent('docgensuccess', result);
@@ -491,12 +479,6 @@ export default class CompositeDocgenButton extends LightningElement {
       });
     } finally {
       this.isCancelingPreview = false;
-    }
-  }
-
-  handleOpenPreview() {
-    if (this.openPreviewUrl) {
-      window.open(this.openPreviewUrl, '_blank');
     }
   }
 
@@ -655,100 +637,21 @@ export default class CompositeDocgenButton extends LightningElement {
   }
 
   setPreviewState(statusResult) {
-    this.revokePreviewObjectUrl();
-    this.previewUrl = null;
-    this.fileRecordUrl = statusResult.previewUrl || statusResult.downloadUrl || null;
-    this.downloadUrl = statusResult.downloadUrl || this.fileRecordUrl;
+    this.isPreviewPending = statusResult.isPreviewPending === true;
     this.savedDownloadUrl = null;
-    this.canInlinePreview = false;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
-
-    if (this.shouldLoadPdfInlinePreview(statusResult)) {
-      this.loadPdfInlinePreview(this.generatedDocumentId);
-    }
   }
 
-  setSavedDownloadState(statusResult, previousDownloadUrl) {
-    this.savedDownloadUrl = statusResult.downloadUrl || previousDownloadUrl || null;
-    this.revokePreviewObjectUrl();
-    this.previewUrl = null;
-    this.fileRecordUrl = statusResult.previewUrl || null;
-    this.downloadUrl = statusResult.downloadUrl || previousDownloadUrl || null;
-    this.isLoadingInlinePreview = false;
-    this.canInlinePreview = false;
+  setSavedDownloadState(statusResult) {
+    this.isPreviewPending = false;
+    this.savedDownloadUrl = statusResult.downloadUrl || null;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
   }
 
   clearPreviewState() {
-    this.revokePreviewObjectUrl();
-    this.previewUrl = null;
-    this.fileRecordUrl = null;
-    this.downloadUrl = null;
+    this.isPreviewPending = false;
     this.savedDownloadUrl = null;
-    this.isLoadingInlinePreview = false;
-    this.canInlinePreview = false;
     this.outputFormatLabel = null;
-  }
-
-  shouldLoadPdfInlinePreview(statusResult) {
-    return Boolean(
-      statusResult?.isPreviewPending &&
-        statusResult?.canInlinePreview &&
-        (statusResult?.outputFormat || this.outputFormat || '').toUpperCase() === 'PDF' &&
-        this.generatedDocumentId
-    );
-  }
-
-  async loadPdfInlinePreview(generatedDocumentId) {
-    this.isLoadingInlinePreview = true;
-
-    try {
-      const content = await getPdfPreviewContent({ generatedDocumentId });
-      if (generatedDocumentId !== this.generatedDocumentId || this.status !== 'SUCCEEDED') {
-        return;
-      }
-
-      const objectUrl = this.createPdfObjectUrl(content?.base64Data, content?.contentType);
-      this.revokePreviewObjectUrl();
-      this.previewObjectUrl = objectUrl;
-      this.previewUrl = this.buildPdfPreviewUrl(objectUrl);
-      this.canInlinePreview = true;
-    } catch {
-      this.canInlinePreview = false;
-    } finally {
-      if (generatedDocumentId === this.generatedDocumentId) {
-        this.isLoadingInlinePreview = false;
-      }
-    }
-  }
-
-  createPdfObjectUrl(base64Data, contentType) {
-    if (!base64Data) {
-      throw new Error('PDF preview data was empty.');
-    }
-    if (!window.URL || !window.URL.createObjectURL) {
-      throw new Error('Browser does not support inline PDF preview.');
-    }
-
-    const byteCharacters = window.atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i += 1) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: contentType || 'application/pdf' });
-    return window.URL.createObjectURL(blob);
-  }
-
-  buildPdfPreviewUrl(objectUrl) {
-    return `${objectUrl}${PDF_INLINE_PREVIEW_FRAGMENT}`;
-  }
-
-  revokePreviewObjectUrl() {
-    if (this.previewObjectUrl) {
-      window.URL.revokeObjectURL(this.previewObjectUrl);
-      this.previewObjectUrl = null;
-    }
   }
 
   hasTimedOut() {

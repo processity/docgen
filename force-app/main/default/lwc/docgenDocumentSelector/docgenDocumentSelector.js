@@ -127,6 +127,7 @@ export default class DocgenDocumentSelector extends LightningElement {
   @track isSelectionLocked = false;
   @track isResolvingPreset = false;
   @track isGeneratingDocgen = false;
+  @track isPreviewPending = false;
   templateSearchTimeout;
   templateSearchSequence = 0;
   compositeSearchTimeout;
@@ -173,6 +174,14 @@ export default class DocgenDocumentSelector extends LightningElement {
     return !this.isSelectionLocked;
   }
 
+  get isDocumentConfigurationDisabled() {
+    return this.isSelectionLocked || this.isGeneratingDocgen || this.isPreviewPending;
+  }
+
+  get canClearSelection() {
+    return this.isSelectionEditable && !this.isGeneratingDocgen && !this.isPreviewPending;
+  }
+
   get showDocgenProgress() {
     return this.isTemplateSource && !!this.templateId;
   }
@@ -187,7 +196,7 @@ export default class DocgenDocumentSelector extends LightningElement {
 
   get isGenerateDocgenDisabled() {
     const selectedDocument = this.isCompositeSource ? this.compositeDocumentId : this.templateId;
-    return !selectedDocument || this.isGeneratingDocgen;
+    return !selectedDocument || this.isGeneratingDocgen || this.isPreviewPending;
   }
 
   get hasTemplateSearchResults() {
@@ -475,6 +484,14 @@ export default class DocgenDocumentSelector extends LightningElement {
     } finally {
       this.isGeneratingDocgen = false;
     }
+  }
+
+  handlePreviewPending() {
+    this.isPreviewPending = true;
+  }
+
+  handlePreviewResolved() {
+    this.isPreviewPending = false;
   }
 
   showToast(title, message, variant) {

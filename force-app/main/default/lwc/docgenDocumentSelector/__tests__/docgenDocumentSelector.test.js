@@ -205,6 +205,49 @@ describe('c-docgen-document-selector', () => {
       });
     });
 
+    it('locks selection and generation until a template preview is saved or canceled', async () => {
+      const element = createComponent({ previewBeforeSave: true });
+      const previewHandler = jest.fn();
+      element.addEventListener('docgenpreview', previewHandler);
+      await flushPromises();
+
+      getSearchInput(element).dispatchEvent(new CustomEvent('focus'));
+      await flushPromises();
+      getResultButtons(element)[0].click();
+      await flushPromises();
+
+      const generator = element.shadowRoot.querySelector('c-docgen-progress-button');
+      generator.dispatchEvent(
+        new CustomEvent('docgenpreview', { bubbles: true, composed: true })
+      );
+      await flushPromises();
+
+      expect(getRadioGroup(element).disabled).toBe(true);
+      expect(getSearchInput(element).disabled).toBe(true);
+      expect(getClearButton(element)).toBeNull();
+      expect(getGenerateButton(element).disabled).toBe(true);
+      expect(previewHandler).toHaveBeenCalledTimes(1);
+
+      generator.dispatchEvent(new CustomEvent('docgensave', { bubbles: true, composed: true }));
+      await flushPromises();
+
+      expect(getRadioGroup(element).disabled).toBeFalsy();
+      expect(getSearchInput(element).disabled).toBeFalsy();
+      expect(getClearButton(element)).not.toBeNull();
+      expect(getGenerateButton(element).disabled).toBe(false);
+
+      generator.dispatchEvent(
+        new CustomEvent('docgenpreview', { bubbles: true, composed: true })
+      );
+      generator.dispatchEvent(
+        new CustomEvent('docgencancel', { bubbles: true, composed: true })
+      );
+      await flushPromises();
+
+      expect(getRadioGroup(element).disabled).toBeFalsy();
+      expect(getGenerateButton(element).disabled).toBe(false);
+    });
+
     it('forwards file picker control props to the embedded generator', async () => {
       const contentVersionIds = ['068000000000001AAA'];
       const element = createComponent({
@@ -243,6 +286,35 @@ describe('c-docgen-document-selector', () => {
         outputFormat: 'PDF',
         previewBeforeSave: false
       });
+    });
+
+    it('locks selection and generation while a composite preview is pending', async () => {
+      const element = createComponent({ previewBeforeSave: true });
+      await flushPromises();
+
+      getRadioGroup(element).dispatchEvent(
+        new CustomEvent('change', { detail: { value: 'composite' } })
+      );
+      await flushPromises();
+      getResultButtons(element)[0].click();
+      await flushPromises();
+
+      const generator = element.shadowRoot.querySelector('c-composite-docgen-button');
+      generator.dispatchEvent(
+        new CustomEvent('docgenpreview', { bubbles: true, composed: true })
+      );
+      await flushPromises();
+
+      expect(getRadioGroup(element).disabled).toBe(true);
+      expect(getGenerateButton(element).disabled).toBe(true);
+
+      generator.dispatchEvent(
+        new CustomEvent('docgencancel', { bubbles: true, composed: true })
+      );
+      await flushPromises();
+
+      expect(getRadioGroup(element).disabled).toBeFalsy();
+      expect(getGenerateButton(element).disabled).toBe(false);
     });
   });
 

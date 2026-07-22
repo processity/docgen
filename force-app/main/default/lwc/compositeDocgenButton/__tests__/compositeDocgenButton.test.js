@@ -3,7 +3,7 @@ import CompositeDocgenButton from 'c/compositeDocgenButton';
 import generateComposite from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
-import getPdfPreviewContent from '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent';
+import getPdfPreviewPage from '@salesforce/apex/DocgenAsyncController.getPdfPreviewPage';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 
@@ -39,7 +39,7 @@ jest.mock(
 );
 
 jest.mock(
-  '@salesforce/apex/DocgenAsyncController.getPdfPreviewContent',
+  '@salesforce/apex/DocgenAsyncController.getPdfPreviewPage',
   () => {
     return {
       default: jest.fn()
@@ -70,7 +70,7 @@ jest.mock(
 
 // Mock window.open
 global.window.open = jest.fn();
-global.window.URL.createObjectURL = jest.fn(() => 'blob:composite-pdf-preview');
+global.window.URL.createObjectURL = jest.fn();
 global.window.URL.revokeObjectURL = jest.fn();
 
 // Utility to flush all promises
@@ -83,9 +83,64 @@ const createDeferred = () => {
   });
   return deferred;
 };
-const testPdfBase64 = window.btoa('%PDF-1.4 test pdf');
+
+const buildPendingStatus = (outputFormat = 'PDF', overrides = {}) => ({
+  generatedDocumentId: 'a0G123',
+  status: 'SUCCEEDED',
+  progressValue: 100,
+  isTerminal: true,
+  outputFormat,
+  isPreviewPending: true,
+  ...overrides
+});
+
+const buildSavedStatus = (outputFormat = 'PDF', overrides = {}) => ({
+  generatedDocumentId: 'a0G123',
+  status: 'SUCCEEDED',
+  progressValue: 100,
+  isTerminal: true,
+  outputFormat,
+  isPreviewPending: false,
+  ...overrides
+});
+
+const createPreviewElement = (outputFormat = 'PDF') => {
+  const element = createElement('c-composite-docgen-button', {
+    is: CompositeDocgenButton
+  });
+  element.compositeDocumentId = 'a0Y1234567890ABC';
+  element.recordId = '0011234567890ABC';
+  element.recordIdField = 'accountId';
+  element.outputFormat = outputFormat;
+  element.previewBeforeSave = true;
+  return element;
+};
+
+const findButton = (element, label) =>
+  Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
+    button => button.label === label
+  );
+
+const startPendingPreview = async (element, statusResult) => {
+  startCompositeGeneration.mockResolvedValue(statusResult);
+  document.body.appendChild(element);
+  findButton(element, 'Generate Composite Document').click();
+  await flushPromises();
+  await flushPromises();
+};
 
 describe('c-composite-docgen-button', () => {
+  beforeEach(() => {
+    getPdfPreviewPage.mockResolvedValue({
+      contentType: 'image/jpeg',
+      base64Data: 'aW1hZ2U=',
+      pageNumber: 1,
+      pageCount: 1,
+      previewPageCount: 1,
+      previewTruncated: false
+    });
+  });
+
   afterEach(() => {
     // Clear DOM after each test
     while (document.body.firstChild) {
@@ -421,41 +476,20 @@ describe('c-composite-docgen-button', () => {
     });
   });
 
-  it('renders an inline preview and waits for user save when preview mode is enabled', async () => {
-    const element = createElement('c-composite-docgen-button', {
-      is: CompositeDocgenButton
-    });
-    element.compositeDocumentId = 'a0Y1234567890ABC';
-    element.recordId = '0011234567890ABC';
-    element.recordIdField = 'accountId';
-    element.outputFormat = 'PDF';
-    element.previewBeforeSave = true;
-
-    startCompositeGeneration.mockResolvedValue({
-      generatedDocumentId: 'a0G123',
-      status: 'SUCCEEDED',
-      progressValue: 100,
-      isTerminal: true,
-      outputFormat: 'PDF',
-      isPreviewPending: true,
-      canInlinePreview: true,
-      previewUrl: '/lightning/r/ContentDocument/069123/view',
-      downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
-    });
-    getPdfPreviewContent.mockResolvedValue({
-      contentType: 'application/pdf',
-      base64Data: testPdfBase64,
-      fileName: 'preview.pdf'
-    });
-
-    document.body.appendChild(element);
-
+  it('matches the direct-template image-only PDF contract and preserves composite events', async () => {
+    const element = createPreviewElement('PDF');
     const previewHandler = jest.fn();
     element.addEventListener('docgenpreview', previewHandler);
 
-    element.shadowRoot.querySelector('lightning-button').click();
-    await flushPromises();
-    await flushPromises();
+    await startPendingPreview(
+      element,
+      buildPendingStatus('PDF', {
+        contentVersionId: '068SHOULDNOTRENDER',
+        contentDocumentId: '069SHOULDNOTRENDER',
+        previewUrl: '/lightning/r/ContentDocument/069SHOULDNOTRENDER/view',
+        downloadUrl: '/sfc/servlet.shepherd/version/download/068SHOULDNOTRENDER'
+      })
+    );
 
     expect(generateComposite).not.toHaveBeenCalled();
     expect(startCompositeGeneration).toHaveBeenCalledWith({
@@ -466,61 +500,73 @@ describe('c-composite-docgen-button', () => {
       readOnlyWord: false,
       additionalPdfContentVersionIds: []
     });
+
+    const viewer = element.shadowRoot.querySelector('c-docgen-pdf-image-preview');
+    expect(viewer).not.toBeNull();
+    expect(viewer.generatedDocumentId).toBe('a0G123');
+    expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    expect(element.shadowRoot.querySelector('a')).toBeNull();
+    expect(element.shadowRoot.querySelector('lightning-button-icon')).toBeNull();
+    expect(element.shadowRoot.innerHTML).not.toContain('068SHOULDNOTRENDER');
+    expect(element.shadowRoot.innerHTML).not.toContain('069SHOULDNOTRENDER');
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();
-    expect(getPdfPreviewContent).toHaveBeenCalledWith({
-      generatedDocumentId: 'a0G123'
-    });
-    const iframeSrc = element.shadowRoot.querySelector('iframe').src;
-    expect(iframeSrc).toContain('blob:composite-pdf-preview');
-    expect(iframeSrc).toContain('#page=1&zoom=100&navpanes=0&pagemode=none');
-    expect(iframeSrc).not.toContain('/lightning/r/ContentDocument/');
-    expect(iframeSrc).not.toContain('/version/download/');
+    expect(findButton(element, 'Save')).not.toBeNull();
+    expect(findButton(element, 'Cancel')).not.toBeNull();
+    expect(findButton(element, 'Download')).toBeUndefined();
     expect(previewHandler).toHaveBeenCalledTimes(1);
   });
 
-  it('saves a preview composite document from the preview panel', async () => {
-    const element = createElement('c-composite-docgen-button', {
-      is: CompositeDocgenButton
-    });
-    element.compositeDocumentId = 'a0Y1234567890ABC';
-    element.recordId = '0011234567890ABC';
-    element.recordIdField = 'accountId';
-    element.previewBeforeSave = true;
+  it.each(['DOCX', 'PPTX'])(
+    'shows preview-not-supported without exposing a file link for pending %s',
+    async outputFormat => {
+      const element = createPreviewElement(outputFormat);
 
-    startCompositeGeneration.mockResolvedValue({
-      generatedDocumentId: 'a0G123',
-      status: 'SUCCEEDED',
-      progressValue: 100,
-      isTerminal: true,
-      outputFormat: 'PDF',
-      isPreviewPending: true,
-      canInlinePreview: true,
-      previewUrl: '/lightning/r/ContentDocument/069123/view',
-      downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
-    });
-    getPdfPreviewContent.mockResolvedValue({
-      contentType: 'application/pdf',
-      base64Data: testPdfBase64,
-      fileName: 'preview.pdf'
-    });
+      await startPendingPreview(
+        element,
+        buildPendingStatus(outputFormat, {
+          previewUrl: '/lightning/r/ContentDocument/069SHOULDNOTRENDER/view',
+          downloadUrl: '/sfc/servlet.shepherd/version/download/068SHOULDNOTRENDER'
+        })
+      );
+
+      expect(element.shadowRoot.querySelector('c-docgen-pdf-image-preview')).toBeNull();
+      expect(element.shadowRoot.querySelector('.preview-fallback').textContent).toContain(
+        `${outputFormat} preview is not supported.`
+      );
+      expect(element.shadowRoot.querySelector('.preview-fallback').textContent).toContain(
+        'Save the document to download and review it.'
+      );
+      expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+      expect(element.shadowRoot.querySelector('a')).toBeNull();
+      expect(element.shadowRoot.innerHTML).not.toContain('/version/download/');
+      expect(findButton(element, 'Save')).not.toBeNull();
+      expect(findButton(element, 'Cancel')).not.toBeNull();
+      expect(findButton(element, 'Download')).toBeUndefined();
+      expect(window.open).not.toHaveBeenCalled();
+    }
+  );
+
+  it('saves once, blocks repeated actions, and exposes Download only from the saved response', async () => {
+    const element = createPreviewElement('PDF');
     const saveDeferred = createDeferred();
     saveGeneratedDocument.mockReturnValue(saveDeferred.promise);
-
-    document.body.appendChild(element);
 
     const saveHandler = jest.fn();
     element.addEventListener('docgensave', saveHandler);
 
-    element.shadowRoot.querySelector('lightning-button').click();
-    await flushPromises();
-    await flushPromises();
+    await startPendingPreview(element, buildPendingStatus('PDF'));
 
-    const saveButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
-      button => button.label === 'Save'
-    );
+    const saveButton = findButton(element, 'Save');
+    const cancelButton = findButton(element, 'Cancel');
     saveButton.click();
+    saveButton.click();
+    cancelButton.click();
     await flushPromises();
 
+    expect(saveGeneratedDocument).toHaveBeenCalledTimes(1);
+    expect(cancelGeneratedDocument).not.toHaveBeenCalled();
+    expect(findButton(element, 'Download')).toBeUndefined();
     expect(element.shadowRoot.querySelector('.preview-action-status').textContent).toContain(
       'Saving document...'
     );
@@ -529,24 +575,20 @@ describe('c-composite-docgen-button', () => {
     );
     expect(previewButtons.every(button => button.disabled)).toBe(true);
 
-    saveDeferred.resolve({
-      generatedDocumentId: 'a0G123',
-      status: 'SUCCEEDED',
-      progressValue: 100,
-      isTerminal: true,
-      outputFormat: 'PDF',
-      isPreviewPending: false,
-      previewUrl: '/lightning/r/ContentDocument/069123/view',
-      downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
-    });
+    saveDeferred.resolve(
+      buildSavedStatus('PDF', {
+        downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
+      })
+    );
     await flushPromises();
     await flushPromises();
 
     expect(saveGeneratedDocument).toHaveBeenCalledWith({
       generatedDocumentId: 'a0G123'
     });
-    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:composite-pdf-preview');
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
     expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    expect(element.shadowRoot.querySelector('c-docgen-pdf-image-preview')).toBeNull();
 
     const buttonLabels = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).map(
       button => button.label
@@ -555,57 +597,70 @@ describe('c-composite-docgen-button', () => {
     expect(buttonLabels).not.toContain('Cancel');
     expect(buttonLabels).not.toContain('Save');
 
-    const downloadButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
-      button => button.label === 'Download'
-    );
+    const downloadButton = findButton(element, 'Download');
     downloadButton.click();
     expect(window.open).toHaveBeenCalledWith('/sfc/servlet.shepherd/version/download/068123', '_blank');
     expect(saveHandler).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels and deletes a preview composite document from the preview panel', async () => {
-    const element = createElement('c-composite-docgen-button', {
-      is: CompositeDocgenButton
-    });
-    element.compositeDocumentId = 'a0Y1234567890ABC';
-    element.recordId = '0011234567890ABC';
-    element.recordIdField = 'accountId';
-    element.previewBeforeSave = true;
+  it('does not show Download when Save returns no saved download URL', async () => {
+    const element = createPreviewElement('DOCX');
+    saveGeneratedDocument.mockResolvedValue(buildSavedStatus('DOCX'));
 
-    startCompositeGeneration.mockResolvedValue({
-      generatedDocumentId: 'a0G123',
-      status: 'SUCCEEDED',
-      progressValue: 100,
-      isTerminal: true,
-      outputFormat: 'PDF',
-      isPreviewPending: true,
-      canInlinePreview: true,
-      previewUrl: '/lightning/r/ContentDocument/069123/view',
-      downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
+    await startPendingPreview(element, buildPendingStatus('DOCX'));
+    findButton(element, 'Save').click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(findButton(element, 'Download')).toBeUndefined();
+    expect(element.shadowRoot.querySelector('a')).toBeNull();
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('keeps Save and Cancel enabled when the child PDF preview reports an error', async () => {
+    const element = createPreviewElement('PDF');
+    getPdfPreviewPage.mockRejectedValueOnce({
+      body: { message: 'Preview page could not be rendered.' }
     });
-    getPdfPreviewContent.mockResolvedValue({
-      contentType: 'application/pdf',
-      base64Data: testPdfBase64,
-      fileName: 'preview.pdf'
-    });
+    saveGeneratedDocument.mockResolvedValue(
+      buildSavedStatus('PDF', {
+        downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
+      })
+    );
+
+    await startPendingPreview(element, buildPendingStatus('PDF'));
+    const viewer = element.shadowRoot.querySelector('c-docgen-pdf-image-preview');
+    await flushPromises();
+
+    expect(viewer.shadowRoot.querySelector('.preview__error').textContent).toContain(
+      'Preview page could not be rendered.'
+    );
+    expect(findButton(element, 'Save').disabled).toBe(false);
+    expect(findButton(element, 'Cancel').disabled).toBe(false);
+    findButton(element, 'Save').click();
+    await flushPromises();
+    expect(saveGeneratedDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels once and blocks repeated or competing preview actions', async () => {
+    const element = createPreviewElement('PDF');
     const cancelDeferred = createDeferred();
     cancelGeneratedDocument.mockReturnValue(cancelDeferred.promise);
-
-    document.body.appendChild(element);
 
     const cancelHandler = jest.fn();
     element.addEventListener('docgencancel', cancelHandler);
 
-    element.shadowRoot.querySelector('lightning-button').click();
-    await flushPromises();
-    await flushPromises();
+    await startPendingPreview(element, buildPendingStatus('PDF'));
 
-    const cancelButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
-      button => button.label === 'Cancel'
-    );
+    const cancelButton = findButton(element, 'Cancel');
+    const saveButton = findButton(element, 'Save');
     cancelButton.click();
+    cancelButton.click();
+    saveButton.click();
     await flushPromises();
 
+    expect(cancelGeneratedDocument).toHaveBeenCalledTimes(1);
+    expect(saveGeneratedDocument).not.toHaveBeenCalled();
     expect(element.shadowRoot.querySelector('.preview-action-status').textContent).toContain(
       'Canceling preview...'
     );
@@ -622,6 +677,10 @@ describe('c-composite-docgen-button', () => {
       generatedDocumentId: 'a0G123'
     });
     expect(element.shadowRoot.querySelector('iframe')).toBeNull();
+    expect(element.shadowRoot.querySelector('c-docgen-pdf-image-preview')).toBeNull();
+    expect(findButton(element, 'Save')).toBeUndefined();
+    expect(findButton(element, 'Cancel')).toBeUndefined();
+    expect(findButton(element, 'Download')).toBeUndefined();
     expect(cancelHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({

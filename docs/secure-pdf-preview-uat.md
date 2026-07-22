@@ -1,0 +1,284 @@
+# Secure PDF Preview UAT Guide
+
+Use this guide to test the generated-document preview before the feature is
+released. It applies to both direct templates and composite documents.
+
+## What Changes
+
+Before a generated PDF is saved to Salesforce:
+
+- Each page is shown as a rendered image instead of in the browser PDF viewer.
+- The original PDF cannot be downloaded, printed, opened in another window, or
+  saved from the preview.
+- Browser PDF controls such as Download, Print, and Save to Google Drive are not
+  shown.
+- Save and Cancel remain available.
+
+After Save succeeds, the preview and Save/Cancel actions are removed and a
+Download button is shown. Download retrieves the complete saved file.
+
+DOCX and PPTX files do not have a preview. The user must save the file before it
+can be downloaded and reviewed.
+
+## Prepare Test Data
+
+Prepare a source record, direct template, and composite document for each row.
+Use predictable page headings or page numbers so page order is easy to verify.
+
+| Test file | Required data |
+| --- | --- |
+| One-page PDF | A PDF template that produces exactly 1 page. |
+| Multi-page PDF | A PDF template that produces between 2 and 19 pages. |
+| Exactly 20 pages | A PDF template that produces exactly 20 numbered pages. |
+| More than 20 pages | A PDF template that produces at least 21 numbered pages. |
+| Image-heavy PDF | A multi-page PDF containing large or high-resolution images. |
+| DOCX | A template configured to produce DOCX. |
+| PPTX | A template configured to produce PPTX. |
+
+Testers need permission to generate and save documents. The another-user test
+also requires a second user who can open the same source record but did not
+request the generated document.
+
+## PDF Preview Checks
+
+1. Generate the one-page PDF with preview enabled.
+2. Confirm page 1 is readable and fits within the preview area.
+3. Confirm the status says `Page 1 of 1`.
+4. Confirm Previous and Next are disabled.
+5. Confirm there is no Download, Print, Save to Google Drive, Save As, or
+   open-in-new-window action before Save.
+6. Right-click the page and confirm the normal image or document save menu is
+   suppressed.
+7. Repeat with the multi-page PDF.
+8. Select Next and confirm the status and displayed page advance together.
+9. Select Previous and confirm they return together.
+10. Confirm Previous is disabled on page 1 and Next is disabled on the final
+    preview page.
+11. Navigate quickly in both directions and confirm the displayed image always
+    matches `Page X of Y`.
+12. Repeat with the image-heavy PDF and confirm every page remains readable and
+    page loading does not break the Save or Cancel actions.
+
+### Page Limit
+
+For a PDF with exactly 20 pages:
+
+- Confirm pages 1 through 20 are available.
+- Confirm Next is disabled on page 20.
+- Confirm no page-limit notice is displayed.
+
+For a PDF with more than 20 pages:
+
+- Confirm only pages 1 through 20 can be previewed.
+- Confirm Next is disabled on page 20.
+- Confirm the notice uses this exact text, with the real total page count:
+
+```text
+Preview is limited to the first 20 of {pageCount} pages.
+```
+
+For example, a 24-page PDF must show:
+
+```text
+Preview is limited to the first 20 of 24 pages.
+```
+
+- Save the document and confirm Download returns the complete PDF, including
+  pages after page 20.
+
+## DOCX And PPTX Checks
+
+Generate each format and confirm no document content, file link, or browser
+preview is displayed before Save.
+
+The message must use the applicable format name:
+
+```text
+DOCX preview is not supported. Save the document to download and review it.
+```
+
+```text
+PPTX preview is not supported. Save the document to download and review it.
+```
+
+Confirm Save and Cancel are available and Download is not available. After
+Save succeeds, confirm Download appears and retrieves the complete file.
+
+## Save, Download, And Cancel
+
+### Save
+
+1. Generate a document and select Save.
+2. Confirm the action shows that work is in progress and cannot be selected
+   repeatedly.
+3. Confirm the file is attached to the correct Salesforce source record.
+4. Confirm the preview, Save, and Cancel actions are removed.
+5. Confirm Download is shown only after Save completes.
+6. Select Download and confirm the complete original file opens or downloads.
+
+### Cancel
+
+1. Generate another document and select Cancel before saving.
+2. Confirm the action shows that work is in progress and cannot be selected
+   repeatedly.
+3. Confirm the pending preview closes or resets.
+4. Confirm no file is attached to the source record.
+5. Confirm the cancelled pending document and generated files are removed and
+   cannot be opened later.
+
+## Direct Template Flow
+
+1. Open a supported source record.
+2. Start DocGen and select a direct template.
+3. Generate each PDF test file and complete the PDF preview, Save, Download, and
+   Cancel checks above.
+4. Generate the DOCX and PPTX files and complete the unsupported-preview checks.
+5. Confirm the selected direct template name and saved file belong to the same
+   source record.
+
+## Composite Document Flow
+
+1. Open a supported source record.
+2. Start DocGen and select a composite document containing known ordered
+   templates.
+3. Generate each PDF test file and confirm the combined pages appear in the
+   configured template order.
+4. Complete the same PDF preview, page-limit, Save, Download, and Cancel checks
+   used for the direct template.
+5. Generate composite DOCX and PPTX outputs, when configured, and complete the
+   unsupported-preview checks.
+6. Confirm direct and composite generation have the same controls, messages,
+   and saved-state behavior.
+
+## Automated Playwright Fixture Configuration
+
+The dedicated Playwright coverage is in
+`e2e/tests/secure-pdf-preview.spec.ts`. It requires dedicated Salesforce pages
+where the requested direct template or composite document is already selected
+and preview-before-save is enabled.
+
+Provide those pages through `OTO3827_PREVIEW_E2E_CONFIG`. Each configured
+scenario needs the Salesforce page URL and the exact generation-button label.
+Missing scenarios are reported as skipped; malformed configuration or a
+configured page that does not work fails the test.
+
+```json
+{
+  "direct": {
+    "PDF": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate PDF"
+    },
+    "DOCX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate DOCX"
+    },
+    "PPTX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate PPTX"
+    }
+  },
+  "composite": {
+    "PDF": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate Composite PDF"
+    },
+    "DOCX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate Composite DOCX"
+    },
+    "PPTX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate Composite PPTX"
+    }
+  }
+}
+```
+
+The PDF fixture should generate at least two pages so Previous and Next are
+exercised. Run the focused suite with:
+
+```bash
+npx playwright test --config e2e/playwright.config.ts e2e/tests/secure-pdf-preview.spec.ts
+```
+
+## Browser Matrix
+
+Run the core checks in every supported desktop browser. Do not assume a result
+in one browser applies to another.
+
+| Browser | PDF image preview | Previous/Next | No native PDF controls | Save then Download | Cancel | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chrome |  |  |  |  |  |  |
+| Edge |  |  |  |  |  |  |
+| Firefox |  |  |  |  |  |  |
+| Safari |  |  |  |  |  |  |
+
+Record the browser name and full version in the evidence for each run.
+
+## Another-User Access Test
+
+1. As User A, generate a PDF and leave it on the pending preview without saving.
+2. Keep the generated-document record ID for the test evidence. Do not send User
+   B a Salesforce file ID or download URL.
+3. As User B, open the same source record and attempt to access User A's pending
+   preview through the normal application flow.
+4. Confirm User B cannot view a page, save the document, cancel it, or obtain a
+   file link.
+5. Confirm the error is a generic authorization or preview-unavailable message
+   and does not reveal a Salesforce file ID, URL, or document details.
+6. Return to User A and confirm the pending preview is still usable.
+
+## Technical Verifier: Browser Network Check
+
+This subsection is for a tester familiar with browser developer tools.
+
+1. Open the browser developer tools and select the Network panel.
+2. Clear existing requests, enable Preserve log, and generate a PDF preview.
+3. Navigate through several pages without selecting Save.
+4. Inspect request URLs, response headers, and response bodies.
+5. Confirm page responses use an image content type such as `image/jpeg`.
+6. Confirm no response before Save contains any of the following:
+   - `Content-Type: application/pdf`
+   - Complete PDF bytes or a Base64-encoded complete PDF
+   - `/sfc/servlet.shepherd/`
+   - A Salesforce ContentVersion ID, normally beginning with `068`
+   - A Salesforce ContentDocument ID, normally beginning with `069`
+   - A Salesforce file-record, preview, or download URL
+7. Select Save, wait for completion, and confirm the saved-state Download action
+   now uses the expected authenticated Salesforce file download request.
+8. Repeat the pre-Save check for both direct-template and composite generation.
+
+Fail the test if the original PDF, a Salesforce file ID, or a Salesforce file
+URL is returned to the browser before Save, even when the visible UI hides the
+Download button.
+
+## Security Limitation
+
+This feature provides the same practical deterrence as Conga; it is not digital
+rights management (DRM). The original PDF is withheld before Save, but users can
+still take screenshots or use technical tools to extract an individual rendered
+page image. These actions are outside the scope of secure preview protection.
+
+## Evidence To Record
+
+Record one row per test case:
+
+- Test case and direct or composite flow.
+- Tester name and test date/time.
+- Salesforce org and source record ID.
+- Template or composite document ID and name.
+- Generated document ID.
+- Requested output format.
+- Actual PDF page count and preview page count.
+- Browser name, full version, and operating system.
+- Expected result and actual result.
+- Pass or Fail.
+- Screenshot or screen recording reference.
+- Network capture or HAR reference for technical checks.
+- Saved Salesforce file ID only when Save was tested.
+- Error message, correlation ID, and reproduction steps for failures.
+- Notes about loading time or image readability.
+
+A test passes only when the visible behavior and, where required, the network
+verification both meet this guide.

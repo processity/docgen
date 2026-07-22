@@ -3,6 +3,8 @@
  */
 public with sharing class DocgenAsyncController {
     private static final Integer MAX_INLINE_PREVIEW_BYTES = 2500000;
+    private static final Integer MAX_PDF_PREVIEW_PAGES = 20;
+    private static final Integer PDF_PREVIEW_TIMEOUT_MS = 120000;
 
     public class StartResult {
         @AuraEnabled public String generatedDocumentId { get; set; }
@@ -42,6 +44,15 @@ public with sharing class DocgenAsyncController {
         @AuraEnabled public String contentType { get; set; }
         @AuraEnabled public String base64Data { get; set; }
         @AuraEnabled public String fileName { get; set; }
+    }
+
+    public class PdfPreviewPage {
+        @AuraEnabled public String contentType { get; set; }
+        @AuraEnabled public String base64Data { get; set; }
+        @AuraEnabled public Integer pageNumber { get; set; }
+        @AuraEnabled public Integer pageCount { get; set; }
+        @AuraEnabled public Integer previewPageCount { get; set; }
+        @AuraEnabled public Boolean previewTruncated { get; set; }
     }
 
     public static StartResult startGeneration(Id templateId, String templateName, Id recordId, String outputFormat) {
@@ -299,8 +310,8 @@ public with sharing class DocgenAsyncController {
             if (String.isBlank(doc.OutputFileId__c)) {
                 throw new IllegalArgumentException('Generated document does not have a PDF file.');
             }
-            if (doc.PendingPreview__c && doc.RequestedBy__c != UserInfo.getUserId()) {
-                throw new IllegalArgumentException('Only the requesting user can preview this pending document.');
+            if (doc.PendingPreview__c) {
+                throw new IllegalArgumentException('The complete PDF is unavailable until the preview is saved.');
             }
 
             ContentVersion version = [
@@ -326,6 +337,55 @@ public with sharing class DocgenAsyncController {
     }
 
     @AuraEnabled
+    public static PdfPreviewPage getPdfPreviewPage(Id generatedDocumentId, Integer pageNumber) {
+        try {
+            validatePdfPreviewRequest(generatedDocumentId, pageNumber);
+            Generated_Document__c doc = queryGeneratedDocument(generatedDocumentId);
+
+            if (doc.Status__c != 'SUCCEEDED') {
+                throw new IllegalArgumentException('Only successfully generated documents can be previewed.');
+            }
+            if (!doc.PendingPreview__c) {
+                throw new IllegalArgumentException('Only pending preview documents can request rendered pages.');
+            }
+            if (doc.OutputFormat__c != 'PDF') {
+                throw new IllegalArgumentException('Only PDF documents support page preview.');
+            }
+            if (String.isBlank(doc.OutputFileId__c)) {
+                throw new IllegalArgumentException('Generated document does not have a PDF file.');
+            }
+            if (doc.RequestedBy__c != UserInfo.getUserId()) {
+                throw new IllegalArgumentException('Only the requesting user can preview this pending document.');
+            }
+
+            HttpRequest request = new HttpRequest();
+            request.setEndpoint('callout:' + getNamedCredentialName() + '/preview/pdf-page');
+            request.setMethod('POST');
+            request.setHeader('Content-Type', 'application/json');
+            request.setHeader('Accept', 'application/json');
+            request.setTimeout(PDF_PREVIEW_TIMEOUT_MS);
+            request.setBody(JSON.serialize(new Map<String, Object>{
+                'generatedDocumentId' => String.valueOf(generatedDocumentId),
+                'requestingUserId' => String.valueOf(UserInfo.getUserId()),
+                'pageNumber' => pageNumber,
+                'maxPreviewPages' => MAX_PDF_PREVIEW_PAGES
+            }));
+
+            HttpResponse response;
+            try {
+                response = new Http().send(request);
+            } catch (Exception calloutException) {
+                throw new IllegalArgumentException('PDF preview service is temporarily unavailable. Try again.');
+            }
+
+            return parsePdfPreviewPage(response, pageNumber);
+        } catch (Exception e) {
+            throwAuraException(e.getMessage());
+            return null;
+        }
+    }
+
+    @AuraEnabled
     public static StatusResult saveGeneratedDocument(Id generatedDocumentId) {
         try {
             Generated_Document__c doc = queryGeneratedDocument(generatedDocumentId);
@@ -334,6 +394,9 @@ public with sharing class DocgenAsyncController {
             }
             if (!doc.PendingPreview__c) {
                 return toStatusResult(doc);
+            }
+            if (doc.RequestedBy__c != UserInfo.getUserId()) {
+                throw new IllegalArgumentException('Only the requesting user can save this pending document.');
             }
             if (String.isBlank(doc.OutputFileId__c) && String.isBlank(doc.MergedDocxFileId__c)) {
                 throw new IllegalArgumentException('Generated document does not have a file to save.');
@@ -358,6 +421,9 @@ public with sharing class DocgenAsyncController {
             Generated_Document__c doc = queryGeneratedDocument(generatedDocumentId);
             if (!doc.PendingPreview__c) {
                 throw new IllegalArgumentException('Only pending preview documents can be canceled.');
+            }
+            if (doc.RequestedBy__c != UserInfo.getUserId()) {
+                throw new IllegalArgumentException('Only the requesting user can cancel this pending document.');
             }
 
             deleteGeneratedFiles(doc);
@@ -408,7 +474,8 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c findExistingDocument(String requestHash) {
         List<Generated_Document__c> existing = [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c, PendingPreview__c, Attachment_Warnings__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c,
+                   Attachment_Warnings__c
             FROM Generated_Document__c
             WHERE RequestHash__c = :requestHash
             LIMIT 1
@@ -419,7 +486,8 @@ public with sharing class DocgenAsyncController {
     private static Generated_Document__c queryGeneratedDocument(Id generatedDocumentId) {
         return [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
-                   CorrelationId__c, OutputFormat__c, PendingPreview__c, Attachment_Warnings__c
+                   CorrelationId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c,
+                   Attachment_Warnings__c
             FROM Generated_Document__c
             WHERE Id = :generatedDocumentId
             LIMIT 1
@@ -743,7 +811,11 @@ public with sharing class DocgenAsyncController {
         result.attachmentWarnings = doc.Attachment_Warnings__c;
         result.canInlinePreview = doc.OutputFormat__c == 'PDF';
 
-        if (doc.Status__c == 'SUCCEEDED' && String.isNotBlank(doc.OutputFileId__c)) {
+        if (
+            doc.Status__c == 'SUCCEEDED' &&
+            !doc.PendingPreview__c &&
+            String.isNotBlank(doc.OutputFileId__c)
+        ) {
             result.contentVersionId = doc.OutputFileId__c;
             result.contentDocumentId = getContentDocumentId(doc.OutputFileId__c);
             result.downloadUrl = buildDownloadUrl(doc.OutputFileId__c);
@@ -751,6 +823,113 @@ public with sharing class DocgenAsyncController {
         }
 
         return result;
+    }
+
+    private static void validatePdfPreviewRequest(Id generatedDocumentId, Integer pageNumber) {
+        if (generatedDocumentId == null) {
+            throw new IllegalArgumentException('Generated Document ID is required');
+        }
+        if (generatedDocumentId.getSObjectType() != Generated_Document__c.SObjectType) {
+            throw new IllegalArgumentException('A valid Generated Document ID is required');
+        }
+        if (pageNumber == null || pageNumber < 1) {
+            throw new IllegalArgumentException('Preview page number must be a positive integer.');
+        }
+        if (pageNumber > MAX_PDF_PREVIEW_PAGES) {
+            throw new IllegalArgumentException('PDF preview is limited to the first 20 pages.');
+        }
+    }
+
+    private static PdfPreviewPage parsePdfPreviewPage(HttpResponse response, Integer requestedPageNumber) {
+        Integer statusCode = response == null ? 0 : response.getStatusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+            throw new IllegalArgumentException(buildPdfPreviewServiceError(response));
+        }
+
+        PdfPreviewPage page;
+        try {
+            page = (PdfPreviewPage) JSON.deserialize(response.getBody(), PdfPreviewPage.class);
+        } catch (Exception parseException) {
+            throw new IllegalArgumentException('PDF preview service returned an invalid response.');
+        }
+
+        if (
+            page == null ||
+            page.contentType != 'image/jpeg' ||
+            String.isBlank(page.base64Data) ||
+            page.pageNumber == null ||
+            page.pageNumber != requestedPageNumber ||
+            page.pageCount == null ||
+            page.pageCount < page.pageNumber ||
+            page.previewPageCount == null ||
+            page.previewPageCount < page.pageNumber ||
+            page.previewPageCount > MAX_PDF_PREVIEW_PAGES ||
+            page.previewPageCount > page.pageCount ||
+            page.previewTruncated == null
+        ) {
+            throw new IllegalArgumentException('PDF preview service returned an invalid response.');
+        }
+
+        return page;
+    }
+
+    private static String buildPdfPreviewServiceError(HttpResponse response) {
+        Integer statusCode = response == null ? 0 : response.getStatusCode();
+        String message;
+
+        if (statusCode == 400) {
+            message = 'PDF preview request is invalid.';
+        } else if (statusCode == 401 || statusCode == 403) {
+            message = 'PDF preview is not authorized.';
+        } else if (statusCode == 404) {
+            message = 'PDF preview source was not found.';
+        } else if (statusCode == 408 || statusCode == 504) {
+            message = 'PDF preview rendering timed out. Try again.';
+        } else if (statusCode == 413) {
+            message = 'PDF preview page is too large to display.';
+        } else if (statusCode == 422) {
+            message = 'PDF could not be rendered for preview.';
+        } else if (statusCode == 429) {
+            message = 'PDF preview service is busy. Try again.';
+        } else {
+            message = 'PDF preview service is temporarily unavailable. Try again.';
+        }
+
+        String correlationId = getSafeResponseCorrelationId(response);
+        return String.isBlank(correlationId) ? message : message + ' (Ref: ' + correlationId + ')';
+    }
+
+    private static String getSafeResponseCorrelationId(HttpResponse response) {
+        if (response == null || String.isBlank(response.getBody())) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
+            String correlationId = body == null || body.get('correlationId') == null
+                ? null
+                : String.valueOf(body.get('correlationId'));
+            if (
+                String.isNotBlank(correlationId) &&
+                correlationId.length() <= 100 &&
+                Pattern.matches('[A-Za-z0-9-]+', correlationId)
+            ) {
+                return correlationId;
+            }
+        } catch (Exception parseException) {
+            return null;
+        }
+
+        return null;
+    }
+
+    @TestVisible
+    private static String getNamedCredentialName() {
+        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
+        if (settings != null && String.isNotBlank(settings.Named_Credential_Name__c)) {
+            return settings.Named_Credential_Name__c;
+        }
+        return 'Docgen_Node_API';
     }
 
     private static String buildPreviewRequestHash(String requestHash, String correlationId) {

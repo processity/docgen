@@ -12,7 +12,7 @@
       options={docgenSourceOptions}
       value={docgenSource}
       type="button"
-      disabled={isSelectionLocked}
+      disabled={isDocumentConfigurationDisabled}
       onchange={handleDocgenSourceChange}
     ></lightning-radio-group>
     <template if:true={isTemplateSource}>
@@ -23,7 +23,7 @@
             label={templateLookupLabel}
             placeholder={templateSearchPlaceholder}
             value={templateSearchTerm}
-            disabled={isGeneratingDocgen}
+            disabled={isDocumentConfigurationDisabled}
             onfocus={handleTemplateSearchFocus}
             onchange={handleTemplateSearchInput}
           ></lightning-input>
@@ -37,7 +37,7 @@
                 {templateSelectedCaption}
               </p>
             </div>
-            <template if:true={isSelectionEditable}>
+            <template if:true={canClearSelection}>
               <lightning-button-icon
                 icon-name="utility:close"
                 variant="bare"
@@ -102,7 +102,7 @@
             label="Composite document"
             placeholder="Search by description or composite number..."
             value={compositeSearchTerm}
-            disabled={isGeneratingDocgen}
+            disabled={isDocumentConfigurationDisabled}
             onfocus={handleCompositeSearchFocus}
             onchange={handleCompositeSearchInput}
           ></lightning-input>
@@ -116,7 +116,7 @@
                 {compositeSelectedCaption}
               </p>
             </div>
-            <template if:true={isSelectionEditable}>
+            <template if:true={canClearSelection}>
               <lightning-button-icon
                 icon-name="utility:close"
                 variant="bare"
@@ -186,6 +186,9 @@
       hide-file-picker={hideFilePicker}
       additional-pdf-content-version-ids={additionalPdfContentVersionIds}
       hide-button="true"
+      ondocgenpreview={handlePreviewPending}
+      ondocgensave={handlePreviewResolved}
+      ondocgencancel={handlePreviewResolved}
     ></c-docgen-progress-button>
   </template>
   <template if:true={showCompositeProgress}>
@@ -198,6 +201,9 @@
       hide-file-picker={hideFilePicker}
       additional-pdf-content-version-ids={additionalPdfContentVersionIds}
       hide-button="true"
+      ondocgenpreview={handlePreviewPending}
+      ondocgensave={handlePreviewResolved}
+      ondocgencancel={handlePreviewResolved}
     ></c-composite-docgen-button>
   </template>
   <div class="option-action">

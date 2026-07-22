@@ -1,0 +1,66 @@
+<template>
+  <template if:true={hasGeneratedDocument}>
+    <section class="preview" aria-label="PDF document preview">
+      <div class="preview__viewport" aria-busy={isLoading}>
+        <template if:true={hasPageImage}>
+          <img
+            class="preview__image"
+            src={pageImageUrl}
+            alt={imageAlternativeText}
+            draggable="false"
+            oncontextmenu={handleContextMenu}
+            ondragstart={handleDragStart}>
+        </template>
+
+        <template if:true={isLoading}>
+          <div class="preview__loading" role="status">
+            <lightning-spinner size="medium" alternative-text={loadingAlternativeText}>
+            </lightning-spinner>
+          </div>
+        </template>
+      </div>
+
+      <template if:true={errorMessage}>
+        <div class="preview__error" role="alert">
+          <p>{errorMessage}</p>
+          <lightning-button
+            label={retryButtonLabel}
+            title={retryButtonLabel}
+            variant="neutral"
+            onclick={handleRetry}
+          >
+          </lightning-button>
+        </div>
+      </template>
+
+      <template if:true={showNavigation}>
+        <nav class="preview__navigation" aria-label="PDF preview page navigation">
+          <lightning-button
+            label="Previous"
+            title="Previous PDF page"
+            icon-name="utility:chevronleft"
+            disabled={previousDisabled}
+            onclick={handlePrevious}
+          >
+          </lightning-button>
+
+          <span class="preview__page-status" aria-live="polite">{pageStatus}</span>
+
+          <lightning-button
+            label="Next"
+            title="Next PDF page"
+            icon-name="utility:chevronright"
+            icon-position="right"
+            disabled={nextDisabled}
+            onclick={handleNext}
+          >
+          </lightning-button>
+        </nav>
+      </template>
+
+      <template if:true={previewTruncated}>
+        <p class="preview__notice" role="status">{truncationMessage}</p>
+      </template>
+    </section>
+  </template>
+</template>
