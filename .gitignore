@@ -63,6 +63,11 @@ temp/
 # LibreOffice temp
 .~lock.*
 
+# Licensed runtime fonts must be supplied locally and must not be committed.
+docker/fonts/*.ttf
+docker/fonts/*.ttc
+docker/fonts/*.otf
+
 # Playwright E2E tests
 e2e/test-results/
 e2e/playwright-report/

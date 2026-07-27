@@ -32,6 +32,32 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('<w:br/>');
     expect(documentXml).toContain('<w:t xml:space="preserve">Bold</w:t>');
     expect(documentXml).not.toContain('altChunk');
+    expect(documentXml).not.toContain('Meiryo UI');
+  });
+
+  it('uses Meiryo UI and preserves bold styling for Japanese rich text', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Clause.Text__c}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Clause: {
+          Text__c: '<p><strong>ガバナンス</strong> 本注文書に適用されます。</p>',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const fontProperties =
+      '<w:rFonts w:ascii="Meiryo UI" w:hAnsi="Meiryo UI" w:eastAsia="Meiryo UI" w:cs="Meiryo UI" w:hint="eastAsia"/>';
+
+    expect(documentXml).toContain(`${fontProperties}<w:b/>`);
+    expect(documentXml).toContain('<w:t xml:space="preserve">ガバナンス</w:t>');
+    expect(documentXml).toContain('<w:t xml:space="preserve"> 本注文書に適用されます。</w:t>');
+    expect(documentXml.match(/w:eastAsia="Meiryo UI"/g)).toHaveLength(2);
   });
 
   it('converts editable markers to content controls and enables forms protection', async () => {

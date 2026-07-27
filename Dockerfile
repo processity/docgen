@@ -40,7 +40,9 @@ RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources
 # - libreoffice-java-common: Java support for LibreOffice
 # - ghostscript: PDF processing
 # - fonts-dejavu fonts-liberation: Common fonts
+# - fonts-noto-cjk: Japanese regular/bold fallback when licensed Meiryo UI files are unavailable
 # - ttf-mscorefonts-installer: Microsoft core fonts (Arial, Times New Roman, etc.)
+# - fontconfig: Font discovery and Meiryo UI fallback configuration
 # - curl: For health checks
 RUN apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
@@ -51,11 +53,19 @@ RUN apt-get update && \
         ghostscript \
         fonts-dejavu \
         fonts-liberation \
+        fonts-noto-cjk \
         ttf-mscorefonts-installer \
+        fontconfig \
         curl \
         && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Include locally supplied, licensed Meiryo font files when present. The repository
+# intentionally does not distribute Microsoft's proprietary font binaries.
+COPY docker/fonts/ /usr/local/share/fonts/docgen/
+COPY docker/fontconfig/60-docgen-japanese-fonts.conf /etc/fonts/conf.d/60-docgen-japanese-fonts.conf
+RUN fc-cache -f
 
 # Create non-root user with fixed UID/GID
 RUN groupadd -r -g 1000 appuser && \

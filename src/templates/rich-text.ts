@@ -1,4 +1,6 @@
 const RICH_TEXT_TAG_PATTERN = /<\/?(p|div|br|b|strong|i|em|u|ul|ol|li|a)(\s|>|\/)/i;
+const JAPANESE_TEXT_PATTERN = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+const JAPANESE_FONT_FAMILY = 'Meiryo UI';
 export const DOCGEN_LITERAL_XML_DELIMITER = '__DOCGEN_LITERAL_XML_BOUNDARY_8E31A9__';
 
 interface RichTextRun {
@@ -7,6 +9,7 @@ interface RichTextRun {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  fontFamily?: string;
 }
 
 interface ListState {
@@ -67,6 +70,7 @@ function parseRichTextHtml(html: string): RichTextRun[][] {
   const paragraphs: RichTextRun[][] = [];
   let currentRuns: RichTextRun[] = [];
   const listStack: ListState[] = [];
+  const fontFamily = JAPANESE_TEXT_PATTERN.test(html) ? JAPANESE_FONT_FAMILY : undefined;
   let boldDepth = 0;
   let italicDepth = 0;
   let underlineDepth = 0;
@@ -89,6 +93,7 @@ function parseRichTextHtml(html: string): RichTextRun[][] {
       bold: boldDepth > 0,
       italic: italicDepth > 0,
       underline: underlineDepth > 0,
+      fontFamily,
     });
   };
 
@@ -186,6 +191,9 @@ function runToXml(run: RichTextRun): string {
   }
 
   const properties = [
+    run.fontFamily
+      ? `<w:rFonts w:ascii="${run.fontFamily}" w:hAnsi="${run.fontFamily}" w:eastAsia="${run.fontFamily}" w:cs="${run.fontFamily}" w:hint="eastAsia"/>`
+      : '',
     run.bold ? '<w:b/>' : '',
     run.italic ? '<w:i/>' : '',
     run.underline ? '<w:u w:val="single"/>' : '',
