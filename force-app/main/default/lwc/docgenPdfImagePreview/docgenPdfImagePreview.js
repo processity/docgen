@@ -142,6 +142,18 @@ export default class DocgenPdfImagePreview extends LightningElement {
       this.pageCount = page.pageCount;
       this.previewPageCount = page.previewPageCount;
       this.previewTruncated = page.previewTruncated;
+
+      if (page.pageNumber === 1) {
+        this.dispatchEvent(
+          new CustomEvent('previewthumbnail', {
+            detail: {
+              imageUrl: this.pageImageUrl,
+              pageNumber: page.pageNumber,
+              pageCount: page.pageCount,
+            },
+          })
+        );
+      }
     } catch (error) {
       if (!this.isCurrentRequest(sequence, generatedDocumentId)) {
         return;

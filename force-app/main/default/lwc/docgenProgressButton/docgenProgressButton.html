@@ -47,7 +47,10 @@
         </div>
 
         <template if:true={showPdfImagePreview}>
-          <c-docgen-pdf-image-preview generated-document-id={generatedDocumentId}>
+          <c-docgen-pdf-image-preview
+            generated-document-id={generatedDocumentId}
+            onpreviewthumbnail={handlePreviewThumbnail}
+          >
           </c-docgen-pdf-image-preview>
         </template>
 
@@ -91,19 +94,55 @@
     </template>
 
     <template if:true={showSavedDownloadPanel}>
-      <section
-        class="slds-box slds-theme_default slds-m-top_medium"
-        aria-label="Generated document saved"
-      >
-        <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
-          <h2 class="slds-text-heading_small">Generated Document Saved</h2>
-          <lightning-button
-            label="Download"
-            variant="brand"
-            icon-name="utility:download"
-            onclick={handleDownloadSavedFile}
-          ></lightning-button>
-        </div>
+      <section class="saved-file-card slds-m-top_medium" aria-label="Generated document saved">
+        <button
+          class="saved-file-card__preview"
+          type="button"
+          title={savedPreviewActionLabel}
+          aria-label={savedPreviewActionLabel}
+          disabled={savedPreviewDisabled}
+          onclick={handleOpenSavedPreview}
+        >
+          <span class="saved-file-card__thumbnail" aria-hidden="true">
+            <template if:true={hasSavedThumbnail}>
+              <img
+                class="saved-file-card__image"
+                src={previewThumbnailUrl}
+                alt=""
+                draggable="false"
+              />
+            </template>
+            <template if:false={hasSavedThumbnail}>
+              <lightning-icon
+                icon-name={savedFileIconName}
+                size="large"
+                alternative-text=""
+              ></lightning-icon>
+            </template>
+          </span>
+          <span class="saved-file-card__details">
+            <span class="saved-file-card__title">{savedFileTitle}</span>
+            <span class="saved-file-card__meta">Saved to Salesforce</span>
+            <span class="saved-file-card__hint">Open file preview</span>
+          </span>
+          <lightning-icon
+            class="saved-file-card__open-icon"
+            icon-name="utility:preview"
+            size="small"
+            alternative-text=""
+          ></lightning-icon>
+        </button>
+
+        <template if:true={hasSavedDownloadUrl}>
+          <div class="saved-file-card__actions">
+            <lightning-button
+              label="Download"
+              variant="brand"
+              icon-name="utility:download"
+              onclick={handleDownloadSavedFile}
+            ></lightning-button>
+          </div>
+        </template>
       </section>
     </template>
   </div>

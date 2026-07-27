@@ -4,11 +4,12 @@ import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGener
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { NavigationMixin } from 'lightning/navigation';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
 
-export default class DocgenProgressButton extends LightningElement {
+export default class DocgenProgressButton extends NavigationMixin(LightningElement) {
   @api templateId;
   @api templateName;
   @api outputFormat;
@@ -32,6 +33,8 @@ export default class DocgenProgressButton extends LightningElement {
   status = null;
   generatedDocumentId = null;
   savedDownloadUrl = null;
+  savedContentDocumentId = null;
+  previewThumbnailUrl = null;
   isPreviewPending = false;
   outputFormatLabel = null;
   pollTimer = null;
@@ -60,7 +63,11 @@ export default class DocgenProgressButton extends LightningElement {
   }
 
   get showSavedDownloadPanel() {
-    return this.status === 'SUCCEEDED' && this.savedDownloadUrl && this.generatedDocumentId;
+    return Boolean(
+      this.status === 'SUCCEEDED' &&
+        this.generatedDocumentId &&
+        (this.savedDownloadUrl || this.savedContentDocumentId)
+    );
   }
 
   get showPdfImagePreview() {
@@ -97,6 +104,42 @@ export default class DocgenProgressButton extends LightningElement {
   get fallbackMessage() {
     const format = this.outputFormatLabel || 'this file type';
     return `${format} preview is not supported. Save the document to download and review it.`;
+  }
+
+  get hasSavedThumbnail() {
+    return Boolean(this.previewThumbnailUrl);
+  }
+
+  get hasSavedDownloadUrl() {
+    return Boolean(this.savedDownloadUrl);
+  }
+
+  get savedFileTitle() {
+    const format = this.outputFormatLabel || 'Document';
+    return `Generated ${format}`;
+  }
+
+  get savedFileIconName() {
+    if (this.outputFormatLabel === 'PDF') {
+      return 'doctype:pdf';
+    }
+    if (this.outputFormatLabel === 'DOCX') {
+      return 'doctype:word';
+    }
+    if (this.outputFormatLabel === 'PPTX') {
+      return 'doctype:ppt';
+    }
+    return 'doctype:attachment';
+  }
+
+  get savedPreviewDisabled() {
+    return !this.savedContentDocumentId;
+  }
+
+  get savedPreviewActionLabel() {
+    return this.savedContentDocumentId
+      ? `Open ${this.savedFileTitle} in Salesforce preview`
+      : 'Salesforce preview is unavailable';
   }
 
   @api
@@ -457,6 +500,34 @@ export default class DocgenProgressButton extends LightningElement {
     }
   }
 
+  handlePreviewThumbnail(event) {
+    const imageUrl = event.detail?.imageUrl;
+    if (
+      this.isPreviewPending &&
+      typeof imageUrl === 'string' &&
+      imageUrl.startsWith('data:image/jpeg;base64,')
+    ) {
+      this.previewThumbnailUrl = imageUrl;
+    }
+  }
+
+  handleOpenSavedPreview() {
+    if (!this.savedContentDocumentId) {
+      return;
+    }
+
+    this[NavigationMixin.Navigate]({
+      type: 'standard__namedPage',
+      attributes: {
+        pageName: 'filePreview',
+      },
+      state: {
+        recordIds: this.savedContentDocumentId,
+        selectedRecordId: this.savedContentDocumentId,
+      },
+    });
+  }
+
   handleError(errorMessage) {
     this.clearPollTimer();
     this.isProcessing = false;
@@ -503,6 +574,8 @@ export default class DocgenProgressButton extends LightningElement {
 
   setPreviewState(statusResult) {
     this.savedDownloadUrl = null;
+    this.savedContentDocumentId = null;
+    this.previewThumbnailUrl = null;
     this.isPreviewPending = true;
     this.outputFormatLabel = this.normalizeOutputFormat(
       statusResult.outputFormat || this.outputFormat
@@ -511,6 +584,7 @@ export default class DocgenProgressButton extends LightningElement {
 
   setSavedDownloadState(statusResult) {
     this.savedDownloadUrl = statusResult.downloadUrl || null;
+    this.savedContentDocumentId = statusResult.contentDocumentId || null;
     this.isPreviewPending = false;
     this.outputFormatLabel = this.normalizeOutputFormat(
       statusResult.outputFormat || this.outputFormat
@@ -519,6 +593,8 @@ export default class DocgenProgressButton extends LightningElement {
 
   clearPreviewState() {
     this.savedDownloadUrl = null;
+    this.savedContentDocumentId = null;
+    this.previewThumbnailUrl = null;
     this.isPreviewPending = false;
     this.outputFormatLabel = null;
   }

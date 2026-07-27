@@ -18,8 +18,8 @@
   height: clamp(22rem, 65vh, 52rem);
   min-height: 22rem;
   overflow: auto;
-  background: var(--lwc-colorBackgroundAlt, #f3f3f3);
-  border: 1px solid var(--lwc-colorBorder, #c9c9c9);
+  background: var(--slds-g-color-neutral-base-95, #f3f3f3);
+  border: 1px solid var(--slds-g-color-border-base-1, #c9c9c9);
 }
 
 .preview__image {

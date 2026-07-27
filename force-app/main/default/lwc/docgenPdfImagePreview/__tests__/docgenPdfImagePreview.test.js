@@ -112,6 +112,32 @@ describe('c-docgen-pdf-image-preview', () => {
     expect(findButton(element, 'Cancel')).toBeUndefined();
   });
 
+  it('provides page 1 as a thumbnail without emitting later pages', async () => {
+    getPdfPreviewPage.mockImplementation(({ pageNumber }) =>
+      Promise.resolve(buildPage(pageNumber))
+    );
+    const element = createComponent();
+    const thumbnailHandler = jest.fn();
+    element.addEventListener('previewthumbnail', thumbnailHandler);
+    await flushPromises();
+
+    expect(thumbnailHandler).toHaveBeenCalledTimes(1);
+    expect(thumbnailHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          imageUrl: 'data:image/jpeg;base64,cGFnZ1==',
+          pageNumber: 1,
+          pageCount: 3,
+        },
+      })
+    );
+
+    findButton(element, 'Next').click();
+    await flushPromises();
+
+    expect(thumbnailHandler).toHaveBeenCalledTimes(1);
+  });
+
   it('navigates with correct first and last page boundaries', async () => {
     getPdfPreviewPage.mockImplementation(({ pageNumber }) =>
       Promise.resolve(

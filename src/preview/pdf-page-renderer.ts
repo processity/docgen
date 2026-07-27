@@ -9,8 +9,11 @@ const GHOSTSCRIPT_BINARY = 'gs';
 const GHOSTSCRIPT_TIMEOUT_MS = 20_000;
 const GHOSTSCRIPT_MAX_BUFFER_BYTES = 1024 * 1024;
 
-const INITIAL_RENDER = { dpi: 120, quality: 85 } as const;
-const FALLBACK_RENDER = { dpi: 90, quality: 65 } as const;
+const RENDER_PROFILES = [
+  { dpi: 180, quality: 92 },
+  { dpi: 135, quality: 82 },
+  { dpi: 96, quality: 68 },
+] as const;
 
 export type PdfPreviewRenderErrorCode =
   | 'INVALID_PDF'
@@ -111,32 +114,24 @@ export class PdfPageRenderer {
     try {
       await writeFile(inputPath, pdfData, { flag: 'wx' });
 
-      let imageData = await this.renderAttempt(
-        inputPath,
-        outputPath,
-        pageNumber,
-        INITIAL_RENDER.dpi,
-        INITIAL_RENDER.quality
-      );
-
-      if (imageData.length > this.maxImageBytes) {
-        imageData = await this.renderAttempt(
+      for (const profile of RENDER_PROFILES) {
+        const imageData = await this.renderAttempt(
           inputPath,
           outputPath,
           pageNumber,
-          FALLBACK_RENDER.dpi,
-          FALLBACK_RENDER.quality
+          profile.dpi,
+          profile.quality
         );
+
+        if (imageData.length <= this.maxImageBytes) {
+          return { imageData, pageCount };
+        }
       }
 
-      if (imageData.length > this.maxImageBytes) {
-        throw new PdfPreviewRenderError(
-          'OUTPUT_TOO_LARGE',
-          'Rendered PDF preview page exceeds the response size limit'
-        );
-      }
-
-      return { imageData, pageCount };
+      throw new PdfPreviewRenderError(
+        'OUTPUT_TOO_LARGE',
+        'Rendered PDF preview page exceeds the response size limit'
+      );
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }
@@ -176,6 +171,8 @@ export class PdfPageRenderer {
       '-dBATCH',
       '-dNOPAUSE',
       '-dUseCropBox',
+      '-dTextAlphaBits=4',
+      '-dGraphicsAlphaBits=4',
       '-sDEVICE=jpeg',
       `-dJPEGQ=${quality}`,
       `-r${dpi}`,

@@ -5,6 +5,24 @@ import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGener
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 
+const mockNavigate = jest.fn();
+
+jest.mock(
+  'lightning/navigation',
+  () => {
+    const navigate = Symbol('Navigate');
+    const NavigationMixin = (Base) =>
+      class extends Base {
+        [navigate](pageReference) {
+          mockNavigate(pageReference);
+        }
+      };
+    NavigationMixin.Navigate = navigate;
+    return { NavigationMixin };
+  },
+  { virtual: true }
+);
+
 jest.mock(
   '@salesforce/apex/DocgenAsyncController.startGeneration',
   () => {
@@ -389,7 +407,7 @@ describe('c-docgen-progress-button', () => {
     expect(getButton(element, 'Cancel').disabled).toBe(false);
   });
 
-  it('prevents duplicate preview actions and shows Download only after Save returns its URL', async () => {
+  it('prevents duplicate preview actions and shows the saved file card after Save', async () => {
     const element = createElement('c-docgen-progress-button', {
       is: DocgenProgressButton,
     });
@@ -412,6 +430,7 @@ describe('c-docgen-progress-button', () => {
       isTerminal: true,
       outputFormat: 'PDF',
       isPreviewPending: false,
+      contentDocumentId: '069SAVED',
       previewUrl: '/lightning/r/ContentDocument/069123/view',
       downloadUrl: '/sfc/servlet.shepherd/version/download/068SAVED',
     };
@@ -425,6 +444,16 @@ describe('c-docgen-progress-button', () => {
     await flushPromises();
     await flushPromises();
 
+    const preview = element.shadowRoot.querySelector('c-docgen-pdf-image-preview');
+    preview.dispatchEvent(
+      new CustomEvent('previewthumbnail', {
+        detail: {
+          imageUrl: 'data:image/jpeg;base64,cGFnZTE=',
+          pageNumber: 1,
+          pageCount: 2,
+        },
+      })
+    );
     const saveButton = getButton(element, 'Save');
     saveButton.click();
     saveButton.click();
@@ -456,6 +485,25 @@ describe('c-docgen-progress-button', () => {
     expect(buttonLabels).toContain('Download');
     expect(buttonLabels).not.toContain('Cancel');
     expect(buttonLabels).not.toContain('Save');
+
+    const savedCard = element.shadowRoot.querySelector('.saved-file-card');
+    const savedThumbnail = savedCard.querySelector('.saved-file-card__image');
+    const openPreviewButton = savedCard.querySelector('.saved-file-card__preview');
+    expect(savedThumbnail.src).toBe('data:image/jpeg;base64,cGFnZTE=');
+    expect(savedCard.querySelector('.saved-file-card__title').textContent).toBe('Generated PDF');
+    expect(openPreviewButton.disabled).toBe(false);
+
+    openPreviewButton.click();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      type: 'standard__namedPage',
+      attributes: {
+        pageName: 'filePreview',
+      },
+      state: {
+        recordIds: '069SAVED',
+        selectedRecordId: '069SAVED',
+      },
+    });
 
     const downloadButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
       (button) => button.label === 'Download'

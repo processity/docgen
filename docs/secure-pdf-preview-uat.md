@@ -14,11 +14,20 @@ Before a generated PDF is saved to Salesforce:
   shown.
 - Save and Cancel remain available.
 
-After Save succeeds, the preview and Save/Cancel actions are removed and a
-Download button is shown. Download retrieves the complete saved file.
+PDF pages are initially rendered at 180 DPI with high-quality text and graphics
+antialiasing. If a rendered page would exceed the secure response-size limit,
+the service automatically retries at 135 DPI and then 96 DPI. Image-heavy pages
+can therefore be less sharp than text-heavy pages, but generation and Save/Cancel
+must remain available.
 
-DOCX and PPTX files do not have a preview. The user must save the file before it
-can be downloaded and reviewed.
+After Save succeeds, the large preview and Save/Cancel actions are replaced by
+a compact saved-file card. For PDFs, the card keeps page 1 as its thumbnail.
+Select the card to open Salesforce's native file preview, or select Download to
+retrieve the complete saved file.
+
+DOCX and PPTX files do not have a pre-Save preview. After Save, their card uses a
+file-type icon and can be selected to open Salesforce's available file view. The
+separate Download action retrieves the complete saved file.
 
 ## Prepare Test Data
 
@@ -58,6 +67,10 @@ request the generated document.
     matches `Page X of Y`.
 12. Repeat with the image-heavy PDF and confirm every page remains readable and
     page loading does not break the Save or Cancel actions.
+13. Compare small text, table borders, and logos with the previous preview
+    version and confirm the normal page is visibly sharper.
+14. Confirm an image-heavy page that uses an automatic lower-resolution retry
+    remains readable and does not fail only because it exceeded the image limit.
 
 ### Page Limit
 
@@ -101,8 +114,10 @@ DOCX preview is not supported. Save the document to download and review it.
 PPTX preview is not supported. Save the document to download and review it.
 ```
 
-Confirm Save and Cancel are available and Download is not available. After
-Save succeeds, confirm Download appears and retrieves the complete file.
+Confirm Save and Cancel are available and Download is not available. After Save
+succeeds, confirm the saved-file card and Download action appear. Select the
+card and confirm Salesforce opens the saved file's available view, then confirm
+Download retrieves the complete file.
 
 ## Save, Download, And Cancel
 
@@ -113,8 +128,12 @@ Save succeeds, confirm Download appears and retrieves the complete file.
    repeatedly.
 3. Confirm the file is attached to the correct Salesforce source record.
 4. Confirm the preview, Save, and Cancel actions are removed.
-5. Confirm Download is shown only after Save completes.
-6. Select Download and confirm the complete original file opens or downloads.
+5. Confirm a compact saved-file card is shown only after Save completes.
+6. For a PDF, confirm the card shows the first generated page as its thumbnail.
+7. Select the card and confirm Salesforce's native file preview opens with the
+   saved PDF.
+8. Close the native preview and confirm the DocGen saved state remains visible.
+9. Select Download and confirm the complete original file opens or downloads.
 
 ### Cancel
 
@@ -207,12 +226,12 @@ npx playwright test --config e2e/playwright.config.ts e2e/tests/secure-pdf-previ
 Run the core checks in every supported desktop browser. Do not assume a result
 in one browser applies to another.
 
-| Browser | PDF image preview | Previous/Next | No native PDF controls | Save then Download | Cancel | Result |
-| --- | --- | --- | --- | --- | --- | --- |
-| Chrome |  |  |  |  |  |  |
-| Edge |  |  |  |  |  |  |
-| Firefox |  |  |  |  |  |  |
-| Safari |  |  |  |  |  |  |
+| Browser | PDF image preview | Previous/Next | No native controls before Save | Saved card/native preview | Download | Cancel | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Chrome |  |  |  |  |  |  |  |
+| Edge |  |  |  |  |  |  |  |
+| Firefox |  |  |  |  |  |  |  |
+| Safari |  |  |  |  |  |  |  |
 
 Record the browser name and full version in the evidence for each run.
 
@@ -245,9 +264,11 @@ This subsection is for a tester familiar with browser developer tools.
    - A Salesforce ContentVersion ID, normally beginning with `068`
    - A Salesforce ContentDocument ID, normally beginning with `069`
    - A Salesforce file-record, preview, or download URL
-7. Select Save, wait for completion, and confirm the saved-state Download action
-   now uses the expected authenticated Salesforce file download request.
-8. Repeat the pre-Save check for both direct-template and composite generation.
+7. Select Save, wait for completion, and confirm the saved-file card can open
+   Salesforce's native preview for the saved ContentDocument.
+8. Confirm the saved-state Download action now uses the expected authenticated
+   Salesforce file download request.
+9. Repeat the pre-Save check for both direct-template and composite generation.
 
 Fail the test if the original PDF, a Salesforce file ID, or a Salesforce file
 URL is returned to the browser before Save, even when the visible UI hides the

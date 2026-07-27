@@ -5,6 +5,7 @@ import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGener
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { NavigationMixin } from 'lightning/navigation';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_POLL_SECONDS = 180;
@@ -23,7 +24,7 @@ const DEFAULT_MAX_POLL_SECONDS = 180;
  *   success-message="Composite report generated successfully!">
  * </c-composite-docgen-button>
  */
-export default class CompositeDocgenButton extends LightningElement {
+export default class CompositeDocgenButton extends NavigationMixin(LightningElement) {
   /**
    * Composite Document ID (Composite_Document__c record ID)
    * @type {string}
@@ -94,6 +95,8 @@ export default class CompositeDocgenButton extends LightningElement {
   generatedDocumentId = null;
   isPreviewPending = false;
   savedDownloadUrl = null;
+  savedContentDocumentId = null;
+  previewThumbnailUrl = null;
   outputFormatLabel = null;
   pollTimer = null;
   currentRunPromise = null;
@@ -121,7 +124,11 @@ export default class CompositeDocgenButton extends LightningElement {
   }
 
   get showSavedDownloadPanel() {
-    return this.status === 'SUCCEEDED' && this.savedDownloadUrl && this.generatedDocumentId;
+    return Boolean(
+      this.status === 'SUCCEEDED' &&
+        this.generatedDocumentId &&
+        (this.savedDownloadUrl || this.savedContentDocumentId)
+    );
   }
 
   get showPdfPreview() {
@@ -162,6 +169,42 @@ export default class CompositeDocgenButton extends LightningElement {
   get fallbackMessage() {
     const format = this.normalizedPreviewFormat || 'This file type';
     return `${format} preview is not supported. Save the document to download and review it.`;
+  }
+
+  get hasSavedThumbnail() {
+    return Boolean(this.previewThumbnailUrl);
+  }
+
+  get hasSavedDownloadUrl() {
+    return Boolean(this.savedDownloadUrl);
+  }
+
+  get savedFileTitle() {
+    const format = this.normalizedPreviewFormat || 'Document';
+    return `Generated ${format}`;
+  }
+
+  get savedFileIconName() {
+    if (this.normalizedPreviewFormat === 'PDF') {
+      return 'doctype:pdf';
+    }
+    if (this.normalizedPreviewFormat === 'DOCX') {
+      return 'doctype:word';
+    }
+    if (this.normalizedPreviewFormat === 'PPTX') {
+      return 'doctype:ppt';
+    }
+    return 'doctype:attachment';
+  }
+
+  get savedPreviewDisabled() {
+    return !this.savedContentDocumentId;
+  }
+
+  get savedPreviewActionLabel() {
+    return this.savedContentDocumentId
+      ? `Open ${this.savedFileTitle} in Salesforce preview`
+      : 'Salesforce preview is unavailable';
   }
 
   get displayStatus() {
@@ -488,6 +531,34 @@ export default class CompositeDocgenButton extends LightningElement {
     }
   }
 
+  handlePreviewThumbnail(event) {
+    const imageUrl = event.detail?.imageUrl;
+    if (
+      this.isPreviewPending &&
+      typeof imageUrl === 'string' &&
+      imageUrl.startsWith('data:image/jpeg;base64,')
+    ) {
+      this.previewThumbnailUrl = imageUrl;
+    }
+  }
+
+  handleOpenSavedPreview() {
+    if (!this.savedContentDocumentId) {
+      return;
+    }
+
+    this[NavigationMixin.Navigate]({
+      type: 'standard__namedPage',
+      attributes: {
+        pageName: 'filePreview'
+      },
+      state: {
+        recordIds: this.savedContentDocumentId,
+        selectedRecordId: this.savedContentDocumentId
+      }
+    });
+  }
+
   buildRequest(config) {
     const outputFormat = config.outputFormat || this.outputFormat;
     return {
@@ -639,18 +710,23 @@ export default class CompositeDocgenButton extends LightningElement {
   setPreviewState(statusResult) {
     this.isPreviewPending = statusResult.isPreviewPending === true;
     this.savedDownloadUrl = null;
+    this.savedContentDocumentId = null;
+    this.previewThumbnailUrl = null;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
   }
 
   setSavedDownloadState(statusResult) {
     this.isPreviewPending = false;
     this.savedDownloadUrl = statusResult.downloadUrl || null;
+    this.savedContentDocumentId = statusResult.contentDocumentId || null;
     this.outputFormatLabel = statusResult.outputFormat || this.outputFormat || null;
   }
 
   clearPreviewState() {
     this.isPreviewPending = false;
     this.savedDownloadUrl = null;
+    this.savedContentDocumentId = null;
+    this.previewThumbnailUrl = null;
     this.outputFormatLabel = null;
   }
 

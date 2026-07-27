@@ -7,6 +7,24 @@ import getPdfPreviewPage from '@salesforce/apex/DocgenAsyncController.getPdfPrev
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 
+const mockNavigate = jest.fn();
+
+jest.mock(
+  'lightning/navigation',
+  () => {
+    const navigate = Symbol('Navigate');
+    const NavigationMixin = (Base) =>
+      class extends Base {
+        [navigate](pageReference) {
+          mockNavigate(pageReference);
+        }
+      };
+    NavigationMixin.Navigate = navigate;
+    return { NavigationMixin };
+  },
+  { virtual: true }
+);
+
 // Mock the Apex method
 jest.mock(
   '@salesforce/apex/DocgenController.generateCompositeWithAttachments',
@@ -547,7 +565,7 @@ describe('c-composite-docgen-button', () => {
     }
   );
 
-  it('saves once, blocks repeated actions, and exposes Download only from the saved response', async () => {
+  it('saves once, blocks repeated actions, and shows the saved file card', async () => {
     const element = createPreviewElement('PDF');
     const saveDeferred = createDeferred();
     saveGeneratedDocument.mockReturnValue(saveDeferred.promise);
@@ -556,7 +574,16 @@ describe('c-composite-docgen-button', () => {
     element.addEventListener('docgensave', saveHandler);
 
     await startPendingPreview(element, buildPendingStatus('PDF'));
-
+    const viewer = element.shadowRoot.querySelector('c-docgen-pdf-image-preview');
+    viewer.dispatchEvent(
+      new CustomEvent('previewthumbnail', {
+        detail: {
+          imageUrl: 'data:image/jpeg;base64,cGFnZTE=',
+          pageNumber: 1,
+          pageCount: 2
+        }
+      })
+    );
     const saveButton = findButton(element, 'Save');
     const cancelButton = findButton(element, 'Cancel');
     saveButton.click();
@@ -577,6 +604,7 @@ describe('c-composite-docgen-button', () => {
 
     saveDeferred.resolve(
       buildSavedStatus('PDF', {
+        contentDocumentId: '069SAVED',
         downloadUrl: '/sfc/servlet.shepherd/version/download/068123'
       })
     );
@@ -596,6 +624,25 @@ describe('c-composite-docgen-button', () => {
     expect(buttonLabels).toContain('Download');
     expect(buttonLabels).not.toContain('Cancel');
     expect(buttonLabels).not.toContain('Save');
+
+    const savedCard = element.shadowRoot.querySelector('.saved-file-card');
+    const savedThumbnail = savedCard.querySelector('.saved-file-card__image');
+    const openPreviewButton = savedCard.querySelector('.saved-file-card__preview');
+    expect(savedThumbnail.src).toBe('data:image/jpeg;base64,cGFnZTE=');
+    expect(savedCard.querySelector('.saved-file-card__title').textContent).toBe('Generated PDF');
+    expect(openPreviewButton.disabled).toBe(false);
+
+    openPreviewButton.click();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      type: 'standard__namedPage',
+      attributes: {
+        pageName: 'filePreview'
+      },
+      state: {
+        recordIds: '069SAVED',
+        selectedRecordId: '069SAVED'
+      }
+    });
 
     const downloadButton = findButton(element, 'Download');
     downloadButton.click();

@@ -43,9 +43,11 @@ describe('PdfPageRenderer', () => {
         '-dSAFER',
         '-dBATCH',
         '-dNOPAUSE',
+        '-dTextAlphaBits=4',
+        '-dGraphicsAlphaBits=4',
         '-sDEVICE=jpeg',
-        '-dJPEGQ=85',
-        '-r120',
+        '-dJPEGQ=92',
+        '-r180',
         '-dFirstPage=2',
         '-dLastPage=2',
       ])
@@ -53,7 +55,7 @@ describe('PdfPageRenderer', () => {
     await expect(access(workDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('rerenders once at lower quality when the initial JPEG is too large', async () => {
+  it('uses the next render profile when the high-resolution JPEG is too large', async () => {
     const pdf = await createPdfPreviewFixture(1);
     const calls: Array<readonly string[]> = [];
     const executor: GhostscriptExecutor = async (args) => {
@@ -67,14 +69,16 @@ describe('PdfPageRenderer', () => {
 
     expect(result.imageData).toEqual(Buffer.alloc(4, 1));
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toEqual(expect.arrayContaining(['-dJPEGQ=85', '-r120']));
-    expect(calls[1]).toEqual(expect.arrayContaining(['-dJPEGQ=65', '-r90']));
+    expect(calls[0]).toEqual(expect.arrayContaining(['-dJPEGQ=92', '-r180']));
+    expect(calls[1]).toEqual(expect.arrayContaining(['-dJPEGQ=82', '-r135']));
   });
 
   it('rejects an image that remains above the size cap after fallback rendering', async () => {
     const pdf = await createPdfPreviewFixture(1);
     let workDir = '';
+    const calls: Array<readonly string[]> = [];
     const executor: GhostscriptExecutor = async (args) => {
+      calls.push([...args]);
       const outputPath = outputPathFromArgs(args);
       workDir = path.dirname(outputPath);
       await writeFile(outputPath, Buffer.alloc(9));
@@ -83,6 +87,8 @@ describe('PdfPageRenderer', () => {
     await expect(new PdfPageRenderer(executor, 20_000, 8).renderPage(pdf, 1)).rejects.toMatchObject(
       { code: 'OUTPUT_TOO_LARGE' }
     );
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toEqual(expect.arrayContaining(['-dJPEGQ=68', '-r96']));
     await expect(access(workDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
