@@ -37,7 +37,13 @@ describe('DOCX template post-processing', () => {
 
   it('uses Meiryo UI and preserves bold styling for Japanese rich text', async () => {
     const template = await createTestDocxFromBodyXml(`
-      <w:p><w:r><w:t>{{Clause.Text__c}}</w:t></w:r></w:p>
+      <w:p>
+        <w:pPr><w:spacing w:line="276"/></w:pPr>
+        <w:r>
+          <w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial"/><w:sz w:val="17"/></w:rPr>
+          <w:t>{{Clause.Text__c}}</w:t>
+        </w:r>
+      </w:p>
     `);
 
     const result = await mergeTemplate(
@@ -55,9 +61,84 @@ describe('DOCX template post-processing', () => {
       '<w:rFonts w:ascii="Meiryo UI" w:hAnsi="Meiryo UI" w:eastAsia="Meiryo UI" w:cs="Meiryo UI" w:hint="eastAsia"/>';
 
     expect(documentXml).toContain(`${fontProperties}<w:b/>`);
+    expect(documentXml).toContain('<w:sz w:val="17"/>');
+    expect(documentXml).toContain('<w:spacing w:line="276"/>');
     expect(documentXml).toContain('<w:t xml:space="preserve">ガバナンス</w:t>');
     expect(documentXml).toContain('<w:t xml:space="preserve"> 本注文書に適用されます。</w:t>');
     expect(documentXml.match(/w:eastAsia="Meiryo UI"/g)).toHaveLength(2);
+  });
+
+  it('keeps rich-text HTML raw for template helper functions', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{EXEC
+        title = function(html) {
+          var match = String(html || '').match(/&lt;strong&gt;([\\s\\S]*?)&lt;\\/strong&gt;/i);
+          return match ? match[1] : '';
+        };
+        body = function(html) {
+          return String(html || '')
+            .replace(/&lt;strong&gt;[\\s\\S]*?&lt;\\/strong&gt;/i, '')
+            .replace(/&lt;\\/?p&gt;/gi, '');
+        };
+      }}</w:t></w:r></w:p>
+      <w:p>
+        <w:r><w:rPr><w:b/></w:rPr><w:t>{{= title(Clause.Text__c) }}</w:t></w:r>
+        <w:r><w:t>{{= body(Clause.Text__c) }}</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Clause: {
+          Text__c: '<p><strong>ガバナンス</strong>　本注文書に適用されます。</p>',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const runs = documentXml.match(/<w:r\b[\s\S]*?<\/w:r>/g) ?? [];
+    const titleRun = runs.find((run) => run.includes('ガバナンス'));
+    const bodyRun = runs.find((run) => run.includes('本注文書に適用されます。'));
+    expect(titleRun).toContain('<w:b/>');
+    expect(bodyRun).not.toContain('<w:b/>');
+    expect(documentXml).not.toContain('&lt;strong&gt;');
+  });
+
+  it('converts direct rich-text fields inside loops after template evaluation', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{FOR cl IN Quote.Clauses}}</w:t></w:r></w:p>
+      <w:p>
+        <w:r><w:rPr><w:sz w:val="17"/></w:rPr><w:t>{{= $cl.Text__c }}</w:t></w:r>
+      </w:p>
+      <w:p><w:r><w:t>{{END-FOR cl}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Quote: {
+          Clauses: [
+            {
+              Text__c: '<p><strong>ガバナンス</strong>　本文一</p>',
+            },
+            {
+              Text__c: '<p><strong>支払い</strong>　本文二</p>',
+            },
+          ],
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('<w:t xml:space="preserve">ガバナンス</w:t>');
+    expect(documentXml).toContain('<w:t xml:space="preserve">支払い</w:t>');
+    expect(documentXml.match(/<w:b\/>/g)).toHaveLength(2);
+    expect(documentXml.match(/w:eastAsia="Meiryo UI"/g)).toHaveLength(4);
+    expect(documentXml.match(/<w:sz w:val="17"\/>/g)).toHaveLength(4);
+    expect(documentXml).not.toContain('&lt;strong&gt;');
   });
 
   it('converts editable markers to content controls and enables forms protection', async () => {

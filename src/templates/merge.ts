@@ -4,7 +4,7 @@ import type { MergeOptions } from '../types';
 import { createLogger } from '../utils/logger';
 import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
 import { preprocessDocxTemplate, postProcessMergedDocx } from './docx-postprocess';
-import { DOCGEN_LITERAL_XML_DELIMITER, prepareRichTextData } from './rich-text';
+import { DOCGEN_LITERAL_XML_DELIMITER } from './rich-text';
 
 const logger = createLogger('templates:merge');
 
@@ -57,12 +57,13 @@ export async function mergeTemplate(
     const { template: preprocessedTemplate, context: postProcessContext } =
       await preprocessDocxTemplate(template, data);
     const loopSafeData = await normalizeLoopCollections(preprocessedTemplate, data);
-    const preparedData = prepareRichTextData(loopSafeData, DOCGEN_LITERAL_XML_DELIMITER);
 
     // Merge using docx-templates
     const result = await createReport({
       template: preprocessedTemplate,
-      data: preparedData,
+      // Keep rich-text HTML intact while template EXEC/functions run. Native
+      // WordprocessingML conversion happens after the template merge.
+      data: loopSafeData,
       cmdDelimiter: ['{{', '}}'], // Handlebars-style delimiters
       literalXmlDelimiter: DOCGEN_LITERAL_XML_DELIMITER,
 

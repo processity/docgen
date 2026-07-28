@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import type { MergeOptions } from '../types';
+import { applyRichTextToWordprocessingXml } from './rich-text';
 
 const DOCUMENT_XML = 'word/document.xml';
 const DOCUMENT_RELS = 'word/_rels/document.xml.rels';
@@ -367,6 +368,7 @@ async function postProcessXmlParts(zip: JSZip, context: DocxPostProcessContext):
 
     let xml = await file.async('string');
     xml = applyRowSuppression(xml, context.rowMarkers);
+    xml = applyRichTextToWordprocessingXml(xml);
     xml = removeEmptyTableCellParagraphs(xml);
     xml = removeRowlessTables(xml);
     xml = applyEditableControls(xml, context.controls);

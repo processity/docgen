@@ -66,6 +66,40 @@ export function htmlToWordprocessingMl(
   return `${literalXmlDelimiter}</w:t></w:r>${paragraphXml}<w:r><w:t xml:space="preserve">${literalXmlDelimiter}`;
 }
 
+/**
+ * Converts rich-text HTML inserted as ordinary Word text after docx-templates
+ * has finished evaluating template JavaScript. This keeps the original HTML
+ * available to template helper functions while still supporting direct field
+ * insertion such as {{= $cl.Text__c }}.
+ */
+export function applyRichTextToWordprocessingXml(xml: string): string {
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraphXml) => {
+    const html = extractParagraphText(paragraphXml);
+    if (!RICH_TEXT_TAG_PATTERN.test(html)) {
+      return paragraphXml;
+    }
+
+    const paragraphs = parseRichTextHtml(html);
+    if (paragraphs.length === 0) {
+      return paragraphXml;
+    }
+
+    const openingTag = /^<w:p\b[^>]*>/.exec(paragraphXml)?.[0] ?? '<w:p>';
+    const paragraphProperties = /<w:pPr\b[\s\S]*?<\/w:pPr>/.exec(paragraphXml)?.[0] ?? '';
+    const baseRunProperties =
+      /<w:rPr\b[\s\S]*?<\/w:rPr>/.exec(paragraphXml)?.[0] ?? '';
+
+    return paragraphs
+      .map((runs, index) => {
+        const properties = index === 0 ? paragraphProperties : '';
+        return `${openingTag}${properties}${runs
+          .map((run) => runToXml(run, baseRunProperties))
+          .join('')}</w:p>`;
+      })
+      .join('');
+  });
+}
+
 function parseRichTextHtml(html: string): RichTextRun[][] {
   const paragraphs: RichTextRun[][] = [];
   let currentRuns: RichTextRun[] = [];
@@ -181,31 +215,68 @@ function parseTag(token: string): { name: string; closing: boolean } | null {
 }
 
 function runsToParagraphContentXml(runs: RichTextRun[]): string {
-  const xml = runs.map(runToXml).join('');
+  const xml = runs.map((run) => runToXml(run)).join('');
   return xml || '<w:r><w:t></w:t></w:r>';
 }
 
-function runToXml(run: RichTextRun): string {
+function runToXml(run: RichTextRun, baseRunProperties = ''): string {
+  const runProperties = mergeRunProperties(baseRunProperties, run);
+
   if (run.lineBreak) {
-    return '<w:r><w:br/></w:r>';
+    return `<w:r>${runProperties}<w:br/></w:r>`;
   }
 
-  const properties = [
+  return `<w:r>${runProperties}<w:t xml:space="preserve">${escapeXmlText(
+    run.text ?? ''
+  )}</w:t></w:r>`;
+}
+
+function mergeRunProperties(baseRunProperties: string, run: RichTextRun): string {
+  let properties = baseRunProperties
+    .replace(/^<w:rPr\b[^>]*>|<\/w:rPr>$/g, '')
+    .replace(/<w:rFonts\b[^>]*\/>/g, '')
+    .replace(/<w:b(?:Cs)?\b[^>]*\/>/g, '')
+    .replace(/<w:i(?:Cs)?\b[^>]*\/>/g, '')
+    .replace(/<w:u\b[^>]*\/>/g, '');
+
+  properties = [
+    properties,
     run.fontFamily
       ? `<w:rFonts w:ascii="${run.fontFamily}" w:hAnsi="${run.fontFamily}" w:eastAsia="${run.fontFamily}" w:cs="${run.fontFamily}" w:hint="eastAsia"/>`
       : '',
-    run.bold ? '<w:b/>' : '',
-    run.italic ? '<w:i/>' : '',
+    run.bold ? '<w:b/><w:bCs/>' : '',
+    run.italic ? '<w:i/><w:iCs/>' : '',
     run.underline ? '<w:u w:val="single"/>' : '',
   ].join('');
-  const runProperties = properties ? `<w:rPr>${properties}</w:rPr>` : '';
 
-  return `<w:r>${runProperties}<w:t xml:space="preserve">${escapeXmlText(run.text ?? '')}</w:t></w:r>`;
+  return properties ? `<w:rPr>${properties}</w:rPr>` : '';
 }
 
 function normalizeText(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ');
+  const normalized = text.replace(/[ \t\r\n\f]+/g, ' ');
   return normalized.trim() === '' ? '' : normalized;
+}
+
+function extractParagraphText(paragraphXml: string): string {
+  const content: string[] = [];
+  const matches = paragraphXml.matchAll(
+    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:br\b[^>]*\/>/g
+  );
+
+  for (const match of matches) {
+    content.push(match[1] === undefined ? '\n' : decodeXmlText(match[1]));
+  }
+
+  return content.join('');
+}
+
+function decodeXmlText(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 function decodeHtmlEntities(text: string): string {
