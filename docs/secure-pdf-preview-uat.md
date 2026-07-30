@@ -164,7 +164,7 @@ Download retrieves the complete file.
    configured template order.
 4. Complete the same PDF preview, page-limit, Save, Download, and Cancel checks
    used for the direct template.
-5. Generate composite DOCX and PPTX outputs, when configured, and complete the
+5. Generate DOCX and PPTX outputs from the composite document, when configured, and complete the
    unsupported-preview checks.
 6. Confirm direct and composite generation have the same controls, messages,
    and saved-state behavior.
@@ -200,15 +200,15 @@ configured page that does not work fails the test.
   "composite": {
     "PDF": {
       "url": "/lightning/r/Account/001.../view",
-      "generateButton": "Generate Composite PDF"
+      "generateButton": "Generate PDF"
     },
     "DOCX": {
       "url": "/lightning/r/Account/001.../view",
-      "generateButton": "Generate Composite DOCX"
+      "generateButton": "Generate DOCX"
     },
     "PPTX": {
       "url": "/lightning/r/Account/001.../view",
-      "generateButton": "Generate Composite PPTX"
+      "generateButton": "Generate PPTX"
     }
   }
 }

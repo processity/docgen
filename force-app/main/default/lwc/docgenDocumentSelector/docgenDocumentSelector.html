@@ -6,15 +6,17 @@
   </template>
   <template if:false={isResolvingPreset}>
   <div class="docgen-controls">
-    <lightning-radio-group
-      class="source-selector"
-      label="Document configuration"
-      options={docgenSourceOptions}
-      value={docgenSource}
-      type="button"
-      disabled={isDocumentConfigurationDisabled}
-      onchange={handleDocgenSourceChange}
-    ></lightning-radio-group>
+    <template if:false={isSelectionLocked}>
+      <lightning-radio-group
+        class="source-selector"
+        label="Document configuration"
+        options={docgenSourceOptions}
+        value={docgenSource}
+        type="button"
+        disabled={isDocumentConfigurationDisabled}
+        onchange={handleDocgenSourceChange}
+      ></lightning-radio-group>
+    </template>
     <template if:true={isTemplateSource}>
       <div class="docgen-lookup">
         <template if:true={isSelectionEditable}>
@@ -172,9 +174,11 @@
           </div>
         </template>
       </div>
-      <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
-        Composite generation combines the templates configured in the selected document.
-      </p>
+      <template if:true={isSelectionEditable}>
+        <p class="composite-help slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+          Composite generation combines the templates configured in the selected document.
+        </p>
+      </template>
     </template>
   </div>
   <template if:true={showDocgenProgress}>

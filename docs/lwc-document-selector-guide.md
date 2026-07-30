@@ -6,7 +6,7 @@ The **Docgen Document Selector** (`docgenDocumentSelector`) is a Lightning Web C
 
 1. **Source selection** - the user chooses between a single template and a composite document.
 2. **Document lookup** - a debounced search over `Docgen_Template__c` (by name) or active `Composite_Document__c` records (SOSL over description and composite number), scoped to the record's object. Blank searches show recently viewed records first.
-3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box.
+3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box. The action label is format-based for both sources: `Generate PDF`, `Generate DOCX`, or `Generate PPTX`.
 
 The component is object-agnostic: it works for any object that has templates or composite documents configured (`PrimaryParent__c`).
 
@@ -60,7 +60,7 @@ When embedding, always pass `object-api-name` explicitly - the Lightning runtime
 
 - The component resolves the name against the same search Apex used by the lookups, scoped to `objectApiName`.
 - Matching is exact and case-insensitive against the template **Name**, or for composites against the **Composite Document Number** (`CD-xxxxx`) or the exact **Description**.
-- On a match, the source and document are pre-selected and locked: the source toggle is disabled and the search/clear controls are hidden. The user can only generate the preset document.
+- On a match, the source and document are pre-selected and locked: the source toggle, search/clear controls, and interactive composite help text are hidden. The user sees the selected document and its format-based Generate action.
 - If either property is missing, `docgenType` is not `template`/`composite`, no match is found, or the lookup fails, the component silently falls back to the normal editable selection UI.
 
 ---

@@ -77,7 +77,7 @@ sequenceDiagram
 
     Note over U,SF: Interactive Composite Generation - upload first then return download link
 
-    U->>L: Click Generate Composite PDF button
+    U->>L: Click Generate PDF button
     L->>AX: generateComposite(compositeDocId, recordIds, outputFormat)
     AX->>CD: Load Composite_Document__c
     AX->>CD: Query Composite_Document_Template__c junction records ordered

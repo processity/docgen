@@ -1,16 +1,18 @@
 <template>
   <template if:true={hasGeneratedDocument}>
     <section class="preview" aria-label="PDF document preview">
-      <div class="preview__viewport" aria-busy={isLoading}>
-        <template if:true={hasPageImage}>
-          <img
-            class="preview__image"
-            src={pageImageUrl}
-            alt={imageAlternativeText}
-            draggable="false"
-            oncontextmenu={handleContextMenu}
-            ondragstart={handleDragStart}>
-        </template>
+      <div class="preview__frame">
+        <div class="preview__viewport" aria-busy={isLoading}>
+          <template if:true={hasPageImage}>
+            <img
+              class="preview__image"
+              src={pageImageUrl}
+              alt={imageAlternativeText}
+              draggable="false"
+              oncontextmenu={handleContextMenu}
+              ondragstart={handleDragStart}>
+          </template>
+        </div>
 
         <template if:true={isLoading}>
           <div class="preview__loading" role="status">

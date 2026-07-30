@@ -79,6 +79,7 @@ const getSelectedRecord = (element) => element.shadowRoot.querySelector('.select
 const getClearButton = (element) => element.shadowRoot.querySelector('lightning-button-icon');
 const getGenerateButton = (element) => element.shadowRoot.querySelector('lightning-button');
 const getResultButtons = (element) => [...element.shadowRoot.querySelectorAll('.docgen-result')];
+const getCompositeHelp = (element) => element.shadowRoot.querySelector('.composite-help');
 
 describe('c-docgen-document-selector', () => {
   beforeEach(() => {
@@ -140,6 +141,7 @@ describe('c-docgen-document-selector', () => {
       await flushPromises();
 
       expect(getSelectedRecord(element).textContent).toContain('Quote Template A');
+      expect(getGenerateButton(element).label).toBe('Generate PDF');
       expect(getGenerateButton(element).disabled).toBe(false);
       expect(element.shadowRoot.querySelector('c-docgen-progress-button')).not.toBeNull();
     });
@@ -164,9 +166,22 @@ describe('c-docgen-document-selector', () => {
 
       expect(getSelectedRecord(element).textContent).toContain('Draft Offer Composite');
       const generateButton = getGenerateButton(element);
-      expect(generateButton.label).toBe('Generate composite PDF');
+      expect(generateButton.label).toBe('Generate PDF');
       expect(generateButton.disabled).toBe(false);
+      expect(getCompositeHelp(element)).not.toBeNull();
       expect(element.shadowRoot.querySelector('c-composite-docgen-button')).not.toBeNull();
+    });
+
+    it('uses the output format for the template action label', async () => {
+      const element = createComponent({ outputFormat: 'docx' });
+      await flushPromises();
+
+      getSearchInput(element).dispatchEvent(new CustomEvent('focus'));
+      await flushPromises();
+      getResultButtons(element)[0].click();
+      await flushPromises();
+
+      expect(getGenerateButton(element).label).toBe('Generate DOCX');
     });
 
     it('clears a selected template back to search', async () => {
@@ -328,10 +343,11 @@ describe('c-docgen-document-selector', () => {
         searchTerm: 'Quote Template A',
         limitSize: 20
       });
-      expect(getRadioGroup(element).disabled).toBe(true);
+      expect(getRadioGroup(element)).toBeNull();
       expect(getSearchInput(element)).toBeNull();
       expect(getClearButton(element)).toBeNull();
       expect(getSelectedRecord(element).textContent).toContain('Quote Template A');
+      expect(getGenerateButton(element).label).toBe('Generate PDF');
       expect(getGenerateButton(element).disabled).toBe(false);
       expect(element.shadowRoot.querySelector('c-docgen-progress-button')).not.toBeNull();
     });
@@ -345,11 +361,11 @@ describe('c-docgen-document-selector', () => {
         searchTerm: 'CD-00042',
         limitSize: 20
       });
-      expect(getRadioGroup(element).disabled).toBe(true);
-      expect(getRadioGroup(element).value).toBe('composite');
+      expect(getRadioGroup(element)).toBeNull();
       expect(getSearchInput(element)).toBeNull();
       expect(getSelectedRecord(element).textContent).toContain('Draft Offer Composite');
-      expect(getGenerateButton(element).label).toBe('Generate composite PDF');
+      expect(getCompositeHelp(element)).toBeNull();
+      expect(getGenerateButton(element).label).toBe('Generate PDF');
       expect(getGenerateButton(element).disabled).toBe(false);
       expect(element.shadowRoot.querySelector('c-composite-docgen-button')).not.toBeNull();
     });
@@ -358,7 +374,7 @@ describe('c-docgen-document-selector', () => {
       const element = createComponent({ docgenType: 'template', docgenName: 'quote template a' });
       await flushPromises();
 
-      expect(getRadioGroup(element).disabled).toBe(true);
+      expect(getRadioGroup(element)).toBeNull();
       expect(getSelectedRecord(element)).not.toBeNull();
     });
 
@@ -369,7 +385,7 @@ describe('c-docgen-document-selector', () => {
       });
       await flushPromises();
 
-      expect(getRadioGroup(element).disabled).toBe(true);
+      expect(getRadioGroup(element)).toBeNull();
       expect(getSelectedRecord(element)).not.toBeNull();
     });
 

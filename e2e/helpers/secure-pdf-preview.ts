@@ -79,7 +79,7 @@ let cachedConfig: LoadedPreviewConfig | undefined;
  *     "DOCX": { "url": "/lightning/...", "generateButton": "Generate DOCX" }
  *   },
  *   "composite": {
- *     "PDF": { "url": "/lightning/...", "generateButton": "Generate composite PDF" }
+ *     "PDF": { "url": "/lightning/...", "generateButton": "Generate PDF" }
  *   }
  * }
  *

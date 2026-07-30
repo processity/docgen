@@ -191,7 +191,7 @@ export default class DocgenDocumentSelector extends LightningElement {
   }
 
   get docgenActionLabel() {
-    return this.isCompositeSource ? 'Generate composite PDF' : 'Generate PDF with DocGen';
+    return `Generate ${String(this.outputFormat || 'PDF').toUpperCase()}`;
   }
 
   get isGenerateDocgenDisabled() {

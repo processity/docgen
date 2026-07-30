@@ -179,9 +179,13 @@ describe('c-docgen-pdf-image-preview', () => {
     const element = createComponent();
     await flushPromises();
 
+    const frame = element.shadowRoot.querySelector('.preview__frame');
     const viewport = element.shadowRoot.querySelector('.preview__viewport');
+    const loadingOverlay = element.shadowRoot.querySelector('.preview__loading');
     const spinner = element.shadowRoot.querySelector('lightning-spinner');
     expect(viewport.getAttribute('aria-busy')).toBe('true');
+    expect(loadingOverlay.parentElement).toBe(frame);
+    expect(viewport.contains(loadingOverlay)).toBe(false);
     expect(spinner.alternativeText).toBe('Loading PDF preview page 1');
 
     deferred.resolve(buildPage(1));

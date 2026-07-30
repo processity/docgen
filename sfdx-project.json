@@ -1,8 +1,8 @@
 {
   "packageDirectories": [
     {
-      "versionName": "ver 0.3.26",
-      "versionNumber": "0.3.26.NEXT",
+      "versionName": "ver 0.3.27",
+      "versionNumber": "0.3.27.NEXT",
       "path": "force-app/main",
       "default": true,
       "package": "docgen",
@@ -49,6 +49,7 @@
     "docgen@0.3.23-1": "04tWS000002oN3WYAU",
     "docgen@0.3.24-1": "04tWS000002s85tYAA",
     "docgen@0.3.25-1": "04tWS000002vcvRYAQ",
-    "docgen@0.3.26-1": "04tWS000002xffVYAQ"
+    "docgen@0.3.26-1": "04tWS000002xffVYAQ",
+    "docgen@0.3.27-1": "04tWS000002z3B7YAI"
   }
 }

@@ -1275,7 +1275,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
   });
 
   describe('Composite Documents (T-24)', () => {
-    it('should generate composite PDF with Own Template strategy', async () => {
+    it('should generate a PDF with the Own Template strategy', async () => {
       const compositeDocId = 'a00000000000001AAA';
       const testTemplateId = '068000000000020AAA';
       const testContentVersionId = '068000000000021AAA';
@@ -1351,7 +1351,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body.contentVersionId).toBe(testContentVersionId);
     });
 
-    it('should generate composite PDF with Concatenate Templates strategy', async () => {
+    it('should generate a PDF with the Concatenate Templates strategy', async () => {
       const compositeDocId = 'a00000000000002AAA';
       const testTemplateId1 = '068000000000022AAA';
       const testTemplateId2 = '068000000000023AAA';
