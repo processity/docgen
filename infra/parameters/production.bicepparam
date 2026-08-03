@@ -25,7 +25,7 @@ param appName = 'docgen-production'
 // ============================================================================
 
 param acrName = 'docgenproduction'
-param keyVaultName = 'docgen-prod-kv'
+param keyVaultName = 'docgen-prod-kv-gl'
 
 // ============================================================================
 // Azure AD Configuration
