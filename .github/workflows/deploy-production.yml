@@ -16,6 +16,7 @@ concurrency:
 
 env:
   AZURE_REGION: eastus
+  APP_NAME: docgen-production
 
 jobs:
   build-image:
@@ -46,8 +47,7 @@ jobs:
     needs: [build-image, build-sha-image]
     environment: production  # Requires manual approval
     outputs:
-      app_url: ${{ steps.get-url.outputs.app_url }}
-      app_insights_connection_string: ${{ steps.deploy.outputs.appInsightsConnectionString }}
+      previous_revision: ${{ steps.get-current.outputs.previous_revision }}
 
     steps:
       - name: Checkout code
@@ -61,6 +61,17 @@ jobs:
       - name: Set Azure Subscription
         run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Get current active revision
+        id: get-current
+        run: |
+          PREVIOUS_REV=$(az containerapp revision list \
+            --name "${APP_NAME}" \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query "[?properties.active==\`true\`].name | [0]" -o tsv 2>/dev/null || true)
+
+          echo "previous_revision=${PREVIOUS_REV}" >> $GITHUB_OUTPUT
+          echo "📌 Revision before deployment: ${PREVIOUS_REV:-none}"
+
       - name: Deploy Bicep template
         id: deploy
         run: |
@@ -71,6 +82,7 @@ jobs:
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --parameters infra/parameters/production.bicepparam \
+            --parameters appName=${APP_NAME} \
             --parameters imageTag=${{ github.event.release.tag_name || inputs.release_tag }} \
             --mode Incremental \
             --output json)
@@ -78,24 +90,8 @@ jobs:
           echo "✅ Infrastructure deployment completed"
 
           # Extract outputs
-          APP_FQDN=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appFqdn.value')
-          APP_INSIGHTS_CONN=$(echo $DEPLOYMENT_OUTPUT | jq -r '.properties.outputs.appInsightsConnectionString.value')
+          APP_URL=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.properties.outputs.appUrl.value')
 
-          echo "app_fqdn=${APP_FQDN}" >> $GITHUB_OUTPUT
-          echo "appInsightsConnectionString=${APP_INSIGHTS_CONN}" >> $GITHUB_OUTPUT
-
-          echo "📍 App URL: https://${APP_FQDN}"
-
-      - name: Get Container App URL
-        id: get-url
-        run: |
-          APP_FQDN=$(az containerapp show \
-            --name ${{ secrets.APP_NAME }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --query properties.configuration.ingress.fqdn -o tsv)
-
-          APP_URL="https://${APP_FQDN}"
-          echo "app_url=${APP_URL}" >> $GITHUB_OUTPUT
           echo "📍 Container App URL: ${APP_URL}"
 
       - name: Verify resources deployed
@@ -193,8 +189,7 @@ jobs:
     needs: [build-image, deploy-infrastructure, populate-secrets]
     environment: production
     outputs:
-      revision_name: ${{ steps.update.outputs.revision_name }}
-      previous_revision: ${{ steps.get-current.outputs.current_revision }}
+      revision_name: ${{ steps.wait-revision.outputs.revision_name }}
 
     steps:
       - name: Azure Login
@@ -204,17 +199,6 @@ jobs:
 
       - name: Set Azure Subscription
         run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Get current active revision
-        id: get-current
-        run: |
-          CURRENT_REV=$(az containerapp revision list \
-            --name ${{ secrets.APP_NAME }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --query "[?properties.active==\`true\`].name | [0]" -o tsv)
-
-          echo "current_revision=${CURRENT_REV}" >> $GITHUB_OUTPUT
-          echo "📌 Current active revision: ${CURRENT_REV}"
 
       - name: Update Container App with new image
         id: update
@@ -226,7 +210,7 @@ jobs:
           echo "📦 Image URI: ${IMAGE_URI}"
 
           az containerapp update \
-            --name ${{ secrets.APP_NAME }} \
+            --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --image ${IMAGE_URI} \
             --output none
@@ -244,7 +228,7 @@ jobs:
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             REVISION_STATUS=$(az containerapp revision list \
-              --name ${{ secrets.APP_NAME }} \
+              --name "${APP_NAME}" \
               --resource-group ${{ secrets.RESOURCE_GROUP }} \
               --query "[?properties.active==\`true\`] | [0].properties.provisioningState" -o tsv)
 
@@ -252,7 +236,7 @@ jobs:
 
             if [ "$REVISION_STATUS" == "Provisioned" ]; then
               NEW_REV=$(az containerapp revision list \
-                --name ${{ secrets.APP_NAME }} \
+                --name "${APP_NAME}" \
                 --resource-group ${{ secrets.RESOURCE_GROUP }} \
                 --query "[?properties.active==\`true\`].name | [0]" -o tsv)
 
@@ -272,7 +256,7 @@ jobs:
         run: |
           echo "📋 Active revisions:"
           az containerapp revision list \
-            --name ${{ secrets.APP_NAME }} \
+            --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --query "[?properties.active==\`true\`].{Name:name, Created:properties.createdTime, Replicas:properties.replicas, Traffic:properties.trafficWeight}" \
             --output table
@@ -287,6 +271,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Azure Subscription
+        run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Container App URL
+        run: |
+          APP_FQDN=$(az containerapp show \
+            --name "${APP_NAME}" \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+
+          echo "APP_URL=https://${APP_FQDN}" >> $GITHUB_ENV
+
       - name: Wait for app to be ready
         run: |
           echo "⏳ Waiting for app to be fully ready..."
@@ -295,8 +296,6 @@ jobs:
       - name: Test /healthz endpoint
         run: |
           echo "🏥 Testing health endpoint..."
-          # Reconstruct the URL since outputs might be masked
-          APP_URL="https://${{ secrets.APP_NAME }}.greenocean-24bbbaf2.eastus.azurecontainerapps.io"
           echo "Testing URL: ${APP_URL}"
 
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" ${APP_URL}/healthz)
@@ -311,8 +310,6 @@ jobs:
       - name: Test /readyz endpoint
         run: |
           echo "🔍 Testing readiness endpoint..."
-          # Reconstruct the URL since outputs might be masked
-          APP_URL="https://${{ secrets.APP_NAME }}.greenocean-24bbbaf2.eastus.azurecontainerapps.io"
 
           RESPONSE=$(curl -s ${APP_URL}/readyz)
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${APP_URL}/readyz)
@@ -329,8 +326,6 @@ jobs:
       - name: Test document generation (5 times)
         run: |
           echo "📄 Testing document generation (5 iterations)..."
-          # Reconstruct the URL since outputs might be masked
-          APP_URL="https://${{ secrets.APP_NAME }}.greenocean-24bbbaf2.eastus.azurecontainerapps.io"
 
           SUCCESS_COUNT=0
           TOTAL_TESTS=5
@@ -398,7 +393,6 @@ jobs:
       - name: Test worker endpoints
         run: |
           echo "🔧 Testing worker endpoints..."
-          APP_URL="${{ needs.deploy-infrastructure.outputs.app_url }}"
 
           # Test worker status endpoint (requires AAD auth, will return 401)
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${APP_URL}/worker/status)
@@ -414,15 +408,15 @@ jobs:
       - name: Summary
         run: |
           echo "🎉 All smoke tests passed!"
-          echo "📍 App URL: ${{ needs.deploy-infrastructure.outputs.app_url }}"
+          echo "📍 App URL: ${APP_URL}"
           echo "🏷️ Release: ${{ github.event.release.tag_name || inputs.release_tag }}"
           echo "📦 Revision: ${{ needs.update-app.outputs.revision_name }}"
 
   rollback:
     name: Rollback on Failure
     runs-on: ubuntu-latest
-    needs: [update-app, smoke-tests]
-    if: failure()
+    needs: [deploy-infrastructure, update-app, smoke-tests]
+    if: ${{ always() && needs.deploy-infrastructure.result == 'success' && needs.deploy-infrastructure.outputs.previous_revision != '' && (needs.update-app.result == 'failure' || needs.smoke-tests.result == 'failure') }}
     environment: production
 
     steps:
@@ -437,7 +431,7 @@ jobs:
       - name: Get previous revision
         id: get-previous
         run: |
-          PREV_REV="${{ needs.update-app.outputs.previous_revision }}"
+          PREV_REV="${{ needs.deploy-infrastructure.outputs.previous_revision }}"
           echo "previous_revision=${PREV_REV}" >> $GITHUB_OUTPUT
           echo "🔄 Rolling back to previous revision: ${PREV_REV}"
 
@@ -453,7 +447,7 @@ jobs:
           echo "🔄 Activating previous revision: ${PREV_REV}"
 
           az containerapp revision activate \
-            --name ${{ secrets.APP_NAME }} \
+            --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --revision ${PREV_REV}
 
@@ -464,7 +458,7 @@ jobs:
           echo "🔍 Verifying rollback..."
 
           ACTIVE_REV=$(az containerapp revision list \
-            --name ${{ secrets.APP_NAME }} \
+            --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --query "[?properties.active==\`true\`].name | [0]" -o tsv)
 
@@ -472,7 +466,7 @@ jobs:
 
           # Test health endpoint
           APP_URL=$(az containerapp show \
-            --name ${{ secrets.APP_NAME }} \
+            --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
 
@@ -495,7 +489,7 @@ jobs:
             echo "🗑️ Deactivating failed revision: ${FAILED_REV}"
 
             az containerapp revision deactivate \
-              --name ${{ secrets.APP_NAME }} \
+              --name "${APP_NAME}" \
               --resource-group ${{ secrets.RESOURCE_GROUP }} \
               --revision ${FAILED_REV} || true
 
@@ -509,7 +503,7 @@ jobs:
             const comment = `## ⚠️ Production Deployment Failed - Rollback Executed
 
             **Release:** ${{ github.event.release.tag_name || inputs.release_tag }}
-            **Rolled back to:** \`${{ needs.update-app.outputs.previous_revision }}\`
+            **Rolled back to:** \`${{ needs.deploy-infrastructure.outputs.previous_revision }}\`
 
             The deployment to production failed smoke tests and has been automatically rolled back to the previous revision.
 
@@ -518,7 +512,6 @@ jobs:
             2. Investigate the failure cause
             3. Fix the issue and create a new release
 
-            **App URL:** https://${{ secrets.APP_NAME }}.greenocean-24bbbaf2.eastus.azurecontainerapps.io
             `;
 
             github.rest.issues.createComment({
@@ -548,7 +541,6 @@ jobs:
 
             **Release:** ${{ github.event.release.tag_name || inputs.release_tag }}
             **Deployed by:** @${{ github.actor }}
-            **App URL:** https://${{ secrets.APP_NAME }}.greenocean-24bbbaf2.eastus.azurecontainerapps.io
 
             ### Deployment Details
             - **Release Tag:** \`${{ github.event.release.tag_name || inputs.release_tag }}\`
@@ -556,7 +548,7 @@ jobs:
             - **Image URI:** \`${{ needs.build-image.outputs.image_uri }}\`
             - **Revision:** \`${{ needs.update-app.outputs.revision_name }}\`
             - **Resource Group:** \`${{ secrets.RESOURCE_GROUP }}\`
-            - **Container App:** \`${{ secrets.APP_NAME }}\`
+            - **Container App:** \`${{ env.APP_NAME }}\`
 
             ### Job Results
             - Build Image: ${{ needs.build-image.result }}
