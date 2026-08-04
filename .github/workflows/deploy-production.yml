@@ -17,6 +17,7 @@ concurrency:
 env:
   AZURE_REGION: eastus
   APP_NAME: docgen-production
+  KEY_VAULT_NAME: docgen-prod-kv-gl
 
 jobs:
   build-image:
@@ -83,6 +84,7 @@ jobs:
             --template-file infra/main.bicep \
             --parameters infra/parameters/production.bicepparam \
             --parameters appName=${APP_NAME} \
+            --parameters keyVaultName=${KEY_VAULT_NAME} \
             --parameters imageTag=${{ github.event.release.tag_name || inputs.release_tag }} \
             --mode Incremental \
             --output json)
@@ -101,8 +103,8 @@ jobs:
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --output table
 
-  populate-secrets:
-    name: Populate Key Vault Secrets
+  verify-key-vault:
+    name: Verify Key Vault
     runs-on: ubuntu-latest
     needs: deploy-infrastructure
     environment: production
@@ -116,77 +118,19 @@ jobs:
       - name: Set Azure Subscription
         run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set Salesforce secrets
+      - name: Verify production Key Vault
         run: |
-          echo "🔐 Populating Key Vault secrets..."
-
-          # Set SF_CLIENT_ID
-          az keyvault secret set \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name SF-CLIENT-ID \
-            --value "${{ secrets.SF_CLIENT_ID }}" \
-            --output none
-          echo "✅ SF-CLIENT-ID set"
-
-          # Set SF_USERNAME
-          az keyvault secret set \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name SF-USERNAME \
-            --value "${{ secrets.SF_USERNAME }}" \
-            --output none
-          echo "✅ SF-USERNAME set"
-
-          # Set SF_DOMAIN
-          az keyvault secret set \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name SF-DOMAIN \
-            --value "${{ secrets.SF_DOMAIN }}" \
-            --output none
-          echo "✅ SF-DOMAIN set"
-
-      - name: Set SF_PRIVATE_KEY secret
-        run: |
-          # Create temp file for private key
-          echo "${{ secrets.SF_PRIVATE_KEY }}" > /tmp/sf_private_key.pem
-
-          # Set private key from file
-          az keyvault secret set \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name SF-PRIVATE-KEY \
-            --file /tmp/sf_private_key.pem \
-            --output none
-
-          # Clean up temp file
-          rm /tmp/sf_private_key.pem
-          echo "✅ SF-PRIVATE-KEY set"
-
-      - name: Set Application Insights connection string
-        run: |
-          # Get App Insights connection string from deployment output
-          CONN_STRING=$(az monitor app-insights component show \
-            --app docgen-production-insights \
+          # Production secret rotation is managed separately from application deployment.
+          az keyvault show \
+            --name "${KEY_VAULT_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --query connectionString -o tsv)
-
-          az keyvault secret set \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --name AZURE-MONITOR-CONNECTION-STRING \
-            --value "${CONN_STRING}" \
-            --output none
-          echo "✅ AZURE-MONITOR-CONNECTION-STRING set"
-
-      - name: Verify secrets
-        run: |
-          echo "Verifying Key Vault secrets..."
-          az keyvault secret list \
-            --vault-name ${{ secrets.KEY_VAULT_NAME }} \
-            --query "[].{Name:name, Enabled:attributes.enabled}" \
+            --query "{Name:name, State:properties.provisioningState, RbacEnabled:properties.enableRbacAuthorization}" \
             --output table
 
   update-app:
     name: Update Container App
     runs-on: ubuntu-latest
-    needs: [build-image, deploy-infrastructure, populate-secrets]
+    needs: [build-image, deploy-infrastructure, verify-key-vault]
     environment: production
     outputs:
       revision_name: ${{ steps.wait-revision.outputs.revision_name }}
