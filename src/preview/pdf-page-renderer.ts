@@ -107,34 +107,40 @@ export class PdfPageRenderer {
       );
     }
 
-    const workDir = await mkdtemp(path.join(tmpdir(), 'docgen-preview-'));
-    const inputPath = path.join(workDir, 'input.pdf');
-    const outputPath = path.join(workDir, 'page.jpg');
+    const imageData = await this.withWorkingPdf(pdfData, (inputPath, workDir) =>
+      this.renderPageFromPath(inputPath, path.join(workDir, 'page.jpg'), pageNumber)
+    );
+    return { imageData, pageCount };
+  }
 
-    try {
-      await writeFile(inputPath, pdfData, { flag: 'wx' });
-
-      for (const profile of RENDER_PROFILES) {
-        const imageData = await this.renderAttempt(
-          inputPath,
-          outputPath,
-          pageNumber,
-          profile.dpi,
-          profile.quality
-        );
-
-        if (imageData.length <= this.maxImageBytes) {
-          return { imageData, pageCount };
-        }
-      }
-
+  async renderPages(
+    pdfData: Buffer,
+    maxPages: number
+  ): Promise<{ imagePages: Buffer[]; pageCount: number }> {
+    if (!Number.isInteger(maxPages) || maxPages < 1) {
       throw new PdfPreviewRenderError(
-        'OUTPUT_TOO_LARGE',
-        'Rendered PDF preview page exceeds the response size limit'
+        'PAGE_OUT_OF_RANGE',
+        'PDF preview page limit must be a positive integer'
       );
-    } finally {
-      await rm(workDir, { recursive: true, force: true });
     }
+
+    const pageCount = await this.countPages(pdfData);
+    const previewPageCount = Math.min(pageCount, maxPages);
+    const imagePages = await this.withWorkingPdf(pdfData, async (inputPath, workDir) => {
+      const pages: Buffer[] = [];
+      for (let pageNumber = 1; pageNumber <= previewPageCount; pageNumber += 1) {
+        pages.push(
+          await this.renderPageFromPath(
+            inputPath,
+            path.join(workDir, `page-${pageNumber}.jpg`),
+            pageNumber
+          )
+        );
+      }
+      return pages;
+    });
+
+    return { imagePages, pageCount };
   }
 
   private async countPages(pdfData: Buffer): Promise<number> {
@@ -190,6 +196,46 @@ export class PdfPageRenderer {
         throw error;
       }
       throw new PdfPreviewRenderError('RENDER_FAILED', 'PDF preview rendering failed');
+    }
+  }
+
+  private async renderPageFromPath(
+    inputPath: string,
+    outputPath: string,
+    pageNumber: number
+  ): Promise<Buffer> {
+    for (const profile of RENDER_PROFILES) {
+      const imageData = await this.renderAttempt(
+        inputPath,
+        outputPath,
+        pageNumber,
+        profile.dpi,
+        profile.quality
+      );
+
+      if (imageData.length <= this.maxImageBytes) {
+        return imageData;
+      }
+    }
+
+    throw new PdfPreviewRenderError(
+      'OUTPUT_TOO_LARGE',
+      'Rendered PDF preview page exceeds the response size limit'
+    );
+  }
+
+  private async withWorkingPdf<T>(
+    pdfData: Buffer,
+    callback: (inputPath: string, workDir: string) => Promise<T>
+  ): Promise<T> {
+    const workDir = await mkdtemp(path.join(tmpdir(), 'docgen-preview-'));
+    const inputPath = path.join(workDir, 'input.pdf');
+
+    try {
+      await writeFile(inputPath, pdfData, { flag: 'wx' });
+      return await callback(inputPath, workDir);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
     }
   }
 }

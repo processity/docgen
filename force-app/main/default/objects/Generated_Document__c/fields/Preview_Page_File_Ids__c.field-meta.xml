@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Preview_Page_File_Ids__c</fullName>
+    <description>Internal JSON array of temporary JPEG ContentVersion IDs used for secure preview before Save.</description>
+    <label>Preview Page File IDs</label>
+    <length>3900</length>
+    <trackHistory>false</trackHistory>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

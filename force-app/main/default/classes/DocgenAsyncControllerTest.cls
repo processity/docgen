@@ -1,68 +1,5 @@
 @IsTest
 private class DocgenAsyncControllerTest {
-    private class PdfPreviewCalloutMock implements HttpCalloutMock {
-        private Integer statusCode;
-        private String responseBody;
-        private Id expectedGeneratedDocumentId;
-        private Integer expectedPageNumber;
-        private String expectedNamedCredential;
-
-        PdfPreviewCalloutMock(
-            Integer statusCode,
-            String responseBody,
-            Id expectedGeneratedDocumentId,
-            Integer expectedPageNumber,
-            String expectedNamedCredential
-        ) {
-            this.statusCode = statusCode;
-            this.responseBody = responseBody;
-            this.expectedGeneratedDocumentId = expectedGeneratedDocumentId;
-            this.expectedPageNumber = expectedPageNumber;
-            this.expectedNamedCredential = expectedNamedCredential;
-        }
-
-        public HttpResponse respond(HttpRequest request) {
-            Assert.areEqual('POST', request.getMethod(), 'Preview pages should use POST');
-            Assert.areEqual(
-                'callout:' + expectedNamedCredential + '/preview/pdf-page',
-                request.getEndpoint(),
-                'Preview pages should use the configured DocGen Named Credential'
-            );
-            Assert.areEqual('application/json', request.getHeader('Content-Type'), 'Request should contain JSON');
-            Assert.areEqual('application/json', request.getHeader('Accept'), 'Response should request JSON');
-
-            Map<String, Object> requestBody = (Map<String, Object>) JSON.deserializeUntyped(request.getBody());
-            Assert.areEqual(
-                String.valueOf(expectedGeneratedDocumentId),
-                String.valueOf(requestBody.get('generatedDocumentId')),
-                'Backend should receive only the generated document identity'
-            );
-            Assert.areEqual(
-                String.valueOf(UserInfo.getUserId()),
-                String.valueOf(requestBody.get('requestingUserId')),
-                'Backend should independently validate the requesting user'
-            );
-            Assert.areEqual(
-                expectedPageNumber,
-                Integer.valueOf(String.valueOf(requestBody.get('pageNumber'))),
-                'Backend should receive the requested page'
-            );
-            Assert.areEqual(
-                20,
-                Integer.valueOf(String.valueOf(requestBody.get('maxPreviewPages'))),
-                'Backend should enforce the same preview page limit'
-            );
-            Assert.isFalse(requestBody.containsKey('outputFileId'), 'Pending ContentVersion IDs must not cross the client contract');
-            Assert.isFalse(requestBody.containsKey('contentVersionId'), 'Pending ContentVersion IDs must not cross the client contract');
-
-            HttpResponse response = new HttpResponse();
-            response.setStatusCode(statusCode);
-            response.setHeader('Content-Type', 'application/json');
-            response.setBody(responseBody);
-            return response;
-        }
-    }
-
     @testSetup
     static void setup() {
         DocgenTestDataFactory.createTemplate(
@@ -74,14 +11,34 @@ private class DocgenAsyncControllerTest {
     }
 
     private static ContentVersion createTestContentVersion(String title) {
+        return createTestContentVersion(title, 'pdf', Blob.valueOf('Test PDF Content'));
+    }
+
+    private static ContentVersion createTestContentVersion(String title, String extension, Blob data) {
         ContentVersion cv = new ContentVersion(
             Title = title,
-            PathOnClient = title + '.pdf',
-            VersionData = Blob.valueOf('Test PDF Content'),
+            PathOnClient = title + '.' + extension,
+            VersionData = data,
             IsMajorVersion = true
         );
         insert cv;
         return [SELECT Id, ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id];
+    }
+
+    private static void setPreviewPages(
+        Generated_Document__c doc,
+        List<ContentVersion> pages,
+        Integer pageCount
+    ) {
+        List<String> pageIds = new List<String>();
+        for (ContentVersion page : pages) {
+            pageIds.add(page.Id);
+        }
+        update new Generated_Document__c(
+            Id = doc.Id,
+            Preview_Page_File_Ids__c = JSON.serialize(pageIds),
+            Preview_Page_Count__c = pageCount
+        );
     }
 
     private static Generated_Document__c createPendingPreviewDocument(
@@ -579,28 +536,23 @@ private class DocgenAsyncControllerTest {
     }
 
     @IsTest
-    static void testGetPdfPreviewPageUsesConfiguredBackendContract() {
+    static void testGetPdfPreviewPageReturnsStoredTemporaryImage() {
         Generated_Document__c doc = createPendingPreviewDocument(
             'SUCCEEDED',
             'PDF',
             '068000000000003AAA'
         );
-        insert new Docgen_Settings__c(
-            SetupOwnerId = UserInfo.getOrganizationId(),
-            Named_Credential_Name__c = 'Docgen_Node_API_CI'
+        ContentVersion pageOne = createTestContentVersion(
+            'Preview Page One',
+            'jpg',
+            Blob.valueOf('Rendered page one')
         );
-        String responseBody = JSON.serialize(new Map<String, Object>{
-            'contentType' => 'image/jpeg',
-            'base64Data' => EncodingUtil.base64Encode(Blob.valueOf('Rendered page two')),
-            'pageNumber' => 2,
-            'pageCount' => 24,
-            'previewPageCount' => 20,
-            'previewTruncated' => true
-        });
-        Test.setMock(
-            HttpCalloutMock.class,
-            new PdfPreviewCalloutMock(200, responseBody, doc.Id, 2, 'Docgen_Node_API_CI')
+        ContentVersion pageTwo = createTestContentVersion(
+            'Preview Page Two',
+            'jpg',
+            Blob.valueOf('Rendered page two')
         );
+        setPreviewPages(doc, new List<ContentVersion>{ pageOne, pageTwo }, 24);
 
         Test.startTest();
         DocgenAsyncController.PdfPreviewPage result = DocgenAsyncController.getPdfPreviewPage(doc.Id, 2);
@@ -609,7 +561,7 @@ private class DocgenAsyncControllerTest {
         Assert.areEqual('image/jpeg', result.contentType, 'Rendered page should retain its safe image content type');
         Assert.areEqual(2, result.pageNumber, 'Requested page should be returned');
         Assert.areEqual(24, result.pageCount, 'Actual PDF page count should be returned');
-        Assert.areEqual(20, result.previewPageCount, 'Preview navigation should be capped at 20 pages');
+        Assert.areEqual(2, result.previewPageCount, 'Only stored preview pages should be navigable');
         Assert.isTrue(result.previewTruncated, 'PDFs longer than 20 pages should be marked truncated');
         Assert.areEqual(
             EncodingUtil.base64Encode(Blob.valueOf('Rendered page two')),
@@ -747,62 +699,62 @@ private class DocgenAsyncControllerTest {
     }
 
     @IsTest
-    static void testGetPdfPreviewPageSanitizesBackendErrors() {
+    static void testGetPdfPreviewPageRejectsMissingArtifacts() {
         Generated_Document__c doc = createPendingPreviewDocument(
             'SUCCEEDED',
             'PDF',
             '068000000000007AAA'
         );
-        Test.setMock(
-            HttpCalloutMock.class,
-            new PdfPreviewCalloutMock(
-                500,
-                '{"message":"ENOENT /tmp/private.pdf","stack":"secret-stack","correlationId":"preview-ref-123"}',
-                doc.Id,
-                1,
-                'Docgen_Node_API'
-            )
-        );
 
         Test.startTest();
         try {
             DocgenAsyncController.getPdfPreviewPage(doc.Id, 1);
-            Assert.fail('Backend failure should be surfaced as a safe preview error');
+            Assert.fail('Missing preview artifacts should fail clearly');
         } catch (AuraHandledException e) {
-            Assert.isTrue(e.getMessage().contains('temporarily unavailable'), 'Backend failures should be actionable');
-            Assert.isTrue(e.getMessage().contains('preview-ref-123'), 'Safe backend reference should be retained');
-            Assert.isFalse(e.getMessage().contains('ENOENT'), 'Raw backend details must not be exposed');
-            Assert.isFalse(e.getMessage().contains('/tmp/'), 'Backend file paths must not be exposed');
-            Assert.isFalse(e.getMessage().contains('secret-stack'), 'Backend stack traces must not be exposed');
+            Assert.isTrue(e.getMessage().contains('metadata is unavailable'), 'Missing metadata should request regeneration');
         }
         Test.stopTest();
     }
 
     @IsTest
-    static void testGetPdfPreviewPageRejectsMalformedSuccessResponse() {
+    static void testGetPdfPreviewPageRejectsMalformedArtifactMetadata() {
         Generated_Document__c doc = createPendingPreviewDocument(
             'SUCCEEDED',
             'PDF',
             '068000000000008AAA'
         );
-        Test.setMock(
-            HttpCalloutMock.class,
-            new PdfPreviewCalloutMock(
-                200,
-                '{"contentType":"application/pdf","base64Data":"complete-pdf"}',
-                doc.Id,
-                1,
-                'Docgen_Node_API'
-            )
+        update new Generated_Document__c(
+            Id = doc.Id,
+            Preview_Page_File_Ids__c = '["not-a-content-version"]',
+            Preview_Page_Count__c = 1
         );
 
         Test.startTest();
         try {
             DocgenAsyncController.getPdfPreviewPage(doc.Id, 1);
-            Assert.fail('A malformed or full-PDF response should be rejected');
+            Assert.fail('Malformed preview metadata should be rejected');
         } catch (AuraHandledException e) {
-            Assert.isTrue(e.getMessage().contains('invalid response'), 'Malformed responses should fail safely');
-            Assert.isFalse(e.getMessage().contains('complete-pdf'), 'Response content must not leak through the error');
+            Assert.isTrue(e.getMessage().contains('metadata is invalid'), 'Malformed metadata should fail safely');
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void testGetPdfPreviewPageRejectsNonImageArtifact() {
+        Generated_Document__c doc = createPendingPreviewDocument(
+            'SUCCEEDED',
+            'PDF',
+            '068000000000009AAA'
+        );
+        ContentVersion pdfFile = createTestContentVersion('Not A Preview Image');
+        setPreviewPages(doc, new List<ContentVersion>{ pdfFile }, 1);
+
+        Test.startTest();
+        try {
+            DocgenAsyncController.getPdfPreviewPage(doc.Id, 1);
+            Assert.fail('A complete PDF must never be returned as a preview page');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(e.getMessage().contains('unsupported file type'), 'Only JPEG artifacts should be returned');
         }
         Test.stopTest();
     }
@@ -848,6 +800,12 @@ private class DocgenAsyncControllerTest {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Async Account Template' LIMIT 1];
         Account account = [SELECT Id FROM Account LIMIT 1];
         ContentVersion cv = createTestContentVersion('Preview Save Document');
+        ContentVersion previewPage = createTestContentVersion(
+            'Preview Save Page',
+            'jpg',
+            Blob.valueOf('Temporary page')
+        );
+        Id previewContentDocumentId = previewPage.ContentDocumentId;
 
         DocgenAsyncController.StartResult startResult = DocgenAsyncController.startGeneration(
             template.Id,
@@ -860,6 +818,11 @@ private class DocgenAsyncControllerTest {
             Id = startResult.generatedDocumentId,
             Status__c = 'SUCCEEDED',
             OutputFileId__c = cv.Id
+        );
+        setPreviewPages(
+            new Generated_Document__c(Id = startResult.generatedDocumentId),
+            new List<ContentVersion>{ previewPage },
+            1
         );
 
         Assert.areEqual(0, [
@@ -888,6 +851,18 @@ private class DocgenAsyncControllerTest {
             WHERE ContentDocumentId = :cv.ContentDocumentId
             AND LinkedEntityId = :account.Id
         ], 'Save should link the file to the parent record');
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM ContentDocument
+            WHERE Id = :previewContentDocumentId
+        ], 'Save should delete temporary preview page files');
+        Generated_Document__c savedDocument = [
+            SELECT Preview_Page_File_Ids__c, Preview_Page_Count__c
+            FROM Generated_Document__c
+            WHERE Id = :startResult.generatedDocumentId
+        ];
+        Assert.isNull(savedDocument.Preview_Page_File_Ids__c, 'Save should clear temporary page IDs');
+        Assert.isNull(savedDocument.Preview_Page_Count__c, 'Save should clear temporary page count');
     }
 
     @IsTest
@@ -896,6 +871,12 @@ private class DocgenAsyncControllerTest {
         Account account = [SELECT Id FROM Account LIMIT 1];
         ContentVersion cv = createTestContentVersion('Preview Cancel Document');
         Id contentDocumentId = cv.ContentDocumentId;
+        ContentVersion previewPage = createTestContentVersion(
+            'Preview Cancel Page',
+            'jpg',
+            Blob.valueOf('Temporary page')
+        );
+        Id previewContentDocumentId = previewPage.ContentDocumentId;
 
         DocgenAsyncController.StartResult startResult = DocgenAsyncController.startGeneration(
             template.Id,
@@ -908,6 +889,11 @@ private class DocgenAsyncControllerTest {
             Id = startResult.generatedDocumentId,
             Status__c = 'SUCCEEDED',
             OutputFileId__c = cv.Id
+        );
+        setPreviewPages(
+            new Generated_Document__c(Id = startResult.generatedDocumentId),
+            new List<ContentVersion>{ previewPage },
+            1
         );
 
         Test.startTest();
@@ -924,6 +910,11 @@ private class DocgenAsyncControllerTest {
             FROM ContentDocument
             WHERE Id = :contentDocumentId
         ], 'Cancel should delete the generated Salesforce file');
+        Assert.areEqual(0, [
+            SELECT COUNT()
+            FROM ContentDocument
+            WHERE Id = :previewContentDocumentId
+        ], 'Cancel should delete temporary preview page files');
     }
 
     @IsTest

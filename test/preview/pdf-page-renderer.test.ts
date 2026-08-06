@@ -55,6 +55,40 @@ describe('PdfPageRenderer', () => {
     await expect(access(workDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('renders a capped page sequence from one temporary PDF', async () => {
+    const pdf = await createPdfPreviewFixture(4);
+    const calls: Array<readonly string[]> = [];
+    let workDir = '';
+    const executor: GhostscriptExecutor = async (args) => {
+      calls.push([...args]);
+      const outputPath = outputPathFromArgs(args);
+      workDir = path.dirname(outputPath);
+      const pageArgument = args.find((arg) => arg.startsWith('-dFirstPage='));
+      await writeFile(outputPath, Buffer.from(`jpeg-${pageArgument}`));
+    };
+
+    const result = await new PdfPageRenderer(executor).renderPages(pdf, 2);
+
+    expect(result.pageCount).toBe(4);
+    expect(result.imagePages.map((page) => page.toString())).toEqual([
+      'jpeg--dFirstPage=1',
+      'jpeg--dFirstPage=2',
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0][calls[0].length - 1]).toBe(calls[1][calls[1].length - 1]);
+    await expect(access(workDir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects an invalid multi-page preview limit before rendering', async () => {
+    const pdf = await createPdfPreviewFixture(1);
+    const executor = jest.fn<ReturnType<GhostscriptExecutor>, Parameters<GhostscriptExecutor>>();
+
+    await expect(new PdfPageRenderer(executor).renderPages(pdf, 0)).rejects.toMatchObject({
+      code: 'PAGE_OUT_OF_RANGE',
+    });
+    expect(executor).not.toHaveBeenCalled();
+  });
+
   it('uses the next render profile when the high-resolution JPEG is too large', async () => {
     const pdf = await createPdfPreviewFixture(1);
     const calls: Array<readonly string[]> = [];

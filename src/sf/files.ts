@@ -23,7 +23,7 @@ import type {
 import { SalesforceUploadError, DocgenError, buildSalesforceError } from '../errors';
 
 /**
- * Upload a file (PDF, DOCX, or PPTX) to Salesforce as a ContentVersion
+ * Upload a file to Salesforce as a ContentVersion
  *
  * @param buffer - File content as Buffer
  * @param fileName - Full filename with extension (e.g., "Invoice_12345.pdf")
@@ -40,7 +40,7 @@ export async function uploadContentVersion(
   options?: CorrelationOptions
 ): Promise<{ contentVersionId: string; contentDocumentId: string }> {
   // Extract title from filename (remove extension)
-  const title = fileName.replace(/\.(pdf|docx|pptx)$/i, '');
+  const title = fileName.replace(/\.(pdf|docx|pptx|jpe?g)$/i, '');
 
   // Prepare ContentVersion creation payload
   const payload: ContentVersionCreateRequest = {
@@ -93,6 +93,31 @@ export async function uploadContentVersion(
     contentVersionId,
     contentDocumentId,
   };
+}
+
+/**
+ * Delete Salesforce files by ContentDocument ID.
+ */
+export async function deleteContentDocuments(
+  contentDocumentIds: Iterable<string>,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<void> {
+  const uniqueIds = [...new Set(contentDocumentIds)].filter(Boolean);
+  let firstError: unknown;
+  for (const contentDocumentId of uniqueIds) {
+    try {
+      await api.delete(
+        `/services/data/v59.0/sobjects/ContentDocument/${contentDocumentId}`,
+        options
+      );
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  if (firstError) {
+    throw firstError;
+  }
 }
 
 /**
@@ -158,28 +183,15 @@ export async function uploadAndLinkFiles(
 
   try {
     // Step 1: Upload PDF (always required)
-    const pdfUpload = await uploadContentVersion(
-      pdfBuffer,
-      request.outputFileName,
-      api,
-      options
-    );
+    const pdfUpload = await uploadContentVersion(pdfBuffer, request.outputFileName, api, options);
     result.pdfContentVersionId = pdfUpload.contentVersionId;
     result.pdfContentDocumentId = pdfUpload.contentDocumentId;
 
     // Step 2: Upload DOCX if requested
     if (docxBuffer && request.options.storeMergedDocx) {
       // Change extension to .docx
-      const docxFileName = request.outputFileName.replace(
-        /\.(pdf|docx)$/i,
-        '.docx'
-      );
-      const docxUpload = await uploadContentVersion(
-        docxBuffer,
-        docxFileName,
-        api,
-        options
-      );
+      const docxFileName = request.outputFileName.replace(/\.(pdf|docx)$/i, '.docx');
+      const docxUpload = await uploadContentVersion(docxBuffer, docxFileName, api, options);
       result.docxContentVersionId = docxUpload.contentVersionId;
       result.docxContentDocumentId = docxUpload.contentDocumentId;
     }
@@ -202,9 +214,7 @@ export async function uploadAndLinkFiles(
       // e.g., ContactId => Contact__c, LeadId => Lead__c
       // These are still useful for queries/reporting even though linking uses RequestJSON
       if (request.parents) {
-        for (const [parentKey, parentValue] of Object.entries(
-          request.parents
-        )) {
+        for (const [parentKey, parentValue] of Object.entries(request.parents)) {
           // Convert "ContactId" → "Contact__c", "AccountId" → "Account__c", etc.
           if (parentKey.endsWith('Id')) {
             const lookupFieldName = parentKey.slice(0, -2) + '__c';
@@ -213,12 +223,7 @@ export async function uploadAndLinkFiles(
         }
       }
 
-      await updateGeneratedDocument(
-        request.generatedDocumentId,
-        updateFields,
-        api,
-        options
-      );
+      await updateGeneratedDocument(request.generatedDocumentId, updateFields, api, options);
     }
 
     return result;
@@ -232,7 +237,10 @@ export async function uploadAndLinkFiles(
             Status__c: 'FAILED',
             Error__c: buildSalesforceError(
               error instanceof Error ? error : new Error(String(error)),
-              { correlationId: options?.correlationId, generatedDocumentId: request.generatedDocumentId }
+              {
+                correlationId: options?.correlationId,
+                generatedDocumentId: request.generatedDocumentId,
+              }
             ),
           },
           api,
@@ -249,9 +257,8 @@ export async function uploadAndLinkFiles(
       throw error;
     }
 
-    throw new SalesforceUploadError(
-      error instanceof Error ? error.message : String(error),
-      { correlationId: options?.correlationId }
-    );
+    throw new SalesforceUploadError(error instanceof Error ? error.message : String(error), {
+      correlationId: options?.correlationId,
+    });
   }
 }

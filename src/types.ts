@@ -394,6 +394,10 @@ export interface GeneratedDocumentUpdateFields {
   Error__c?: string;
   /** Number of processing attempts */
   Attempts__c?: number;
+  /** JSON array of temporary JPEG ContentVersion IDs used before Save */
+  Preview_Page_File_Ids__c?: string | null;
+  /** Actual page count of the generated PDF */
+  Preview_Page_Count__c?: number | null;
 
   // Parent lookup fields (Task T-02: Dynamic lookup fields)
   /** Lookup to Account */
@@ -466,6 +470,7 @@ export interface QueuedDocument {
   Priority__c?: number;
   Error__c?: string | null;
   Attachment_Warnings__c?: string | null;
+  PendingPreview__c?: boolean;
 }
 
 /**

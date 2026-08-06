@@ -2,9 +2,14 @@ import { config } from 'dotenv';
 import nock from 'nock';
 import { PDFDocument } from 'pdf-lib';
 import { PollerService } from '../../src/worker/poller';
+import { PdfPageRenderer } from '../../src/preview/pdf-page-renderer';
 import { loadConfig } from '../../src/config';
 import { createSalesforceAuth } from '../../src/sf/auth';
-import { SalesforceUploadError, TemplateNotFoundError, ConversionTimeoutError } from '../../src/errors';
+import {
+  SalesforceUploadError,
+  TemplateNotFoundError,
+  ConversionTimeoutError,
+} from '../../src/errors';
 import type { QueuedDocument, PollerStats } from '../../src/types';
 
 jest.mock('../../src/convert/soffice', () => {
@@ -144,14 +149,11 @@ describeTests('PollerService', () => {
         CreatedDate: new Date().toISOString(),
       }));
 
-      nock(baseUrl)
-        .get('/services/data/v59.0/query')
-        .query(true)
-        .reply(200, {
-          totalSize: 15,
-          done: true,
-          records: mockDocuments,
-        });
+      nock(baseUrl).get('/services/data/v59.0/query').query(true).reply(200, {
+        totalSize: 15,
+        done: true,
+        records: mockDocuments,
+      });
 
       const documents = await poller.fetchQueuedDocuments();
 
@@ -185,14 +187,11 @@ describeTests('PollerService', () => {
     });
 
     it('should return empty array when no documents available', async () => {
-      nock(baseUrl)
-        .get('/services/data/v59.0/query')
-        .query(true)
-        .reply(200, {
-          totalSize: 0,
-          done: true,
-          records: [],
-        });
+      nock(baseUrl).get('/services/data/v59.0/query').query(true).reply(200, {
+        totalSize: 0,
+        done: true,
+        records: [],
+      });
 
       const documents = await poller.fetchQueuedDocuments();
 
@@ -290,18 +289,20 @@ describeTests('PollerService', () => {
           options: { storeMergedDocx: false, returnDocxToBrowser: false },
           data: {
             Account: { Name: 'Test Account' },
-            GeneratedDate__formatted: '10 November 2025'
+            GeneratedDate__formatted: '10 November 2025',
           },
           parents: { AccountId: '001000000000001AAA', OpportunityId: null, CaseId: null },
           requestHash: 'sha256:test-hash',
           additionalPdfContentVersionIds: [attachmentId],
           generatedDocumentId: 'a00000000000001AAA',
         }),
-        Attachment_Warnings__c: JSON.stringify([{
-          contentVersionId: '068000000000091AAA',
-          code: 'NOT_A_PDF',
-          message: 'Skipped non-PDF file',
-        }]),
+        Attachment_Warnings__c: JSON.stringify([
+          {
+            contentVersionId: '068000000000091AAA',
+            code: 'NOT_A_PDF',
+            message: 'Skipped non-PDF file',
+          },
+        ]),
         Attempts__c: 0,
         CorrelationId__c: 'test-corr-id',
         Template__c: 'a01000000000001AAA',
@@ -321,13 +322,15 @@ describeTests('PollerService', () => {
         .get('/services/data/v59.0/query')
         .query((query) => typeof query.q === 'string' && query.q.includes(attachmentId))
         .reply(200, {
-          records: [{
-            Id: attachmentId,
-            Title: 'Appendix',
-            FileExtension: 'pdf',
-            FileType: 'PDF',
-            ContentSize: attachmentBytes.length,
-          }],
+          records: [
+            {
+              Id: attachmentId,
+              Title: 'Appendix',
+              FileExtension: 'pdf',
+              FileType: 'PDF',
+              ContentSize: attachmentBytes.length,
+            },
+          ],
         });
 
       nock(baseUrl)
@@ -378,6 +381,150 @@ describeTests('PollerService', () => {
         expect.objectContaining({ code: 'NOT_A_PDF' }),
       ]);
     }, 60000); // 60 second timeout for LibreOffice PDF conversion
+
+    it('stores temporary JPEG page IDs for a pending PDF preview', async () => {
+      const renderSpy = jest.spyOn(PdfPageRenderer.prototype, 'renderPages').mockResolvedValue({
+        imagePages: [Buffer.from('preview-one'), Buffer.from('preview-two')],
+        pageCount: 4,
+      });
+      const mockDoc: QueuedDocument = {
+        Id: 'a00000000000001AAA',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          templateId: '068000000000001AAA',
+          outputFileName: 'pending-preview.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Preview Account' },
+            GeneratedDate__formatted: '10 November 2025',
+          },
+          parents: { AccountId: '001000000000001AAA' },
+          requestHash: 'sha256:pending-preview',
+          generatedDocumentId: 'a00000000000001AAA',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'preview-corr-id',
+        Template__c: 'a01000000000001AAA',
+        PendingPreview__c: true,
+        CreatedDate: new Date().toISOString(),
+      };
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+      let statusUpdate: Record<string, unknown> = {};
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+
+      const uploadedVersionIds = ['068000000000010AAA', '068000000000011AAA', '068000000000012AAA'];
+      const uploadedDocumentIds = [
+        '069000000000010AAA',
+        '069000000000011AAA',
+        '069000000000012AAA',
+      ];
+      uploadedVersionIds.forEach((versionId, index) => {
+        nock(baseUrl)
+          .post('/services/data/v59.0/sobjects/ContentVersion')
+          .reply(201, { id: versionId, success: true });
+        nock(baseUrl)
+          .get('/services/data/v59.0/query')
+          .query(true)
+          .reply(200, { records: [{ ContentDocumentId: uploadedDocumentIds[index] }] });
+      });
+
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`, (body) => {
+          statusUpdate = body;
+          return true;
+        })
+        .reply(204);
+
+      try {
+        const result = await poller.processDocument(mockDoc);
+
+        expect(result.success).toBe(true);
+        expect(renderSpy).toHaveBeenCalledWith(expect.any(Buffer), 20);
+        expect(statusUpdate).toEqual(
+          expect.objectContaining({
+            Status__c: 'SUCCEEDED',
+            OutputFileId__c: uploadedVersionIds[0],
+            Preview_Page_File_Ids__c: JSON.stringify(uploadedVersionIds.slice(1)),
+            Preview_Page_Count__c: 4,
+          })
+        );
+      } finally {
+        renderSpy.mockRestore();
+      }
+    }, 60000);
+
+    it('keeps Save and Cancel available when preview rendering fails', async () => {
+      const renderSpy = jest
+        .spyOn(PdfPageRenderer.prototype, 'renderPages')
+        .mockRejectedValue(new Error('preview renderer unavailable'));
+      const mockDoc: QueuedDocument = {
+        Id: 'a00000000000002AAA',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          templateId: '068000000000001AAA',
+          outputFileName: 'pending-preview-fallback.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Account: { Name: 'Preview Fallback Account' },
+            GeneratedDate__formatted: '10 November 2025',
+          },
+          parents: { AccountId: '001000000000001AAA' },
+          requestHash: 'sha256:pending-preview-fallback',
+          generatedDocumentId: 'a00000000000002AAA',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'preview-fallback-corr-id',
+        Template__c: 'a01000000000001AAA',
+        PendingPreview__c: true,
+        CreatedDate: new Date().toISOString(),
+      };
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+      let statusUpdate: Record<string, unknown> = {};
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000001AAA/VersionData')
+        .reply(200, validDocx);
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, { id: '068000000000020AAA', success: true });
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, { records: [{ ContentDocumentId: '069000000000020AAA' }] });
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`, (body) => {
+          statusUpdate = body;
+          return true;
+        })
+        .reply(204);
+
+      try {
+        const result = await poller.processDocument(mockDoc);
+
+        expect(result.success).toBe(true);
+        expect(statusUpdate).toEqual(
+          expect.objectContaining({
+            Status__c: 'SUCCEEDED',
+            OutputFileId__c: '068000000000020AAA',
+            Preview_Page_File_Ids__c: null,
+            Preview_Page_Count__c: null,
+          })
+        );
+      } finally {
+        renderSpy.mockRestore();
+      }
+    }, 60000);
 
     it('should handle template not found (404) and mark as FAILED', async () => {
       const mockDoc: QueuedDocument = {
@@ -690,19 +837,18 @@ describeTests('PollerService', () => {
         CreatedDate: new Date().toISOString(),
       }));
 
-      nock(baseUrl)
-        .get('/services/data/v59.0/query')
-        .query(true)
-        .reply(200, {
-          totalSize: 10,
-          done: true,
-          records: mockDocs,
-        });
+      nock(baseUrl).get('/services/data/v59.0/query').query(true).reply(200, {
+        totalSize: 10,
+        done: true,
+        records: mockDocs,
+      });
 
       // Lock all documents
       for (let i = 0; i < 10; i++) {
         nock(baseUrl)
-          .patch(`/services/data/v59.0/sobjects/Generated_Document__c/a00${i.toString().padStart(15, '0')}`)
+          .patch(
+            `/services/data/v59.0/sobjects/Generated_Document__c/a00${i.toString().padStart(15, '0')}`
+          )
           .reply(204);
       }
 
@@ -760,12 +906,10 @@ describeTests('PollerService', () => {
         .reply(200, validDocx);
 
       // Mock file upload
-      nock(baseUrl)
-        .post('/services/data/v59.0/sobjects/ContentVersion')
-        .reply(201, {
-          id: '068000000000002AAA',
-          success: true,
-        });
+      nock(baseUrl).post('/services/data/v59.0/sobjects/ContentVersion').reply(201, {
+        id: '068000000000002AAA',
+        success: true,
+      });
 
       // Mock ContentVersion query for ContentDocumentId
       nock(baseUrl)
@@ -836,12 +980,10 @@ describeTests('PollerService', () => {
         .reply(200, validDocx);
 
       // Mock file upload
-      nock(baseUrl)
-        .post('/services/data/v59.0/sobjects/ContentVersion')
-        .reply(201, {
-          id: '068000000000003AAA',
-          success: true,
-        });
+      nock(baseUrl).post('/services/data/v59.0/sobjects/ContentVersion').reply(201, {
+        id: '068000000000003AAA',
+        success: true,
+      });
 
       // Mock ContentVersion query
       nock(baseUrl)

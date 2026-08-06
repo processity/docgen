@@ -4,9 +4,11 @@
  * generation is successful and files need to be linked to parent records.
  *
  * The class dynamically handles linking to ANY Salesforce object type
- * based on the parents field in the segmented request JSON fields.
+ * based on the parents field in the segmented request JSON fields. It runs
+ * without sharing because backend-created files are not yet shared with the
+ * requester; callers validate the source record before invoking this helper.
  */
-public with sharing class ContentDocumentLinkHelper {
+public without sharing class ContentDocumentLinkHelper {
 
     /**
      * Creates ContentDocumentLink records for successfully generated documents.

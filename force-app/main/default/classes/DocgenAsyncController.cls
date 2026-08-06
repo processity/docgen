@@ -4,7 +4,6 @@
 public with sharing class DocgenAsyncController {
     private static final Integer MAX_INLINE_PREVIEW_BYTES = 2500000;
     private static final Integer MAX_PDF_PREVIEW_PAGES = 20;
-    private static final Integer PDF_PREVIEW_TIMEOUT_MS = 120000;
 
     public class StartResult {
         @AuraEnabled public String generatedDocumentId { get; set; }
@@ -358,27 +357,30 @@ public with sharing class DocgenAsyncController {
                 throw new IllegalArgumentException('Only the requesting user can preview this pending document.');
             }
 
-            HttpRequest request = new HttpRequest();
-            request.setEndpoint('callout:' + getNamedCredentialName() + '/preview/pdf-page');
-            request.setMethod('POST');
-            request.setHeader('Content-Type', 'application/json');
-            request.setHeader('Accept', 'application/json');
-            request.setTimeout(PDF_PREVIEW_TIMEOUT_MS);
-            request.setBody(JSON.serialize(new Map<String, Object>{
-                'generatedDocumentId' => String.valueOf(generatedDocumentId),
-                'requestingUserId' => String.valueOf(UserInfo.getUserId()),
-                'pageNumber' => pageNumber,
-                'maxPreviewPages' => MAX_PDF_PREVIEW_PAGES
-            }));
-
-            HttpResponse response;
-            try {
-                response = new Http().send(request);
-            } catch (Exception calloutException) {
-                throw new IllegalArgumentException('PDF preview service is temporarily unavailable. Try again.');
+            if (doc.Preview_Page_Count__c == null || doc.Preview_Page_Count__c < 1) {
+                throw new IllegalArgumentException('PDF preview page metadata is unavailable. Generate the document again.');
             }
 
-            return parsePdfPreviewPage(response, pageNumber);
+            DocgenPreviewFileStore.PreviewPageFile storedPage =
+                DocgenPreviewFileStore.loadPreviewPage(
+                    doc.Preview_Page_File_Ids__c,
+                    pageNumber,
+                    MAX_PDF_PREVIEW_PAGES,
+                    MAX_INLINE_PREVIEW_BYTES
+                );
+            Integer pageCount = doc.Preview_Page_Count__c.intValue();
+            if (pageCount < storedPage.previewPageCount) {
+                throw new IllegalArgumentException('PDF preview page metadata is invalid. Generate the document again.');
+            }
+
+            PdfPreviewPage page = new PdfPreviewPage();
+            page.contentType = 'image/jpeg';
+            page.base64Data = EncodingUtil.base64Encode(storedPage.data);
+            page.pageNumber = pageNumber;
+            page.pageCount = pageCount;
+            page.previewPageCount = storedPage.previewPageCount;
+            page.previewTruncated = pageCount > storedPage.previewPageCount;
+            return page;
         } catch (Exception e) {
             throwAuraException(e.getMessage());
             return null;
@@ -403,10 +405,13 @@ public with sharing class DocgenAsyncController {
             }
 
             ContentDocumentLinkHelper.createLinksFromGeneratedDocuments(new List<Generated_Document__c>{ doc });
-            update new Generated_Document__c(
+            deletePreviewFiles(doc);
+            DocgenGeneratedDocumentWriter.updateTrackingRecord(new Generated_Document__c(
                 Id = doc.Id,
-                PendingPreview__c = false
-            );
+                PendingPreview__c = false,
+                Preview_Page_File_Ids__c = null,
+                Preview_Page_Count__c = null
+            ));
 
             return toStatusResult(queryGeneratedDocument(doc.Id));
         } catch (Exception e) {
@@ -475,7 +480,7 @@ public with sharing class DocgenAsyncController {
         List<Generated_Document__c> existing = [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
                    CorrelationId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c,
-                   Attachment_Warnings__c
+                   Attachment_Warnings__c, Preview_Page_File_Ids__c, Preview_Page_Count__c
             FROM Generated_Document__c
             WHERE RequestHash__c = :requestHash
             LIMIT 1
@@ -487,7 +492,7 @@ public with sharing class DocgenAsyncController {
         return [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
                    CorrelationId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c,
-                   Attachment_Warnings__c
+                   Attachment_Warnings__c, Preview_Page_File_Ids__c, Preview_Page_Count__c
             FROM Generated_Document__c
             WHERE Id = :generatedDocumentId
             LIMIT 1
@@ -567,6 +572,8 @@ public with sharing class DocgenAsyncController {
             Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             OutputFileId__c = null,
             MergedDocxFileId__c = null,
+            Preview_Page_File_Ids__c = null,
+            Preview_Page_Count__c = null,
             LockedUntil__c = null,
             ScheduledRetryTime__c = null,
             PendingPreview__c = false
@@ -599,6 +606,8 @@ public with sharing class DocgenAsyncController {
             Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings),
             OutputFileId__c = null,
             MergedDocxFileId__c = null,
+            Preview_Page_File_Ids__c = null,
+            Preview_Page_Count__c = null,
             LockedUntil__c = null,
             ScheduledRetryTime__c = null,
             PendingPreview__c = false
@@ -834,98 +843,6 @@ public with sharing class DocgenAsyncController {
         }
     }
 
-    private static PdfPreviewPage parsePdfPreviewPage(HttpResponse response, Integer requestedPageNumber) {
-        Integer statusCode = response == null ? 0 : response.getStatusCode();
-        if (statusCode < 200 || statusCode >= 300) {
-            throw new IllegalArgumentException(buildPdfPreviewServiceError(response));
-        }
-
-        PdfPreviewPage page;
-        try {
-            page = (PdfPreviewPage) JSON.deserialize(response.getBody(), PdfPreviewPage.class);
-        } catch (Exception parseException) {
-            throw new IllegalArgumentException('PDF preview service returned an invalid response.');
-        }
-
-        if (
-            page == null ||
-            page.contentType != 'image/jpeg' ||
-            String.isBlank(page.base64Data) ||
-            page.pageNumber == null ||
-            page.pageNumber != requestedPageNumber ||
-            page.pageCount == null ||
-            page.pageCount < page.pageNumber ||
-            page.previewPageCount == null ||
-            page.previewPageCount < page.pageNumber ||
-            page.previewPageCount > MAX_PDF_PREVIEW_PAGES ||
-            page.previewPageCount > page.pageCount ||
-            page.previewTruncated == null
-        ) {
-            throw new IllegalArgumentException('PDF preview service returned an invalid response.');
-        }
-
-        return page;
-    }
-
-    private static String buildPdfPreviewServiceError(HttpResponse response) {
-        Integer statusCode = response == null ? 0 : response.getStatusCode();
-        String message;
-
-        if (statusCode == 400) {
-            message = 'PDF preview request is invalid.';
-        } else if (statusCode == 401 || statusCode == 403) {
-            message = 'PDF preview is not authorized.';
-        } else if (statusCode == 404) {
-            message = 'PDF preview source was not found.';
-        } else if (statusCode == 408 || statusCode == 504) {
-            message = 'PDF preview rendering timed out. Try again.';
-        } else if (statusCode == 413) {
-            message = 'PDF preview page is too large to display.';
-        } else if (statusCode == 422) {
-            message = 'PDF could not be rendered for preview.';
-        } else if (statusCode == 429) {
-            message = 'PDF preview service is busy. Try again.';
-        } else {
-            message = 'PDF preview service is temporarily unavailable. Try again.';
-        }
-
-        String correlationId = getSafeResponseCorrelationId(response);
-        return String.isBlank(correlationId) ? message : message + ' (Ref: ' + correlationId + ')';
-    }
-
-    private static String getSafeResponseCorrelationId(HttpResponse response) {
-        if (response == null || String.isBlank(response.getBody())) {
-            return null;
-        }
-
-        try {
-            Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
-            String correlationId = body == null || body.get('correlationId') == null
-                ? null
-                : String.valueOf(body.get('correlationId'));
-            if (
-                String.isNotBlank(correlationId) &&
-                correlationId.length() <= 100 &&
-                Pattern.matches('[A-Za-z0-9-]+', correlationId)
-            ) {
-                return correlationId;
-            }
-        } catch (Exception parseException) {
-            return null;
-        }
-
-        return null;
-    }
-
-    @TestVisible
-    private static String getNamedCredentialName() {
-        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
-        if (settings != null && String.isNotBlank(settings.Named_Credential_Name__c)) {
-            return settings.Named_Credential_Name__c;
-        }
-        return 'Docgen_Node_API';
-    }
-
     private static String buildPreviewRequestHash(String requestHash, String correlationId) {
         Blob digest = Crypto.generateDigest('SHA-256', Blob.valueOf(requestHash + '|' + correlationId));
         return 'sha256:' + EncodingUtil.convertToHex(digest).toLowerCase();
@@ -1006,24 +923,22 @@ public with sharing class DocgenAsyncController {
         Set<Id> contentVersionIds = new Set<Id>();
         addContentVersionId(contentVersionIds, doc.OutputFileId__c);
         addContentVersionId(contentVersionIds, doc.MergedDocxFileId__c);
+        if (String.isNotBlank(doc.Preview_Page_File_Ids__c)) {
+            contentVersionIds.addAll(
+                DocgenPreviewFileStore.parsePreviewContentVersionIdSet(doc.Preview_Page_File_Ids__c)
+            );
+        }
 
-        if (contentVersionIds.isEmpty()) {
+        DocgenPreviewFileStore.deleteContentVersions(contentVersionIds);
+    }
+
+    private static void deletePreviewFiles(Generated_Document__c doc) {
+        if (String.isBlank(doc.Preview_Page_File_Ids__c)) {
             return;
         }
-
-        List<ContentDocument> contentDocuments = [
-            SELECT Id
-            FROM ContentDocument
-            WHERE Id IN (
-                SELECT ContentDocumentId
-                FROM ContentVersion
-                WHERE Id IN :contentVersionIds
-            )
-        ];
-
-        if (!contentDocuments.isEmpty()) {
-            delete contentDocuments;
-        }
+        DocgenPreviewFileStore.deleteContentVersions(
+            DocgenPreviewFileStore.parsePreviewContentVersionIdSet(doc.Preview_Page_File_Ids__c)
+        );
     }
 
     private static void addContentVersionId(Set<Id> contentVersionIds, String contentVersionId) {

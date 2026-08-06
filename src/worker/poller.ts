@@ -7,10 +7,9 @@ import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templat
 import { mergePptxTemplate } from '../templates/pptx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { appendAdditionalPdfPages } from '../pdf/attachments';
-import {
-  uploadContentVersion,
-  updateGeneratedDocument,
-} from '../sf/files';
+import { deleteContentDocuments, uploadContentVersion, updateGeneratedDocument } from '../sf/files';
+import { PdfPageRenderer } from '../preview/pdf-page-renderer';
+import { PdfPreviewArtifacts, uploadPdfPreviewArtifacts } from '../preview/artifacts';
 import { trackMetric, trackGauge } from '../obs';
 import {
   DocgenError,
@@ -32,6 +31,7 @@ import type {
 
 const logger = pino();
 let config: AppConfig;
+const MAX_PDF_PREVIEW_PAGES = 20;
 const REQUEST_JSON_SEGMENT_FIELDS = [
   'RequestJSON__c',
   'RequestJSON02__c',
@@ -116,10 +116,7 @@ export class PollerService {
 
     // Wait for in-flight jobs to complete
     if (this.inFlightPromises.size > 0) {
-      logger.info(
-        { count: this.inFlightPromises.size },
-        'Waiting for in-flight jobs to complete'
-      );
+      logger.info({ count: this.inFlightPromises.size }, 'Waiting for in-flight jobs to complete');
       await Promise.allSettled(Array.from(this.inFlightPromises));
     }
 
@@ -219,9 +216,7 @@ export class PollerService {
       log.info({ count: documents.length }, 'Fetched queued documents');
 
       // Lock and process documents
-      const results = await Promise.allSettled(
-        documents.map((doc) => this.lockAndProcess(doc))
-      );
+      const results = await Promise.allSettled(documents.map((doc) => this.lockAndProcess(doc)));
 
       // Update statistics
       results.forEach((result) => {
@@ -299,7 +294,8 @@ export class PollerService {
                RequestJSON04__c, RequestJSON05__c, RequestJSON06__c, RequestJSON07__c,
                RequestJSON08__c, RequestJSON09__c, RequestJSON10__c,
                Attempts__c, CorrelationId__c,
-               Template__c, RequestHash__c, CreatedDate, Attachment_Warnings__c
+               Template__c, RequestHash__c, CreatedDate, Attachment_Warnings__c,
+               PendingPreview__c
         FROM Generated_Document__c
         WHERE Status__c = 'QUEUED'
           AND (LockedUntil__c < ${now} OR LockedUntil__c = null)
@@ -358,14 +354,18 @@ export class PollerService {
     const startTime = Date.now(); // Track start time for metrics
     const request: DocgenRequest = JSON.parse(reconstructRequestJson(doc)); // Parse once for the whole function
     const initialAttachmentWarnings = parseAttachmentWarnings(doc.Attachment_Warnings__c);
+    const uploadedContentDocumentIds: string[] = [];
+    let sfApi: SalesforceApi | undefined;
 
     try {
       // Initialize Salesforce API and template service
       const sfAuth = getSalesforceAuth();
       if (!sfAuth) {
-        throw new MissingConfigurationError('Salesforce authentication', { correlationId: doc.CorrelationId__c });
+        throw new MissingConfigurationError('Salesforce authentication', {
+          correlationId: doc.CorrelationId__c,
+        });
       }
-      const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+      sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
       const templateService = new TemplateService(sfApi);
 
       // Detect composite vs single-template document
@@ -376,10 +376,13 @@ export class PollerService {
 
       if (isComposite) {
         // COMPOSITE DOCUMENT PROCESSING
-        log.info({
-          compositeDocumentId: request.compositeDocumentId,
-          templateStrategy: request.templateStrategy,
-        }, 'Processing composite document');
+        log.info(
+          {
+            compositeDocumentId: request.compositeDocumentId,
+            templateStrategy: request.templateStrategy,
+          },
+          'Processing composite document'
+        );
 
         if (request.templateStrategy === 'Own Template') {
           // Strategy 1: Single template with full composite data (all namespaces)
@@ -407,20 +410,29 @@ export class PollerService {
           }
         } else {
           if (request.outputFormat === 'PPTX') {
-            throw new ValidationError('PPTX output is not supported for Concatenate Templates strategy', { correlationId: doc.CorrelationId__c });
+            throw new ValidationError(
+              'PPTX output is not supported for Concatenate Templates strategy',
+              { correlationId: doc.CorrelationId__c }
+            );
           }
 
           // Strategy 2: Concatenate Templates
-          log.debug({ templateCount: request.templates?.length }, 'Processing concatenate templates strategy');
+          log.debug(
+            { templateCount: request.templates?.length },
+            'Processing concatenate templates strategy'
+          );
 
           const sections: TemplateSection[] = [];
 
           for (const templateRef of request.templates!) {
-            log.debug({
-              templateId: templateRef.templateId,
-              namespace: templateRef.namespace,
-              sequence: templateRef.sequence,
-            }, 'Processing template section');
+            log.debug(
+              {
+                templateId: templateRef.templateId,
+                namespace: templateRef.namespace,
+                sequence: templateRef.sequence,
+              },
+              'Processing template section'
+            );
 
             // Fetch template buffer
             const templateBuffer = await templateService.getTemplate(
@@ -431,22 +443,20 @@ export class PollerService {
             // Extract namespace data
             const namespaceData = request.data[templateRef.namespace];
             if (namespaceData === undefined) {
-              throw new MissingNamespaceError(templateRef.namespace, { correlationId: doc.CorrelationId__c });
+              throw new MissingNamespaceError(templateRef.namespace, {
+                correlationId: doc.CorrelationId__c,
+              });
             }
 
             const sectionOptions = optionsWithoutWatermark(request.options);
 
             // Merge template with its namespace data. Composite watermark is applied once after concatenation.
-            const mergedSection = await mergeTemplate(
-              templateBuffer,
-              namespaceData,
-              {
-                locale: request.locale,
-                timezone: request.timezone,
-                imageAllowlist: getConfig().imageAllowlist,
-                ...sectionOptions,
-              }
-            );
+            const mergedSection = await mergeTemplate(templateBuffer, namespaceData, {
+              locale: request.locale,
+              timezone: request.timezone,
+              imageAllowlist: getConfig().imageAllowlist,
+              ...sectionOptions,
+            });
 
             sections.push({
               buffer: mergedSection,
@@ -467,7 +477,9 @@ export class PollerService {
       } else {
         // SINGLE-TEMPLATE DOCUMENT PROCESSING (existing logic)
         if (!request.templateId) {
-          throw new ValidationError('templateId is required for single-template documents', { correlationId: doc.CorrelationId__c });
+          throw new ValidationError('templateId is required for single-template documents', {
+            correlationId: doc.CorrelationId__c,
+          });
         }
 
         log.debug({ templateId: request.templateId }, 'Fetching template');
@@ -518,14 +530,28 @@ export class PollerService {
         outputBuffer = mergedDocx!;
       }
 
+      let renderedPreview: { imagePages: Buffer[]; pageCount: number } | undefined;
+      if (doc.PendingPreview__c === true && request.outputFormat === 'PDF') {
+        try {
+          log.debug('Rendering temporary PDF preview pages');
+          renderedPreview = await new PdfPageRenderer().renderPages(
+            outputBuffer,
+            MAX_PDF_PREVIEW_PAGES
+          );
+        } catch (previewError) {
+          log.warn(
+            { previewError },
+            'Unable to render temporary preview pages; Save and Cancel remain available'
+          );
+        }
+      }
+
       // Upload file
       log.debug('Uploading file to Salesforce');
-      const uploadResult = await uploadContentVersion(
-        outputBuffer,
-        request.outputFileName,
-        sfApi,
-        { correlationId: doc.CorrelationId__c }
-      );
+      const uploadResult = await uploadContentVersion(outputBuffer, request.outputFileName, sfApi, {
+        correlationId: doc.CorrelationId__c,
+      });
+      uploadedContentDocumentIds.push(uploadResult.contentDocumentId);
 
       // ContentDocumentLinks will be created by trigger when Status__c = 'SUCCEEDED'
       // The trigger reads parent IDs from RequestJSON__c
@@ -535,15 +561,36 @@ export class PollerService {
       if (request.options?.storeMergedDocx && request.outputFormat === 'PDF') {
         log.debug('Uploading merged DOCX');
         const docxFileName = request.outputFileName.replace(/\.pdf$/i, '.docx');
-        const docxUpload = await uploadContentVersion(
-          mergedDocx!,
-          docxFileName,
-          sfApi,
-          { correlationId: doc.CorrelationId__c }
-        );
+        const docxUpload = await uploadContentVersion(mergedDocx!, docxFileName, sfApi, {
+          correlationId: doc.CorrelationId__c,
+        });
         mergedDocxFileId = docxUpload.contentVersionId;
+        uploadedContentDocumentIds.push(docxUpload.contentDocumentId);
 
         // ContentDocumentLinks for DOCX will also be created by trigger
+      }
+
+      let previewArtifacts: PdfPreviewArtifacts | undefined;
+      if (renderedPreview) {
+        try {
+          log.debug(
+            { previewPageCount: renderedPreview.imagePages.length },
+            'Uploading temporary PDF preview pages'
+          );
+          previewArtifacts = await uploadPdfPreviewArtifacts(
+            renderedPreview.imagePages,
+            renderedPreview.pageCount,
+            doc.Id,
+            sfApi,
+            { correlationId: doc.CorrelationId__c }
+          );
+          uploadedContentDocumentIds.push(...previewArtifacts.contentDocumentIds);
+        } catch (previewError) {
+          log.warn(
+            { previewError },
+            'Unable to store temporary preview pages; Save and Cancel remain available'
+          );
+        }
       }
 
       // Update document status to SUCCEEDED
@@ -551,7 +598,8 @@ export class PollerService {
         doc.Id,
         uploadResult.contentVersionId,
         mergedDocxFileId,
-        attachmentWarnings
+        attachmentWarnings,
+        previewArtifacts
       );
 
       // Track success metrics
@@ -568,7 +616,10 @@ export class PollerService {
       }
       trackMetric('docgen_duration_ms', duration, successMetrics);
 
-      log.info({ contentVersionId: uploadResult.contentVersionId }, 'Document processed successfully');
+      log.info(
+        { contentVersionId: uploadResult.contentVersionId },
+        'Document processed successfully'
+      );
 
       return {
         success: true,
@@ -576,23 +627,35 @@ export class PollerService {
         contentVersionId: uploadResult.contentVersionId,
       };
     } catch (error: any) {
-      // Wrap error in DocgenError if needed (provides code, statusCode, retryable)
-      const docgenError = error instanceof DocgenError
-        ? error
-        : wrapError(error as Error, {
-            correlationId: doc.CorrelationId__c,
-            templateId: request.templateId,
-            compositeDocumentId: request.compositeDocumentId,
-            generatedDocumentId: doc.Id,
-          });
+      if (sfApi && uploadedContentDocumentIds.length > 0) {
+        await deleteContentDocuments(uploadedContentDocumentIds, sfApi, {
+          correlationId: doc.CorrelationId__c,
+        }).catch((cleanupError) => {
+          log.warn({ cleanupError }, 'Failed to clean up files after document processing failure');
+        });
+      }
 
-      log.error({
-        code: docgenError.code,
-        message: docgenError.message,
-        statusCode: docgenError.statusCode,
-        retryable: docgenError.retryable,
-        stack: docgenError.stack,
-      }, 'Failed to process document');
+      // Wrap error in DocgenError if needed (provides code, statusCode, retryable)
+      const docgenError =
+        error instanceof DocgenError
+          ? error
+          : wrapError(error as Error, {
+              correlationId: doc.CorrelationId__c,
+              templateId: request.templateId,
+              compositeDocumentId: request.compositeDocumentId,
+              generatedDocumentId: doc.Id,
+            });
+
+      log.error(
+        {
+          code: docgenError.code,
+          message: docgenError.message,
+          statusCode: docgenError.statusCode,
+          retryable: docgenError.retryable,
+          stack: docgenError.stack,
+        },
+        'Failed to process document'
+      );
 
       // Detect composite flag for error metrics
       const isCompositeDoc = !!request.compositeDocumentId;
@@ -627,33 +690,33 @@ export class PollerService {
     documentId: string,
     contentVersionId: string,
     mergedDocxFileId?: string,
-    attachmentWarnings: PdfAttachmentWarning[] = []
+    attachmentWarnings: PdfAttachmentWarning[] = [],
+    previewArtifacts?: PdfPreviewArtifacts
   ): Promise<void> {
-    try {
-      const sfAuth = getSalesforceAuth();
-      if (!sfAuth) {
-        throw new MissingConfigurationError('Salesforce authentication');
-      }
-      const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
-
-      await updateGeneratedDocument(
-        documentId,
-        {
-          Status__c: 'SUCCEEDED',
-          OutputFileId__c: contentVersionId,
-          MergedDocxFileId__c: mergedDocxFileId,
-          Attachment_Warnings__c: attachmentWarnings.length
-            ? JSON.stringify(attachmentWarnings)
-            : null,
-        },
-        sfApi
-      );
-
-      logger.debug({ documentId }, 'Updated document status to SUCCEEDED');
-    } catch (error) {
-      logger.error({ documentId, error }, 'Failed to update document status');
-      // Non-fatal - the document was successfully processed
+    const sfAuth = getSalesforceAuth();
+    if (!sfAuth) {
+      throw new MissingConfigurationError('Salesforce authentication');
     }
+    const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+
+    await updateGeneratedDocument(
+      documentId,
+      {
+        Status__c: 'SUCCEEDED',
+        OutputFileId__c: contentVersionId,
+        MergedDocxFileId__c: mergedDocxFileId,
+        Attachment_Warnings__c: attachmentWarnings.length
+          ? JSON.stringify(attachmentWarnings)
+          : null,
+        Preview_Page_File_Ids__c: previewArtifacts
+          ? JSON.stringify(previewArtifacts.contentVersionIds)
+          : null,
+        Preview_Page_Count__c: previewArtifacts?.pageCount ?? null,
+      },
+      sfApi
+    );
+
+    logger.debug({ documentId }, 'Updated document status to SUCCEEDED');
   }
 
   /**
@@ -697,7 +760,13 @@ export class PollerService {
         });
 
         logger.info(
-          { documentId, attempts: newAttempts, backoffMs, scheduledRetryTime, errorCode: docgenError.code },
+          {
+            documentId,
+            attempts: newAttempts,
+            backoffMs,
+            scheduledRetryTime,
+            errorCode: docgenError.code,
+          },
           'Document requeued for retry'
         );
       } else {
@@ -713,7 +782,12 @@ export class PollerService {
         });
 
         logger.warn(
-          { documentId, attempts: newAttempts, retryable: docgenError.retryable, errorCode: docgenError.code },
+          {
+            documentId,
+            attempts: newAttempts,
+            retryable: docgenError.retryable,
+            errorCode: docgenError.code,
+          },
           'Document marked as FAILED'
         );
       }
@@ -737,12 +811,10 @@ export class PollerService {
         return 0; // No more retries
     }
   }
-
 }
 
 function reconstructRequestJson(doc: QueuedDocument): string {
-  return REQUEST_JSON_SEGMENT_FIELDS
-    .map((fieldName) => doc[fieldName])
+  return REQUEST_JSON_SEGMENT_FIELDS.map((fieldName) => doc[fieldName])
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join('');
 }
@@ -753,7 +825,7 @@ function parseAttachmentWarnings(value?: string | null): PdfAttachmentWarning[] 
   }
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as PdfAttachmentWarning[] : [];
+    return Array.isArray(parsed) ? (parsed as PdfAttachmentWarning[]) : [];
   } catch {
     return [];
   }
