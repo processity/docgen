@@ -147,20 +147,7 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
      * @return List of junction records ordered by Sequence__c, filtered by IsActive__c
      */
     private static List<Composite_Document_Template__c> queryJunctionRecords(Id compositeDocId) {
-        return [
-            SELECT Id, Name, Namespace__c, Sequence__c, Document_Template__c,
-                   Inclusion_Formula__c, Composite_Document__r.Template_Strategy__c,
-                   Document_Template__r.Name,
-                   Document_Template__r.TemplateContentVersionId__c,
-                   Document_Template__r.DataSource__c,
-                   Document_Template__r.SOQL__c,
-                   Document_Template__r.ClassName__c,
-                   Document_Template__r.ReturnMultipleRecords__c
-            FROM Composite_Document_Template__c
-            WHERE Composite_Document__c = :compositeDocId
-              AND IsActive__c = true
-            ORDER BY Sequence__c ASC
-        ];
+        return DocgenCompositeConfigReader.loadActiveJunctions(compositeDocId);
     }
 
     /**

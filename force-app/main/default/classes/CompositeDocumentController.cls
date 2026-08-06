@@ -89,6 +89,23 @@ public with sharing class CompositeDocumentController {
     }
 
     /**
+     * Resolve one administrator-configured composite by exact name or description.
+     * The configuration lookup intentionally bypasses record sharing so runtime
+     * users don't need direct access to Composite_Document__c records.
+     */
+    @AuraEnabled(cacheable=true)
+    public static Id resolveActiveCompositeDocumentId(String objectApiName, String configuredName) {
+        if (String.isBlank(objectApiName)) {
+            throw new AuraHandledException('Object API name is required to resolve a composite document.');
+        }
+        if (String.isBlank(configuredName)) {
+            throw new AuraHandledException('Composite document name is required.');
+        }
+
+        return DocgenCompositeConfigReader.findActiveCompositeDocumentId(objectApiName, configuredName);
+    }
+
+    /**
      * Search DocGen templates configured for a primary parent object.
      * Blank search terms return recently viewed templates when available,
      * then fall back to the latest templates for that object.

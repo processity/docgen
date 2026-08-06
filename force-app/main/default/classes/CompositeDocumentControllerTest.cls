@@ -83,6 +83,35 @@ private class CompositeDocumentControllerTest {
     }
 
     @isTest
+    static void testResolveActiveCompositeDocumentId_UsesExactConfiguredDescription() {
+        Composite_Document__c quoteComposite = createQuoteComposite('Quote Template English');
+        insert quoteComposite;
+
+        Test.startTest();
+        Id result = CompositeDocumentController.resolveActiveCompositeDocumentId(
+            'SBQQ__Quote__c',
+            'Quote Template English'
+        );
+        Test.stopTest();
+
+        System.assertEquals(quoteComposite.Id, result);
+    }
+
+    @isTest
+    static void testResolveActiveCompositeDocumentId_BlankNameThrows() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            CompositeDocumentController.resolveActiveCompositeDocumentId('SBQQ__Quote__c', '');
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Should reject a blank configured composite name');
+    }
+
+    @isTest
     static void testSearchActiveTemplates_FiltersByObjectApiName() {
         // Arrange
         DocgenTestDataFactory.createTemplate(

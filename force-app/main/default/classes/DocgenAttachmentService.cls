@@ -157,16 +157,7 @@ public with sharing class DocgenAttachmentService {
 
         if (String.isBlank(requestedOutputFormat)) {
             if (compositeDocumentId != null) {
-                List<Composite_Document__c> composites = [
-                    SELECT Default_Output_Format__c
-                    FROM Composite_Document__c
-                    WHERE Id = :compositeDocumentId
-                    WITH USER_MODE
-                    LIMIT 1
-                ];
-                defaultOutputFormat = composites.isEmpty()
-                    ? null
-                    : composites[0].Default_Output_Format__c;
+                defaultOutputFormat = DocgenCompositeConfigReader.getDefaultOutputFormat(compositeDocumentId);
             } else if (templateId != null || String.isNotBlank(templateName)) {
                 List<Docgen_Template__c> templates;
                 if (templateId != null) {

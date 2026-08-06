@@ -516,7 +516,7 @@ public with sharing class DocgenAsyncController {
         DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
         setParentLookups(doc, recordId, envelope.parents);
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc;
     }
 
@@ -542,7 +542,7 @@ public with sharing class DocgenAsyncController {
         DocgenEnvelopeService.setRequestJSONSegments(doc, DocgenEnvelopeService.toJSON(envelope));
         setCompositeParentLookups(doc, compositeDocumentId, recordIds, envelope.parents);
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc;
     }
 
@@ -574,7 +574,7 @@ public with sharing class DocgenAsyncController {
         DocgenEnvelopeService.setRequestJSONSegments(retryDoc, DocgenEnvelopeService.toJSON(envelope));
         setParentLookups(retryDoc, recordId, envelope.parents);
 
-        update retryDoc;
+        DocgenGeneratedDocumentWriter.updateTrackingRecord(retryDoc);
     }
 
     private static void requeueCompositeDocument(
@@ -606,7 +606,7 @@ public with sharing class DocgenAsyncController {
         DocgenEnvelopeService.setRequestJSONSegments(retryDoc, DocgenEnvelopeService.toJSON(envelope));
         setCompositeParentLookups(retryDoc, compositeDocumentId, recordIds, envelope.parents);
 
-        update retryDoc;
+        DocgenGeneratedDocumentWriter.updateTrackingRecord(retryDoc);
     }
 
     private static Map<String, Id> parseRecordIds(String recordIdsJson) {
@@ -677,18 +677,12 @@ public with sharing class DocgenAsyncController {
             return null;
         }
 
-        List<Composite_Document__c> composites = [
-            SELECT PrimaryParent__c
-            FROM Composite_Document__c
-            WHERE Id = :compositeDocumentId
-            LIMIT 1
-        ];
-
-        if (composites.isEmpty()) {
+        Composite_Document__c composite = DocgenCompositeConfigReader.loadComposite(compositeDocumentId);
+        if (composite == null) {
             return null;
         }
 
-        String primaryParent = composites[0].PrimaryParent__c;
+        String primaryParent = composite.PrimaryParent__c;
         if (String.isBlank(primaryParent)) {
             return recordIds.values()[0];
         }

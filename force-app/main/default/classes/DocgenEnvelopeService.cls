@@ -621,21 +621,11 @@ public with sharing class DocgenEnvelopeService {
      */
     @TestVisible
     private static Composite_Document__c loadCompositeConfig(Id compositeDocId) {
-        List<Composite_Document__c> composites = [
-            SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
-                   StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   Default_Output_Format__c, Output_File_Name_Field__c, Watermark_Text__c,
-                   Watermark_Condition_Field__c, Watermark_Style__c
-            FROM Composite_Document__c
-            WHERE Id = :compositeDocId
-            LIMIT 1
-        ];
-
-        if (composites.isEmpty()) {
+        Composite_Document__c composite = DocgenCompositeConfigReader.loadComposite(compositeDocId);
+        if (composite == null) {
             throw new IllegalArgumentException('Composite document not found: ' + compositeDocId);
         }
-
-        return composites[0];
+        return composite;
     }
 
     /**
@@ -646,15 +636,8 @@ public with sharing class DocgenEnvelopeService {
         Id compositeDocId,
         Set<Id> includedJunctionIds
     ) {
-        List<Composite_Document_Template__c> junctions = [
-            SELECT Id, Namespace__c, Sequence__c,
-                   Document_Template__r.TemplateContentVersionId__c
-            FROM Composite_Document_Template__c
-            WHERE Composite_Document__c = :compositeDocId
-              AND IsActive__c = true
-              AND Id IN :includedJunctionIds
-            ORDER BY Sequence__c ASC
-        ];
+        List<Composite_Document_Template__c> junctions =
+            DocgenCompositeConfigReader.loadIncludedJunctions(compositeDocId, includedJunctionIds);
 
         List<TemplateRef> templates = new List<TemplateRef>();
         for (Composite_Document_Template__c junction : junctions) {

@@ -612,20 +612,11 @@ public with sharing class DocgenController {
         doc.CorrelationId__c = correlationId;
         doc.Attachment_Warnings__c = DocgenAttachmentService.serializeWarnings(envelope.attachmentWarnings);
 
-        // Set parent lookup dynamically based on composite's PrimaryParent
-        // Load composite to get PrimaryParent__c
-        List<Composite_Document__c> composites = [
-            SELECT PrimaryParent__c
-            FROM Composite_Document__c
-            WHERE Id = :compositeDocId
-            LIMIT 1
-        ];
-
-        if (!composites.isEmpty()) {
-            Composite_Document__c composite = composites[0];
-
+        // Set parent lookup dynamically based on the composite configuration.
+        String primaryParent = DocgenCompositeConfigReader.getPrimaryParent(compositeDocId);
+        if (String.isNotBlank(primaryParent)) {
             // Get the primary record ID from recordIds map
-            Id primaryRecordId = determinePrimaryRecordId(composite.PrimaryParent__c, recordIds);
+            Id primaryRecordId = determinePrimaryRecordId(primaryParent, recordIds);
 
             if (primaryRecordId != null) {
                 String objectApiName = primaryRecordId.getSObjectType().getDescribe().getName();
@@ -639,7 +630,7 @@ public with sharing class DocgenController {
             }
         }
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc;
     }
 
@@ -711,7 +702,7 @@ public with sharing class DocgenController {
         // Dynamically set the parent lookup field using reflection
         doc.put(config.Lookup_Field_API_Name__c, recordId);
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc;
     }
 
@@ -1146,7 +1137,7 @@ public with sharing class DocgenController {
             }
         }
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc.Id;
     }
 
@@ -1179,15 +1170,9 @@ public with sharing class DocgenController {
         if (compositeDocId != null && String.isNotBlank(recordIdsJson)) {
             try {
                 Map<String, Id> recordIds = parseRecordIds(recordIdsJson);
-                List<Composite_Document__c> composites = [
-                    SELECT PrimaryParent__c
-                    FROM Composite_Document__c
-                    WHERE Id = :compositeDocId
-                    LIMIT 1
-                ];
-
-                if (!composites.isEmpty()) {
-                    Id primaryRecordId = determinePrimaryRecordId(composites[0].PrimaryParent__c, recordIds);
+                String primaryParent = DocgenCompositeConfigReader.getPrimaryParent(compositeDocId);
+                if (String.isNotBlank(primaryParent)) {
+                    Id primaryRecordId = determinePrimaryRecordId(primaryParent, recordIds);
                     if (primaryRecordId != null) {
                         String objectApiName = primaryRecordId.getSObjectType().getDescribe().getName();
                         DocgenObjectConfigService.validateObjectSupported(objectApiName);
@@ -1201,7 +1186,7 @@ public with sharing class DocgenController {
             }
         }
 
-        insert doc;
+        DocgenGeneratedDocumentWriter.insertTrackingRecord(doc);
         return doc.Id;
     }
 
