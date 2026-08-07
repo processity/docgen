@@ -25,6 +25,13 @@ a compact saved-file card. For PDFs, the card keeps page 1 as its thumbnail.
 Select the card to open Salesforce's native file preview, or select Download to
 retrieve the complete saved file.
 
+In internal Lightning Experience, the card continues to use Salesforce's native
+`filePreview` navigation. In an Experience Cloud site, where that named page is
+not supported consistently, the same card opens the site's native
+ContentDocument record page in a new tab. Salesforce `NavigationMixin.GenerateUrl`
+builds the container-specific URL, so the component does not assume a domain,
+site name, or route prefix and the complete document remains available.
+
 DOCX and PPTX files do not have a pre-Save preview. After Save, their card uses a
 file-type icon and can be selected to open Salesforce's available file view. The
 separate Download action retrieves the complete saved file.
@@ -156,6 +163,9 @@ Download retrieves the complete file.
    saved PDF.
 8. Close the native preview and confirm the DocGen saved state remains visible.
 9. Select Download and confirm the complete original file opens or downloads.
+10. Repeat as an Experience Cloud user. Confirm the card opens the saved PDF
+    on the current site's ContentDocument page and does not navigate to an
+    internal `/lightning/` URL.
 
 ### Cancel
 

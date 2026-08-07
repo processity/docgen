@@ -6,18 +6,24 @@ import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGe
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
 
 const mockNavigate = jest.fn();
+const mockGenerateUrl = jest.fn();
 
 jest.mock(
   'lightning/navigation',
   () => {
     const navigate = Symbol('Navigate');
+    const generateUrl = Symbol('GenerateUrl');
     const NavigationMixin = (Base) =>
       class extends Base {
         [navigate](pageReference) {
           mockNavigate(pageReference);
         }
+        [generateUrl](pageReference) {
+          return mockGenerateUrl(pageReference);
+        }
       };
     NavigationMixin.Navigate = navigate;
+    NavigationMixin.GenerateUrl = generateUrl;
     return { NavigationMixin };
   },
   { virtual: true }
@@ -493,7 +499,17 @@ describe('c-docgen-progress-button', () => {
     expect(savedCard.querySelector('.saved-file-card__title').textContent).toBe('Generated PDF');
     expect(openPreviewButton.disabled).toBe(false);
 
+    mockGenerateUrl.mockResolvedValueOnce('/lightning/r/ContentDocument/069SAVED/view');
     openPreviewButton.click();
+    await flushPromises();
+    expect(mockGenerateUrl).toHaveBeenCalledWith({
+      type: 'standard__recordPage',
+      attributes: {
+        recordId: '069SAVED',
+        objectApiName: 'ContentDocument',
+        actionName: 'view',
+      },
+    });
     expect(mockNavigate).toHaveBeenCalledWith({
       type: 'standard__namedPage',
       attributes: {
@@ -504,6 +520,15 @@ describe('c-docgen-progress-button', () => {
         selectedRecordId: '069SAVED',
       },
     });
+
+    mockGenerateUrl.mockResolvedValueOnce('/globalpartnerportal/s/contentdocument/069SAVED');
+    openPreviewButton.click();
+    await flushPromises();
+    expect(window.open).toHaveBeenCalledWith(
+      '/globalpartnerportal/s/contentdocument/069SAVED',
+      '_blank'
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
 
     const downloadButton = Array.from(element.shadowRoot.querySelectorAll('lightning-button')).find(
       (button) => button.label === 'Download'

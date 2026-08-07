@@ -202,9 +202,24 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
   }
 
   get savedPreviewActionLabel() {
-    return this.savedContentDocumentId
+    return !this.savedPreviewDisabled
       ? `Open ${this.savedFileTitle} in Salesforce preview`
       : 'Salesforce preview is unavailable';
+  }
+
+  get savedContentDocumentPageReference() {
+    if (!this.savedContentDocumentId) {
+      return null;
+    }
+
+    return {
+      type: 'standard__recordPage',
+      attributes: {
+        recordId: this.savedContentDocumentId,
+        objectApiName: 'ContentDocument',
+        actionName: 'view'
+      }
+    };
   }
 
   get displayStatus() {
@@ -542,8 +557,21 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
     }
   }
 
-  handleOpenSavedPreview() {
-    if (!this.savedContentDocumentId) {
+  async handleOpenSavedPreview() {
+    const contentDocumentPageReference = this.savedContentDocumentPageReference;
+    if (!contentDocumentPageReference) {
+      return;
+    }
+
+    let generatedUrl = null;
+    try {
+      generatedUrl = await this[NavigationMixin.GenerateUrl](contentDocumentPageReference);
+    } catch {
+      generatedUrl = null;
+    }
+
+    if (generatedUrl && !generatedUrl.includes('/lightning/r/ContentDocument/')) {
+      window.open(generatedUrl, '_blank');
       return;
     }
 
