@@ -90,9 +90,8 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
       /<w:rPr\b[\s\S]*?<\/w:rPr>/.exec(paragraphXml)?.[0] ?? '';
 
     return paragraphs
-      .map((runs, index) => {
-        const properties = index === 0 ? paragraphProperties : '';
-        return `${openingTag}${properties}${runs
+      .map((runs) => {
+        return `${openingTag}${paragraphProperties}${runs
           .map((run) => runToXml(run, baseRunProperties))
           .join('')}</w:p>`;
       })

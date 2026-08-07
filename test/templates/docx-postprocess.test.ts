@@ -68,6 +68,62 @@ describe('DOCX template post-processing', () => {
     expect(documentXml.match(/w:eastAsia="Meiryo UI"/g)).toHaveLength(2);
   });
 
+  it('preserves template paragraph formatting on every rich-text paragraph', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:pPr>
+          <w:pStyle w:val="ClauseText"/>
+          <w:spacing w:after="120"/>
+          <w:jc w:val="both"/>
+        </w:pPr>
+        <w:r><w:t>Static introduction. {{Clause.Text__c}} Static conclusion.</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Clause: {
+          Text__c: '<p>First justified paragraph.</p><p>Second justified paragraph.</p>',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const generatedParagraphs = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).filter(
+      (paragraph) => paragraph.includes('justified paragraph') || paragraph.includes('Static')
+    );
+
+    expect(generatedParagraphs).toHaveLength(4);
+    for (const paragraph of generatedParagraphs) {
+      expect(paragraph).toContain('<w:pStyle w:val="ClauseText"/>');
+      expect(paragraph).toContain('<w:spacing w:after="120"/>');
+      expect(paragraph).toContain('<w:jc w:val="both"/>');
+    }
+  });
+
+  it('preserves justification on ordinary template text after field merging', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:pPr><w:jc w:val="both"/></w:pPr>
+        <w:r><w:t>Static text before {{Account.Name}} and after.</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, baseOptions);
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const paragraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).find(
+      (candidate) =>
+        candidate.includes('Static text before ') &&
+        candidate.includes('Acme') &&
+        candidate.includes(' and after.')
+    );
+
+    expect(paragraph).toContain('<w:jc w:val="both"/>');
+  });
+
   it('keeps rich-text HTML raw for template helper functions', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:p><w:r><w:t>{{EXEC
