@@ -4,6 +4,16 @@ import { createLogger } from '../utils/logger';
 
 const logger = createLogger('templates:concatenate');
 
+interface ParagraphStyleInfo {
+  basedOn?: string;
+  justification?: string;
+}
+
+interface ParagraphStyleCatalog {
+  defaultStyleId?: string;
+  styles: Map<string, ParagraphStyleInfo>;
+}
+
 /**
  * DOCX Concatenation Service (T-23)
  *
@@ -84,7 +94,15 @@ export async function concatenateDocx(
           );
         }
 
-        const documentXml = await documentXmlFile.async('string');
+        const sourceDocumentXml = await documentXmlFile.async('string');
+        const stylesXmlFile = zip.file('word/styles.xml');
+        const stylesXml = stylesXmlFile ? await stylesXmlFile.async('string') : null;
+        // Later sections lose their styles.xml because the first ZIP is the base.
+        // Preserve their effective alignment as direct paragraph formatting.
+        const documentXml =
+          index > 0 && stylesXml
+            ? materializeInheritedParagraphJustification(sourceDocumentXml, stylesXml)
+            : sourceDocumentXml;
 
         logger.debug(
           {
@@ -146,6 +164,117 @@ export async function concatenateDocx(
     );
     throw error;
   }
+}
+
+function materializeInheritedParagraphJustification(
+  documentXml: string,
+  stylesXml: string
+): string {
+  const catalog = parseParagraphStyleCatalog(stylesXml);
+  if (catalog.styles.size === 0) {
+    return documentXml;
+  }
+
+  return documentXml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraphXml) => {
+    const paragraphProperties = /<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/.exec(paragraphXml)?.[0];
+    if (paragraphProperties && /<w:jc\b/.test(paragraphProperties)) {
+      return paragraphXml;
+    }
+
+    const paragraphStyleTag = paragraphProperties
+      ? /<w:pStyle\b[^>]*\/?>(?:<\/w:pStyle>)?/.exec(paragraphProperties)?.[0]
+      : undefined;
+    const paragraphStyleId = paragraphStyleTag
+      ? getWordAttribute(paragraphStyleTag, 'val')
+      : catalog.defaultStyleId;
+    const justification = resolveParagraphJustification(paragraphStyleId, catalog.styles);
+    if (!justification) {
+      return paragraphXml;
+    }
+
+    const justificationXml = `<w:jc w:val="${escapeXmlAttribute(justification)}"/>`;
+    if (paragraphProperties) {
+      return paragraphXml.replace(
+        paragraphProperties,
+        insertParagraphJustification(paragraphProperties, justificationXml)
+      );
+    }
+
+    return paragraphXml.replace(/^(<w:p\b[^>]*>)/, `$1<w:pPr>${justificationXml}</w:pPr>`);
+  });
+}
+
+function parseParagraphStyleCatalog(stylesXml: string): ParagraphStyleCatalog {
+  const catalog: ParagraphStyleCatalog = { styles: new Map() };
+
+  for (const match of stylesXml.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    const attributes = match[1];
+    const body = match[2];
+    if (getWordAttribute(attributes, 'type') !== 'paragraph') {
+      continue;
+    }
+
+    const styleId = getWordAttribute(attributes, 'styleId');
+    if (!styleId) {
+      continue;
+    }
+
+    const basedOnTag = /<w:basedOn\b[^>]*\/?>(?:<\/w:basedOn>)?/.exec(body)?.[0];
+    const justificationTag = /<w:jc\b[^>]*\/?>(?:<\/w:jc>)?/.exec(body)?.[0];
+    catalog.styles.set(styleId, {
+      basedOn: basedOnTag ? getWordAttribute(basedOnTag, 'val') : undefined,
+      justification: justificationTag ? getWordAttribute(justificationTag, 'val') : undefined,
+    });
+
+    if (['1', 'true', 'on'].includes(getWordAttribute(attributes, 'default') ?? '')) {
+      catalog.defaultStyleId = styleId;
+    }
+  }
+
+  return catalog;
+}
+
+function resolveParagraphJustification(
+  styleId: string | undefined,
+  styles: Map<string, ParagraphStyleInfo>,
+  visited = new Set<string>()
+): string | undefined {
+  if (!styleId || visited.has(styleId)) {
+    return undefined;
+  }
+
+  visited.add(styleId);
+  const style = styles.get(styleId);
+  if (!style) {
+    return undefined;
+  }
+
+  return style.justification ?? resolveParagraphJustification(style.basedOn, styles, visited);
+}
+
+function getWordAttribute(xml: string, name: string): string | undefined {
+  const match = new RegExp(`\\bw:${name}\\s*=\\s*(["'])(.*?)\\1`).exec(xml);
+  return match?.[2];
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function insertParagraphJustification(
+  paragraphProperties: string,
+  justificationXml: string
+): string {
+  const followingProperty =
+    /<w:(?:textDirection|textAlignment|textboxTightWrap|outlineLvl|divId|cnfStyle|rPr|sectPr|pPrChange)\b/.exec(
+      paragraphProperties
+    );
+  const insertionIndex = followingProperty?.index ?? paragraphProperties.lastIndexOf('</w:pPr>');
+  return `${paragraphProperties.slice(0, insertionIndex)}${justificationXml}${paragraphProperties.slice(insertionIndex)}`;
 }
 
 /**

@@ -114,6 +114,11 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     return Boolean(this.savedDownloadUrl);
   }
 
+  get experienceSitePrefix() {
+    const routeMatch = (window.location.pathname || '').match(/^(.*)\/s(?:\/|$)/);
+    return routeMatch ? routeMatch[1] : null;
+  }
+
   get savedFileTitle() {
     const format = this.outputFormatLabel || 'Document';
     return `Generated ${format}`;
@@ -510,8 +515,15 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
   }
 
   handleDownloadSavedFile() {
+    if (this.experienceSitePrefix !== null && this.savedContentDocumentId) {
+      const downloadPath = `${this.experienceSitePrefix}/sfc/servlet.shepherd/document/download/${this.savedContentDocumentId}?operationContext=S1`;
+      window.open(new URL(downloadPath, window.location.origin).href, '_blank');
+      return;
+    }
+
     if (this.savedDownloadUrl) {
-      window.open(this.savedDownloadUrl, '_blank');
+      const downloadUrl = new URL(this.savedDownloadUrl, window.location.origin).href;
+      window.open(downloadUrl, '_blank');
     }
   }
 

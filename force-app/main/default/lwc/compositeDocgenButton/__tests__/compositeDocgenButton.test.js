@@ -169,6 +169,7 @@ describe('c-composite-docgen-button', () => {
     while (document.body.firstChild) {
       document.body.removeChild(document.body.firstChild);
     }
+    window.history.replaceState({}, '', '/');
     // Clear all mocks
     jest.clearAllMocks();
   });
@@ -670,7 +671,17 @@ describe('c-composite-docgen-button', () => {
 
     const downloadButton = findButton(element, 'Download');
     downloadButton.click();
-    expect(window.open).toHaveBeenCalledWith('/sfc/servlet.shepherd/version/download/068123', '_blank');
+    expect(window.open).toHaveBeenCalledWith(
+      `${window.location.origin}/sfc/servlet.shepherd/version/download/068123`,
+      '_blank'
+    );
+
+    window.history.pushState({}, '', '/globalpartnerportal/s/quote/001123');
+    downloadButton.click();
+    expect(window.open).toHaveBeenLastCalledWith(
+      `${window.location.origin}/globalpartnerportal/sfc/servlet.shepherd/document/download/069SAVED?operationContext=S1`,
+      '_blank'
+    );
     expect(saveHandler).toHaveBeenCalledTimes(1);
   });
 

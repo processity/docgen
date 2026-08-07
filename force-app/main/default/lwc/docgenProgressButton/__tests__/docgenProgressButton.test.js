@@ -100,6 +100,7 @@ describe('c-docgen-progress-button', () => {
     while (document.body.firstChild) {
       document.body.removeChild(document.body.firstChild);
     }
+    window.history.replaceState({}, '', '/');
     jest.clearAllMocks();
   });
 
@@ -535,7 +536,14 @@ describe('c-docgen-progress-button', () => {
     );
     downloadButton.click();
     expect(window.open).toHaveBeenCalledWith(
-      '/sfc/servlet.shepherd/version/download/068SAVED',
+      `${window.location.origin}/sfc/servlet.shepherd/version/download/068SAVED`,
+      '_blank'
+    );
+
+    window.history.pushState({}, '', '/academicportal/s/quote/001123');
+    downloadButton.click();
+    expect(window.open).toHaveBeenLastCalledWith(
+      `${window.location.origin}/academicportal/sfc/servlet.shepherd/document/download/069SAVED?operationContext=S1`,
       '_blank'
     );
     expect(saveHandler).toHaveBeenCalledTimes(1);

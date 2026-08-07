@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { concatenateDocx } from '../../src/templates/concatenate';
+import { mergeTemplate } from '../../src/templates/merge';
 import type { TemplateSection } from '../../src/types';
 import { createTestDocxWithContent, createTestDocxWithHeader } from '../helpers/test-docx';
 
@@ -157,6 +158,77 @@ describe('concatenateDocx', () => {
       expect(documentXml).toContain('More formatted content');
     });
 
+    it('should preserve inherited paragraph justification from later sections', async () => {
+      const baseDocx = await createTestDocxWithContent('Base section');
+      const justifiedDocx = await addParagraphStyles(
+        await createTestDocxWithContent('Justified clause'),
+        `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+            <w:pPr><w:jc w:val="both"/></w:pPr>
+          </w:style>
+          <w:style w:type="paragraph" w:styleId="ListParagraph">
+            <w:basedOn w:val="Normal"/>
+          </w:style>
+        </w:styles>`,
+        '<w:pPr><w:pStyle w:val="ListParagraph"/></w:pPr>'
+      );
+
+      const sections: TemplateSection[] = [
+        { buffer: baseDocx, sequence: 1, namespace: 'Base' },
+        { buffer: justifiedDocx, sequence: 2, namespace: 'Clauses' }
+      ];
+
+      const result = await concatenateDocx(sections, mockCorrelationId);
+      const zip = await JSZip.loadAsync(result);
+      const documentXml = await zip.file('word/document.xml')!.async('string');
+      const clauseParagraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).find(
+        paragraph => paragraph.includes('Justified clause')
+      );
+
+      expect(clauseParagraph).toContain('<w:pStyle w:val="ListParagraph"/>');
+      expect(clauseParagraph).toContain('<w:jc w:val="both"/>');
+    });
+
+    it('should preserve inherited justification for expanded rich-text paragraphs', async () => {
+      const baseDocx = await createTestDocxWithContent('Base section');
+      const clauseTemplate = await addParagraphStyles(
+        await createTestDocxWithContent('{{Clause.Text__c}}'),
+        `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+            <w:pPr><w:jc w:val="both"/></w:pPr>
+          </w:style>
+          <w:style w:type="paragraph" w:styleId="ListParagraph">
+            <w:basedOn w:val="Normal"/>
+          </w:style>
+        </w:styles>`,
+        '<w:pPr><w:pStyle w:val="ListParagraph"/></w:pPr>'
+      );
+      const mergedClauses = await mergeTemplate(
+        clauseTemplate,
+        { Clause: { Text__c: '<p>First clause.</p><p>Second clause.</p>' } },
+        { locale: 'en-US', timezone: 'America/New_York' }
+      );
+
+      const result = await concatenateDocx(
+        [
+          { buffer: baseDocx, sequence: 1, namespace: 'Base' },
+          { buffer: mergedClauses, sequence: 2, namespace: 'Clauses' }
+        ],
+        mockCorrelationId
+      );
+      const zip = await JSZip.loadAsync(result);
+      const documentXml = await zip.file('word/document.xml')!.async('string');
+      const clauseParagraphs = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).filter(
+        paragraph => paragraph.includes('clause.')
+      );
+
+      expect(clauseParagraphs).toHaveLength(2);
+      for (const paragraph of clauseParagraphs) {
+        expect(paragraph).toContain('<w:pStyle w:val="ListParagraph"/>');
+        expect(paragraph).toContain('<w:jc w:val="both"/>');
+      }
+    });
+
     it('should preserve source page margins in section breaks', async () => {
       const docx1 = await addSectionProperties(
         await createTestDocxWithContent('Narrow Margin Section'),
@@ -277,6 +349,25 @@ async function addParagraphSectionProperties(
   const documentXml = await zip.file('word/document.xml')!.async('string');
   const sectionParagraph = `<w:p><w:pPr>${sectionProperties}</w:pPr></w:p>`;
   zip.file('word/document.xml', documentXml.replace('</w:body>', `${sectionParagraph}</w:body>`));
+  return zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+}
+
+async function addParagraphStyles(
+  buffer: Buffer,
+  stylesXml: string,
+  paragraphProperties: string
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  zip.file(
+    'word/document.xml',
+    documentXml.replace(/(<w:p>)/, `$1${paragraphProperties}`)
+  );
+  zip.file('word/styles.xml', stylesXml);
   return zip.generateAsync({
     type: 'nodebuffer',
     compression: 'DEFLATE',

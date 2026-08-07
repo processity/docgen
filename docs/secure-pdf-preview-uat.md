@@ -36,6 +36,12 @@ DOCX and PPTX files do not have a pre-Save preview. After Save, their card uses 
 file-type icon and can be selected to open Salesforce's available file view. The
 separate Download action retrieves the complete saved file.
 
+In Experience Cloud, the Download action follows Salesforce's native file
+download pattern: it derives the active site prefix from the current `/s/`
+route and downloads by `ContentDocumentId` through `document/download` with
+`operationContext=S1`. Internal Lightning continues to use the saved
+ContentVersion download URL.
+
 ## How Secure Preview Is Delivered
 
 For a pending PDF preview, the backend renders the first 20 pages and uploads
