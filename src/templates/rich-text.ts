@@ -90,13 +90,22 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
       /<w:rPr\b[\s\S]*?<\/w:rPr>/.exec(paragraphXml)?.[0] ?? '';
 
     return paragraphs
-      .map((runs) => {
-        return `${openingTag}${paragraphProperties}${runs
+      .map((runs, index) => {
+        const properties =
+          index === 0 ? paragraphProperties : removeParagraphNumbering(paragraphProperties);
+        return `${openingTag}${properties}${runs
           .map((run) => runToXml(run, baseRunProperties))
           .join('')}</w:p>`;
       })
       .join('');
   });
+}
+
+function removeParagraphNumbering(paragraphProperties: string): string {
+  return paragraphProperties.replace(
+    /<w:numPr\b[^>]*>[\s\S]*?<\/w:numPr>|<w:numPr\b[^>]*\/>/g,
+    ''
+  );
 }
 
 function parseRichTextHtml(html: string): RichTextRun[][] {

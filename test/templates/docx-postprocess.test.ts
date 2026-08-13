@@ -103,6 +103,53 @@ describe('DOCX template post-processing', () => {
     }
   });
 
+  it('keeps numbering only on the first paragraph expanded from rich text', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:pPr>
+          <w:pStyle w:val="ClauseText"/>
+          <w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr>
+          <w:spacing w:after="120"/>
+          <w:ind w:left="720" w:hanging="360"/>
+          <w:jc w:val="both"/>
+        </w:pPr>
+        <w:r><w:t>{{Clause.Text__c}}</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Clause: {
+          Text__c:
+            '<p><strong>RCM Platform Units.</strong> First paragraph.</p><p><br></p><p>Continuation paragraph.</p>',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const generatedParagraphs = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).filter(
+      (paragraph) =>
+        paragraph.includes('RCM Platform Units.') ||
+        paragraph.includes('<w:br/>') ||
+        paragraph.includes('Continuation paragraph.')
+    );
+
+    expect(generatedParagraphs).toHaveLength(3);
+    expect(generatedParagraphs[0]).toContain('<w:numPr>');
+    expect(generatedParagraphs[1]).not.toContain('<w:numPr>');
+    expect(generatedParagraphs[2]).not.toContain('<w:numPr>');
+    expect(generatedParagraphs[1]).toContain('<w:br/>');
+
+    for (const paragraph of generatedParagraphs) {
+      expect(paragraph).toContain('<w:pStyle w:val="ClauseText"/>');
+      expect(paragraph).toContain('<w:spacing w:after="120"/>');
+      expect(paragraph).toContain('<w:ind w:left="720" w:hanging="360"/>');
+      expect(paragraph).toContain('<w:jc w:val="both"/>');
+    }
+  });
+
   it('preserves justification on ordinary template text after field merging', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:p>
