@@ -92,7 +92,9 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
     return paragraphs
       .map((runs, index) => {
         const properties =
-          index === 0 ? paragraphProperties : removeParagraphNumbering(paragraphProperties);
+          index === 0
+            ? paragraphProperties
+            : createContinuationParagraphProperties(paragraphProperties);
         return `${openingTag}${properties}${runs
           .map((run) => runToXml(run, baseRunProperties))
           .join('')}</w:p>`;
@@ -101,10 +103,21 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
   });
 }
 
-function removeParagraphNumbering(paragraphProperties: string): string {
-  return paragraphProperties.replace(
+function createContinuationParagraphProperties(paragraphProperties: string): string {
+  const hasNumbering = /<w:numPr\b/.test(paragraphProperties);
+  const properties = paragraphProperties.replace(
     /<w:numPr\b[^>]*>[\s\S]*?<\/w:numPr>|<w:numPr\b[^>]*\/>/g,
     ''
+  );
+  if (!hasNumbering) {
+    return properties;
+  }
+
+  return properties.replace(/<w:ind\b[^>]*>/g, (indent) =>
+    indent.replace(
+      /\s+w:(?:hanging|hangingChars|firstLine|firstLineChars)\s*=\s*(?:"[^"]*"|'[^']*')/g,
+      ''
+    )
   );
 }
 

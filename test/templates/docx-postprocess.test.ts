@@ -110,7 +110,7 @@ describe('DOCX template post-processing', () => {
           <w:pStyle w:val="ClauseText"/>
           <w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr>
           <w:spacing w:after="120"/>
-          <w:ind w:left="720" w:hanging="360"/>
+          <w:ind w:left="0" w:hanging="357"/>
           <w:jc w:val="both"/>
         </w:pPr>
         <w:r><w:t>{{Clause.Text__c}}</w:t></w:r>
@@ -138,14 +138,17 @@ describe('DOCX template post-processing', () => {
 
     expect(generatedParagraphs).toHaveLength(3);
     expect(generatedParagraphs[0]).toContain('<w:numPr>');
+    expect(generatedParagraphs[0]).toContain('w:hanging="357"');
     expect(generatedParagraphs[1]).not.toContain('<w:numPr>');
     expect(generatedParagraphs[2]).not.toContain('<w:numPr>');
+    expect(generatedParagraphs[1]).not.toContain('w:hanging=');
+    expect(generatedParagraphs[2]).not.toContain('w:hanging=');
     expect(generatedParagraphs[1]).toContain('<w:br/>');
 
     for (const paragraph of generatedParagraphs) {
       expect(paragraph).toContain('<w:pStyle w:val="ClauseText"/>');
       expect(paragraph).toContain('<w:spacing w:after="120"/>');
-      expect(paragraph).toContain('<w:ind w:left="720" w:hanging="360"/>');
+      expect(paragraph).toContain('w:left="0"');
       expect(paragraph).toContain('<w:jc w:val="both"/>');
     }
   });
