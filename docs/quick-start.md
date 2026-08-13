@@ -223,8 +223,8 @@ npm start
 2. Navigate to the **Docgen** app
 3. Go to the **Docgen Templates** tab
 4. Create a new template record
-5. Set **Default Output Format** to `PDF`, `DOCX`, or `PPTX`
-6. Upload a DOCX or PPTX file with merge fields (see [Template Authoring Guide](./template-authoring.md))
+5. Set **Default Output Format** to `PDF`, `DOCX`, `PPTX`, or `XLSX`
+6. Upload a matching DOCX, PPTX, or XLSX template. For Excel, see the [Excel Template Authoring Guide](./excel-template-authoring.md).
 
 ### 2. Add the LWC Button to a Page
 
@@ -237,7 +237,7 @@ npm start
 
 1. On the record page, click the **Generate Document** button
 2. Select your template from the dropdown
-3. Leave the component output format blank to use the template default, or choose an override (`PDF`, `DOCX`, or `PPTX`)
+3. Leave the component output format blank to use the template default, or choose an override (`PDF`, `DOCX`, `PPTX`, or `XLSX`)
 4. Click **Generate**
 5. The generated file will open or download based on format, and the file will be attached to the record
 

@@ -66,7 +66,7 @@ public with sharing class DocgenController {
      *
      * @param templateId ID of the Docgen_Template__c record
      * @param recordId ID of the source record (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format (PDF, DOCX, or PPTX)
+     * @param outputFormat Output format (PDF, DOCX, PPTX, or XLSX)
      * Existing overload defaults readOnlyWord to false.
      * @return GenerateResult containing either downloadUrl (success) or errorMessage (failure)
      */
@@ -185,7 +185,7 @@ public with sharing class DocgenController {
      *
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds JSON string of record IDs (e.g., '{"accountId":"001xxx","contactId":"003xxx"}')
-     * @param outputFormat Output format (PDF, DOCX, or PPTX)
+     * @param outputFormat Output format (PDF, DOCX, PPTX, or XLSX)
      * Existing overload defaults readOnlyWord to false.
      * @return Download URL for the generated document
      * @throws AuraHandledException on validation or generation failures
@@ -538,7 +538,7 @@ public with sharing class DocgenController {
      *
      * @param compositeDocId Composite_Document__c ID
      * @param recordIds Map of variable names to record IDs
-     * @param outputFormat Output format (PDF, DOCX, or PPTX)
+     * @param outputFormat Output format (PDF, DOCX, PPTX, or XLSX)
      * @param correlationId Correlation ID for tracking
      * @return Envelope for Node API request
      */

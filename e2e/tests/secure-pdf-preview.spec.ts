@@ -10,7 +10,7 @@ import {
 } from '../helpers/secure-pdf-preview';
 
 const SOURCES: PreviewSource[] = ['direct', 'composite'];
-const UNSUPPORTED_PREVIEW_FORMATS: Array<Exclude<PreviewFormat, 'PDF'>> = ['DOCX', 'PPTX'];
+const UNSUPPORTED_PREVIEW_FORMATS: Array<Exclude<PreviewFormat, 'PDF'>> = ['DOCX', 'PPTX', 'XLSX'];
 const DOWNLOAD_URL_PATTERN =
   /\/sfc\/servlet\.shepherd\/(?:version|document)\/download\/|\/servlet\/servlet\.FileDownload/i;
 

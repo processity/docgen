@@ -3,6 +3,7 @@ import { FastifyInstance } from 'fastify';
 import nock from 'nock';
 import { generateKeyPairSync } from 'crypto';
 import { PDFDocument } from 'pdf-lib';
+import ExcelJS from 'exceljs';
 import { build } from '../src/server';
 import type { DocgenRequest, DocgenResponse } from '../src/types';
 import { createTestDocxBuffer, createTestDocxWithContent } from './helpers/test-docx';
@@ -440,6 +441,82 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
 
       const body: DocgenResponse = JSON.parse(response.body);
       expect(body.contentVersionId).toBe(testContentVersionId);
+    });
+
+    it('should generate and upload an XLSX document without PDF attachment processing', async () => {
+      const testTemplateId = '068000000000113AAA';
+      const testContentVersionId = '068000000000114AAA';
+      const testContentDocumentId = '069000000000112AAA';
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Offer');
+      worksheet.getCell('A1').value = '{{Quote.Name}}';
+      worksheet.getCell('A2').value = '{{TABLE:Quote.LineItems.Name}}';
+      const templateBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      let uploadedVersionData = '';
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${testTemplateId}/VersionData`)
+        .reply(200, templateBuffer);
+
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.Title).toBe('test-output');
+          expect(body.PathOnClient).toBe('test-output.xlsx');
+          uploadedVersionData = body.VersionData;
+          return true;
+        })
+        .reply(201, {
+          id: testContentVersionId,
+          success: true,
+          errors: [],
+        });
+
+      nock('https://test.salesforce.com')
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          records: [{ ContentDocumentId: testContentDocumentId }],
+        });
+
+      const request: DocgenRequest = {
+        templateId: testTemplateId,
+        outputFileName: 'test-output.xlsx',
+        outputFormat: 'XLSX',
+        locale: 'en-US',
+        timezone: 'America/New_York',
+        options: {
+          storeMergedDocx: false,
+          returnDocxToBrowser: false,
+        },
+        data: {
+          Quote: {
+            Name: 'Q-1001',
+            LineItems: [{ Name: 'Alpha' }, { Name: 'Beta' }],
+          },
+        },
+        additionalPdfContentVersionIds: ['068000000000090AAA'],
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: request,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body: DocgenResponse = JSON.parse(response.body);
+      expect(body.contentVersionId).toBe(testContentVersionId);
+      expect(body.appendedAttachmentCount).toBeUndefined();
+
+      const generatedWorkbook = new ExcelJS.Workbook();
+      const generatedBytes = Buffer.from(uploadedVersionData, 'base64');
+      await generatedWorkbook.xlsx.load(
+        generatedBytes as unknown as Parameters<typeof generatedWorkbook.xlsx.load>[0]
+      );
+      const generatedSheet = generatedWorkbook.getWorksheet('Offer')!;
+      expect(generatedSheet.getCell('A1').value).toBe('Q-1001');
+      expect(generatedSheet.getCell('A2').value).toBe('Alpha');
+      expect(generatedSheet.getCell('A3').value).toBe('Beta');
     });
 
     it('should handle ContentDocumentLink creation when parents are provided', async () => {
@@ -1275,6 +1352,75 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
   });
 
   describe('Composite Documents (T-24)', () => {
+    it('should generate XLSX with the Own Template strategy', async () => {
+      const compositeDocId = 'a00000000000021AAA';
+      const testTemplateId = '068000000000120AAA';
+      const testContentVersionId = '068000000000121AAA';
+      const testContentDocumentId = '069000000000120AAA';
+      const workbook = new ExcelJS.Workbook();
+      workbook.addWorksheet('Composite').getCell('A1').value = '{{Account.Name}}';
+      const templateBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${testTemplateId}/VersionData`)
+        .reply(200, templateBuffer);
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion')
+        .reply(201, { id: testContentVersionId, success: true, errors: [] });
+      nock('https://test.salesforce.com')
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, { records: [{ ContentDocumentId: testContentDocumentId }] });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: {
+          compositeDocumentId: compositeDocId,
+          templateId: testTemplateId,
+          templateStrategy: 'Own Template',
+          outputFileName: 'composite.xlsx',
+          outputFormat: 'XLSX',
+          locale: 'en-US',
+          timezone: 'America/New_York',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: { Account: { Name: 'Acme Ltd' } },
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body).contentVersionId).toBe(testContentVersionId);
+    });
+
+    it('should reject XLSX with the Concatenate Templates strategy', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: {
+          compositeDocumentId: 'a00000000000022AAA',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            {
+              templateId: '068000000000122AAA',
+              namespace: 'Account',
+              sequence: 1,
+            },
+          ],
+          outputFileName: 'composite.xlsx',
+          outputFormat: 'XLSX',
+          locale: 'en-US',
+          timezone: 'America/New_York',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: { Account: { Name: 'Acme Ltd' } },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).message).toContain(
+        'XLSX output is not supported for Concatenate Templates strategy'
+      );
+    });
+
     it('should generate a PDF with the Own Template strategy', async () => {
       const compositeDocId = 'a00000000000001AAA';
       const testTemplateId = '068000000000020AAA';

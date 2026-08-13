@@ -391,6 +391,30 @@ private class BatchDocgenEnqueueTest {
     }
 
     /**
+     * Test: XLSX output format supported
+     */
+    @isTest
+    static void testXlsxOutputFormat() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        List<Account> accounts = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        Database.executeBatch(
+            new BatchDocgenEnqueue(template.Id, new List<Id>{accounts[0].Id}, 'XLSX'),
+            200
+        );
+        Test.stopTest();
+
+        Generated_Document__c doc = [
+            SELECT OutputFormat__c, RequestJSON__c
+            FROM Generated_Document__c
+            LIMIT 1
+        ];
+        System.assertEquals('XLSX', doc.OutputFormat__c, 'OutputFormat should be XLSX');
+        System.assert(doc.RequestJSON__c.contains('"outputFormat":"XLSX"'), 'Envelope should contain XLSX');
+    }
+
+    /**
      * ========================================================================
      * COMPOSITE DOCUMENT TESTS (T-22)
      * ========================================================================

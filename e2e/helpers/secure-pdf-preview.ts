@@ -4,7 +4,7 @@ import { getScratchOrgInfo } from '../utils/scratch-org';
 export const PREVIEW_E2E_CONFIG_ENV = 'OTO3827_PREVIEW_E2E_CONFIG';
 
 export type PreviewSource = 'direct' | 'composite';
-export type PreviewFormat = 'PDF' | 'DOCX' | 'PPTX';
+export type PreviewFormat = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX';
 
 export interface PreviewScenario {
   url: string;
@@ -76,7 +76,8 @@ let cachedConfig: LoadedPreviewConfig | undefined;
  * {
  *   "direct": {
  *     "PDF": { "url": "/lightning/...", "generateButton": "Generate PDF" },
- *     "DOCX": { "url": "/lightning/...", "generateButton": "Generate DOCX" }
+ *     "DOCX": { "url": "/lightning/...", "generateButton": "Generate DOCX" },
+ *     "XLSX": { "url": "/lightning/...", "generateButton": "Generate XLSX" }
  *   },
  *   "composite": {
  *     "PDF": { "url": "/lightning/...", "generateButton": "Generate PDF" }

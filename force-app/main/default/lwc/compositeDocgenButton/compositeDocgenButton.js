@@ -12,7 +12,7 @@ const DEFAULT_MAX_POLL_SECONDS = 180;
 
 /**
  * LWC component for interactive composite document generation
- * Allows users to generate PDF/DOCX/PPTX documents from multiple data sources.
+ * Allows users to generate PDF/DOCX/PPTX/XLSX documents from multiple data sources.
  *
  * @component compositeDocgenButton
  * @example
@@ -33,14 +33,14 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
   @api compositeDocumentId;
 
   /**
-   * Output format override (PDF, DOCX, or PPTX). Blank uses the composite default.
+   * Output format override (PDF, DOCX, PPTX, or XLSX). Blank uses the composite default.
    * @type {string}
    */
   @api outputFormat;
 
   /**
    * Protect generated DOCX content while leaving supported form fields editable.
-   * Ignored for PDF and PPTX output.
+   * Ignored for PDF, PPTX, and XLSX output.
    * @type {boolean}
    */
   @api readOnlyWord = false;
@@ -198,6 +198,9 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
     }
     if (this.normalizedPreviewFormat === 'PPTX') {
       return 'doctype:ppt';
+    }
+    if (this.normalizedPreviewFormat === 'XLSX') {
+      return 'doctype:excel';
     }
     return 'doctype:attachment';
   }

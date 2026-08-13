@@ -55,7 +55,8 @@ const OUTPUT_FORMAT_OPTIONS = [
     { label: 'Template Default', value: '' },
     { label: 'PDF', value: 'PDF' },
     { label: 'DOCX', value: 'DOCX' },
-    { label: 'PPTX', value: 'PPTX' }
+    { label: 'PPTX', value: 'PPTX' },
+    { label: 'XLSX', value: 'XLSX' }
 ];
 
 export default class DocgenTestPage extends NavigationMixin(LightningElement) {
@@ -241,6 +242,9 @@ export default class DocgenTestPage extends NavigationMixin(LightningElement) {
         const normalized = outputFormat.toUpperCase();
         if (normalized === 'PPT') {
             return 'PPTX';
+        }
+        if (normalized === 'XLS') {
+            return 'XLSX';
         }
 
         return OUTPUT_FORMAT_OPTIONS.some(option => option.value === normalized) ? normalized : '';

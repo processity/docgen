@@ -17,13 +17,13 @@ public with sharing class DocgenEnvelopeService {
         'RequestJSON09__c',
         'RequestJSON10__c'
     };
-    private static final Set<String> OUTPUT_FORMATS_WITH_EXTENSIONS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
+    private static final Set<String> OUTPUT_FORMATS_WITH_EXTENSIONS = new Set<String>{'PDF', 'DOCX', 'PPTX', 'XLSX'};
 
     public static String resolveOutputFormat(String requestedOutputFormat, String defaultOutputFormat) {
         String candidate = String.isBlank(requestedOutputFormat) ? defaultOutputFormat : requestedOutputFormat;
         String normalized = String.isBlank(candidate) ? 'PDF' : candidate.trim().toUpperCase();
         if (!OUTPUT_FORMATS_WITH_EXTENSIONS.contains(normalized)) {
-            throw new IllegalArgumentException('Output Format must be PDF, DOCX, or PPTX');
+            throw new IllegalArgumentException('Output Format must be PDF, DOCX, PPTX, or XLSX');
         }
         return normalized;
     }
@@ -73,7 +73,7 @@ public with sharing class DocgenEnvelopeService {
      *
      * @param recordId Source record ID
      * @param template Template configuration
-     * @param outputFormat PDF, DOCX, or PPTX
+     * @param outputFormat PDF, DOCX, PPTX, or XLSX
      * @param locale Locale for formatting (e.g., 'en-GB')
      * @param timezone Timezone for datetime formatting
      * @return Complete envelope ready for Node API
@@ -198,7 +198,7 @@ public with sharing class DocgenEnvelopeService {
      * Format: sha256:{templateId}|{outputFormat}|{dataChecksum}
      *
      * @param templateId ContentVersionId of template
-     * @param outputFormat PDF, DOCX, or PPTX
+     * @param outputFormat PDF, DOCX, PPTX, or XLSX
      * @param dataJson Serialized data object
      * @return Hash string with sha256: prefix
      */
@@ -217,7 +217,7 @@ public with sharing class DocgenEnvelopeService {
      * Compute SHA-256 hash for idempotency including output-affecting options.
      *
      * @param templateId ContentVersionId of template
-     * @param outputFormat PDF, DOCX, or PPTX
+     * @param outputFormat PDF, DOCX, PPTX, or XLSX
      * @param dataJson Serialized data object
      * @param outputFileName Resolved output filename
      * @param optionsJson Serialized options object
@@ -447,7 +447,7 @@ public with sharing class DocgenEnvelopeService {
      *
      * @param compositeDocId Composite document ID
      * @param recordIds Map of variable names to record IDs (e.g., {"accountId": "001xxx", "contactId": "003xxx"})
-     * @param outputFormat PDF, DOCX, or PPTX
+     * @param outputFormat PDF, DOCX, PPTX, or XLSX
      * @param locale Locale for formatting (e.g., 'en-GB')
      * @param timezone Timezone for datetime formatting
      * @return Complete envelope ready for Node API
@@ -534,6 +534,11 @@ public with sharing class DocgenEnvelopeService {
         env.locale = locale;
         env.timezone = timezone;
         env.templateStrategy = composite.Template_Strategy__c;
+        if (effectiveOutputFormat == 'XLSX' && composite.Template_Strategy__c == 'Concatenate Templates') {
+            throw new IllegalArgumentException(
+                'XLSX output is supported only for composite documents using the Own Template strategy'
+            );
+        }
         env.additionalPdfContentVersionIds = toStringIds(attachmentValidation.contentVersionIds);
         env.attachmentWarnings = attachmentValidation.warnings;
 

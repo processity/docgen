@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import nock from 'nock';
 import { PDFDocument } from 'pdf-lib';
+import ExcelJS from 'exceljs';
 import { PollerService } from '../../src/worker/poller';
 import { PdfPageRenderer } from '../../src/preview/pdf-page-renderer';
 import { loadConfig } from '../../src/config';
@@ -269,6 +270,70 @@ describeTests('PollerService', () => {
   });
 
   describe('processDocument', () => {
+    it('should process an XLSX document and upload the merged workbook', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Offer');
+      worksheet.getCell('A1').value = '{{Quote.Name}}';
+      worksheet.getCell('A2').value = '{{TABLE:Quote.LineItems.Name}}';
+      const templateBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      let uploadedVersionData = '';
+      const mockDoc: QueuedDocument = {
+        Id: 'a00000000000991AAA',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          templateId: '068000000000991AAA',
+          outputFileName: 'offer.xlsx',
+          outputFormat: 'XLSX',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: {
+            Quote: {
+              Name: 'Q-1001',
+              LineItems: [{ Name: 'Alpha' }, { Name: 'Beta' }],
+            },
+          },
+          additionalPdfContentVersionIds: ['068000000000090AAA'],
+          generatedDocumentId: 'a00000000000991AAA',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'xlsx-corr-id',
+        Template__c: 'a01000000000991AAA',
+        CreatedDate: new Date().toISOString(),
+      };
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000991AAA/VersionData')
+        .reply(200, templateBuffer);
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          expect(body.PathOnClient).toBe('offer.xlsx');
+          uploadedVersionData = body.VersionData;
+          return true;
+        })
+        .reply(201, { id: '068000000000992AAA', success: true });
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, { records: [{ ContentDocumentId: '069000000000991AAA' }] });
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(true);
+      const generatedWorkbook = new ExcelJS.Workbook();
+      const generatedBytes = Buffer.from(uploadedVersionData, 'base64');
+      await generatedWorkbook.xlsx.load(
+        generatedBytes as unknown as Parameters<typeof generatedWorkbook.xlsx.load>[0]
+      );
+      const generatedSheet = generatedWorkbook.getWorksheet('Offer')!;
+      expect(generatedSheet.getCell('A1').value).toBe('Q-1001');
+      expect(generatedSheet.getCell('A2').value).toBe('Alpha');
+      expect(generatedSheet.getCell('A3').value).toBe('Beta');
+    });
+
     it('should successfully process a document and update status to SUCCEEDED', async () => {
       const attachmentId = '068000000000090AAA';
       const attachmentPdf = await PDFDocument.create();

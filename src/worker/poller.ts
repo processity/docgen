@@ -5,6 +5,7 @@ import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
 import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templates';
 import { mergePptxTemplate } from '../templates/pptx';
+import { mergeXlsxTemplate } from '../templates/xlsx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { appendAdditionalPdfPages } from '../pdf/attachments';
 import { deleteContentDocuments, uploadContentVersion, updateGeneratedDocument } from '../sf/files';
@@ -373,6 +374,7 @@ export class PollerService {
 
       let mergedDocx: Buffer | null = null;
       let mergedPptx: Buffer | null = null;
+      let mergedXlsx: Buffer | null = null;
 
       if (isComposite) {
         // COMPOSITE DOCUMENT PROCESSING
@@ -400,6 +402,8 @@ export class PollerService {
               imageAllowlist: getConfig().imageAllowlist,
               ...request.options,
             });
+          } else if (request.outputFormat === 'XLSX') {
+            mergedXlsx = await mergeXlsxTemplate(templateBuffer, request.data);
           } else {
             mergedDocx = await mergeTemplate(templateBuffer, request.data, {
               locale: request.locale,
@@ -409,9 +413,9 @@ export class PollerService {
             });
           }
         } else {
-          if (request.outputFormat === 'PPTX') {
+          if (request.outputFormat === 'PPTX' || request.outputFormat === 'XLSX') {
             throw new ValidationError(
-              'PPTX output is not supported for Concatenate Templates strategy',
+              `${request.outputFormat} output is not supported for Concatenate Templates strategy`,
               { correlationId: doc.CorrelationId__c }
             );
           }
@@ -496,6 +500,8 @@ export class PollerService {
             imageAllowlist: getConfig().imageAllowlist,
             ...request.options,
           });
+        } else if (request.outputFormat === 'XLSX') {
+          mergedXlsx = await mergeXlsxTemplate(templateBuffer, request.data);
         } else {
           mergedDocx = await mergeTemplate(templateBuffer, request.data, {
             locale: request.locale,
@@ -526,6 +532,8 @@ export class PollerService {
         attachmentWarnings = initialAttachmentWarnings.concat(attachmentResult.warnings);
       } else if (request.outputFormat === 'PPTX') {
         outputBuffer = mergedPptx!;
+      } else if (request.outputFormat === 'XLSX') {
+        outputBuffer = mergedXlsx!;
       } else {
         outputBuffer = mergedDocx!;
       }

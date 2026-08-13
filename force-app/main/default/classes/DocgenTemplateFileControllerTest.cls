@@ -139,6 +139,33 @@ private class DocgenTemplateFileControllerTest {
         System.assertEquals('docx', files[0].FileExtension, 'File extension should be docx');
     }
 
+    @isTest
+    static void testGetTemplateFilesWithXlsxFile() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        ContentVersion cv = new ContentVersion(
+            Title = 'Excel Template',
+            PathOnClient = 'QuoteTemplate.xlsx',
+            VersionData = Blob.valueOf('Test workbook content')
+        );
+        insert cv;
+        ContentVersion insertedVersion = [
+            SELECT ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id
+        ];
+        insert new ContentDocumentLink(
+            LinkedEntityId = template.Id,
+            ContentDocumentId = insertedVersion.ContentDocumentId,
+            ShareType = 'V',
+            Visibility = 'AllUsers'
+        );
+
+        Test.startTest();
+        List<ContentVersion> files = DocgenTemplateFileController.getTemplateFiles(template.Id);
+        Test.stopTest();
+
+        System.assertEquals(1, files.size(), 'Should return one XLSX file');
+        System.assertEquals('xlsx', files[0].FileExtension, 'File extension should be xlsx');
+    }
+
     /**
      * Test getTemplateFiles filters out non-DOCX files
      */

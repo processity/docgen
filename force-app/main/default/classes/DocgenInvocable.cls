@@ -38,13 +38,13 @@ public with sharing class DocgenInvocable {
 
         @InvocableVariable(
             label='Output Format'
-            description='PDF, DOCX, or PPTX. Defaults to the template default output format (or PDF).'
+            description='PDF, DOCX, PPTX, or XLSX. Defaults to the template default output format (or PDF).'
         )
         public String outputFormat;
 
         @InvocableVariable(
             label='Read-Only Word'
-            description='When true, DOCX output is generated as a protected read-only document. Ignored for PDF and PPTX.'
+            description='When true, DOCX output is generated as a protected read-only document. Ignored for PDF, PPTX, and XLSX.'
         )
         public Boolean readOnlyWord;
     }

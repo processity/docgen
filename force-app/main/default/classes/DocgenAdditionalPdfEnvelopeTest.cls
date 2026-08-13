@@ -85,6 +85,24 @@ private class DocgenAdditionalPdfEnvelopeTest {
             DocgenEnvelopeService.toJSON(ignoredPptx).contains('additionalPdfContentVersionIds'),
             'PPTX request JSON should omit attachment IDs'
         );
+
+        DocgenEnvelopeService.Envelope baseXlsx = DocgenEnvelopeService.build(
+            account.Id, template, 'XLSX', 'en-GB', 'Europe/London', false, (List<Id>) null
+        );
+        DocgenEnvelopeService.Envelope ignoredXlsx = DocgenEnvelopeService.build(
+            account.Id,
+            template,
+            'XLSX',
+            'en-GB',
+            'Europe/London',
+            false,
+            new List<Id>{ attachment.Id }
+        );
+        Assert.areEqual(baseXlsx.requestHash, ignoredXlsx.requestHash, 'XLSX hash must ignore attachments');
+        Assert.isFalse(
+            DocgenEnvelopeService.toJSON(ignoredXlsx).contains('additionalPdfContentVersionIds'),
+            'XLSX request JSON should omit attachment IDs'
+        );
     }
 
     @isTest

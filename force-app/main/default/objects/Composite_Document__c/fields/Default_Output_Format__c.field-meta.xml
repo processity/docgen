@@ -26,6 +26,11 @@
                 <default>false</default>
                 <label>PPTX</label>
             </value>
+            <value>
+                <fullName>XLSX</fullName>
+                <default>false</default>
+                <label>XLSX</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

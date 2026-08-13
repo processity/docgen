@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Salesforce Document Generation API
   description: |
-    Node.js service for generating PDF, DOCX, and PPTX documents from Salesforce data.
+    Node.js service for generating PDF, DOCX, PPTX, and XLSX documents from Salesforce data.
 
     **Key Features:**
     - Interactive generation (LWC → Apex → Node)
@@ -204,7 +204,7 @@ paths:
         1. Validate AAD JWT (client credentials from Salesforce Named Credential)
         2. Check idempotency via RequestHash (if provided)
         3. Fetch template from Salesforce Files (by ContentVersionId)
-        4. Merge template with data using docx-templates
+        4. Merge the DOCX, PPTX, or XLSX template with Salesforce data
         5. Convert DOCX→PDF via LibreOffice (if outputFormat=PDF)
         6. Append optional Salesforce PDF ContentVersions (if outputFormat=PDF)
         7. Upload result to Salesforce Files
@@ -701,7 +701,7 @@ components:
         templateId:
           type: string
           description: |
-            Salesforce ContentVersionId (18 chars) of the DOCX or PPTX template.
+            Salesforce ContentVersionId (18 chars) of the DOCX, PPTX, or XLSX template.
             Template is cached immutably by this ID.
           example: '068xx000000abcdXXX'
         outputFileName:
@@ -716,8 +716,11 @@ components:
             - PDF
             - DOCX
             - PPTX
+            - XLSX
           description: |
-            Output format. PDF requires LibreOffice DOCX conversion. DOCX and PPTX return the merged template as-is.
+            Output format. PDF requires LibreOffice DOCX conversion. DOCX, PPTX, and XLSX return
+            a merged file in the same format as the source template. XLSX supports scalar placeholders
+            and repeated table rows and is available for single templates and composite Own Template strategy.
         additionalPdfContentVersionIds:
           type: array
           items:
@@ -728,7 +731,7 @@ components:
             the generated PDF. Duplicate IDs are removed after their first occurrence. At most 20 unique
             PDFs are accepted and the aggregate source
             size is limited to 50 MiB. Permanent per-file problems are returned as attachment warnings.
-            This property is ignored completely for DOCX and PPTX output.
+            This property is ignored completely for DOCX, PPTX, and XLSX output.
           example:
             - '068xx000000extraAXX'
             - '068xx000000extraBXX'
@@ -842,7 +845,7 @@ components:
           type: string
           format: uri
           description: |
-            Salesforce ContentVersion download URL. Opens the generated PDF/DOCX/PPTX in the browser.
+            Salesforce ContentVersion download URL. Opens the generated PDF/DOCX/PPTX/XLSX in the browser.
             Format: `https://<SF_DOMAIN>/sfc/servlet.shepherd/version/download/<ContentVersionId>`
           example: 'https://example.my.salesforce.com/sfc/servlet.shepherd/version/download/068xx000000abcdXXX'
         contentVersionId:

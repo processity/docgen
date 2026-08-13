@@ -89,6 +89,38 @@ private class DocgenInvocableTest {
     }
 
     @IsTest
+    static void testGenerateQueuesXlsxDocument() {
+        Docgen_Template__c template = [
+            SELECT Id
+            FROM Docgen_Template__c
+            WHERE Name = 'Invocable Account Template'
+            LIMIT 1
+        ];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+
+        Test.startTest();
+        List<DocgenInvocable.GenerateResult> results = DocgenInvocable.generate(
+            new List<DocgenInvocable.GenerateRequest>{
+                buildRequest(template.Id, null, account.Id, 'XLSX')
+            }
+        );
+        Test.stopTest();
+
+        Assert.isTrue(results[0].success, 'XLSX generation should be queued');
+        Generated_Document__c doc = [
+            SELECT Status__c, OutputFormat__c, RequestJSON__c
+            FROM Generated_Document__c
+            WHERE Id = :results[0].generatedDocumentId
+        ];
+        Assert.areEqual('QUEUED', doc.Status__c, 'XLSX document should be queued');
+        Assert.areEqual('XLSX', doc.OutputFormat__c, 'XLSX output format should be stored');
+        Assert.isTrue(
+            doc.RequestJSON__c.contains('"outputFormat":"XLSX"'),
+            'Worker request should include XLSX output format'
+        );
+    }
+
+    @IsTest
     static void testGeneratePassesReadOnlyWordOption() {
         Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c WHERE Name = 'Invocable Account Template' LIMIT 1];
         Account account = [SELECT Id FROM Account LIMIT 1];

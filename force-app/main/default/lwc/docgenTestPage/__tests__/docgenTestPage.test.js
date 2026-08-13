@@ -98,7 +98,8 @@ describe('c-docgen-test-page', () => {
       { label: 'Template Default', value: '' },
       { label: 'PDF', value: 'PDF' },
       { label: 'DOCX', value: 'DOCX' },
-      { label: 'PPTX', value: 'PPTX' }
+      { label: 'PPTX', value: 'PPTX' },
+      { label: 'XLSX', value: 'XLSX' }
     ]);
 
     outputFormatCombobox.dispatchEvent(new CustomEvent('change', {
@@ -118,6 +119,14 @@ describe('c-docgen-test-page', () => {
     const outputFormatCombobox = [...element.shadowRoot.querySelectorAll('lightning-combobox')]
       .find((combobox) => combobox.label === 'Output Format');
     expect(outputFormatCombobox.value).toBe('PPTX');
+  });
+
+  it('restores XLS URL shorthand as XLSX', async () => {
+    const element = await renderConfiguredPage('XLS');
+
+    const outputFormatCombobox = [...element.shadowRoot.querySelectorAll('lightning-combobox')]
+      .find((combobox) => combobox.label === 'Output Format');
+    expect(outputFormatCombobox.value).toBe('XLSX');
   });
 
   it('shows the read-only control only for DOCX and passes it to generation', async () => {

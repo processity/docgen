@@ -6,6 +6,7 @@ import { SalesforceApi } from '../sf/api';
 import { TemplateService } from '../templates/service';
 import { mergeTemplate, concatenateDocx, applyWatermarkToDocx } from '../templates';
 import { mergePptxTemplate } from '../templates/pptx';
+import { mergeXlsxTemplate } from '../templates/xlsx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { appendAdditionalPdfPages } from '../pdf/attachments';
@@ -87,7 +88,7 @@ const docgenRequestSchema = {
     },
     outputFormat: {
       type: 'string',
-      enum: ['PDF', 'DOCX', 'PPTX'],
+      enum: ['PDF', 'DOCX', 'PPTX', 'XLSX'],
       description: 'Output format',
     },
     locale: {
@@ -135,7 +136,7 @@ const docgenRequestSchema = {
     },
     additionalPdfContentVersionIds: {
       type: 'array',
-      description: 'Optional ordered ContentVersion IDs for PDF files appended after generated PDF pages. Ignored for DOCX/PPTX.',
+      description: 'Optional ordered ContentVersion IDs for PDF files appended after generated PDF pages. Ignored for DOCX/PPTX/XLSX.',
       items: { type: 'string' },
     },
     requestHash: {
@@ -227,6 +228,7 @@ async function generateHandler(
 
     let mergedDocx: Buffer | null = null;
     let mergedPptx: Buffer | null = null;
+    let mergedXlsx: Buffer | null = null;
 
     if (isComposite) {
       // COMPOSITE DOCUMENT PATH
@@ -260,6 +262,8 @@ async function generateHandler(
               ...request.body.options,
             }
           );
+        } else if (request.body.outputFormat === 'XLSX') {
+          mergedXlsx = await mergeXlsxTemplate(templateBuffer, request.body.data);
         } else {
           mergedDocx = await mergeTemplate(
             templateBuffer,
@@ -273,8 +277,11 @@ async function generateHandler(
           );
         }
       } else {
-        if (request.body.outputFormat === 'PPTX') {
-          throw new ValidationError('PPTX output is not supported for Concatenate Templates strategy', { correlationId });
+        if (request.body.outputFormat === 'PPTX' || request.body.outputFormat === 'XLSX') {
+          throw new ValidationError(
+            `${request.body.outputFormat} output is not supported for Concatenate Templates strategy`,
+            { correlationId }
+          );
         }
 
         // Strategy 2: Concatenate Templates
@@ -360,6 +367,8 @@ async function generateHandler(
             ...request.body.options,
           }
         );
+      } else if (request.body.outputFormat === 'XLSX') {
+        mergedXlsx = await mergeXlsxTemplate(templateBuffer, request.body.data);
       } else {
         mergedDocx = await mergeTemplate(
           templateBuffer,
@@ -423,9 +432,17 @@ async function generateHandler(
         sfApi,
         { correlationId }
       );
-    } else {
+    } else if (request.body.outputFormat === 'PPTX') {
       uploadResult = await uploadAndLinkFiles(
         mergedPptx!,
+        null,
+        request.body,
+        sfApi,
+        { correlationId }
+      );
+    } else {
+      uploadResult = await uploadAndLinkFiles(
+        mergedXlsx!,
         null,
         request.body,
         sfApi,

@@ -581,7 +581,7 @@ describe('c-docgen-progress-button', () => {
     expect(window.open).not.toHaveBeenCalled();
   });
 
-  it.each(['DOCX', 'PPTX'])(
+  it.each(['DOCX', 'PPTX', 'XLSX'])(
     'shows a no-preview message for pending %s without exposing a file link',
     async (outputFormat) => {
       const element = createElement('c-docgen-progress-button', {

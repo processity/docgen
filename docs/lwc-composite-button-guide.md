@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Composite Document Generation Button** (`compositeDocgenButton`) is a Lightning Web Component that enables interactive composite document generation directly from Salesforce record pages. This component allows users to generate PDF, DOCX, or PPTX documents that combine data from multiple sources (templates) configured in a Composite Document record.
+The **Composite Document Generation Button** (`compositeDocgenButton`) is a Lightning Web Component that enables interactive composite document generation directly from Salesforce record pages. This component allows users to generate PDF, DOCX, PPTX, or XLSX documents from a configured Composite Document record. XLSX requires the **Own Template** strategy.
 
 This component is designed for admin configuration via the Lightning App Builder without requiring code.
 
@@ -22,7 +22,7 @@ This component is designed for admin configuration via the Lightning App Builder
 
 | Property | Type | Description | Example |
 |----------|------|-------------|---------|
-| **Output Format Override** | Picklist | Optional output format override: `PDF`, `DOCX`, or `PPTX`. Leave blank to use the Composite Document **Default Output Format**. | `PDF` |
+| **Output Format Override** | Picklist | Optional output format override: `PDF`, `DOCX`, `PPTX`, or `XLSX`. Leave blank to use the Composite Document **Default Output Format**. | `PDF` |
 | **Record ID Field Name** | String | Variable name for the primary record ID from the page context (e.g., `accountId`, `opportunityId`). Only needed when component is placed on a record page. | `accountId` |
 | **Additional Record IDs (JSON)** | String | JSON string containing additional record IDs required by the composite document | `{"contactId":"003xxx","opportunityId":"006xxx"}` |
 | **Button Label** | String | Custom text displayed on the button | `Generate Account Report` |
@@ -52,7 +52,7 @@ await generator.generate({
 });
 ```
 
-The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, optional `readOnlyWord`, and optional `additionalPdfContentVersionIds` (array of ContentVersion IDs merged after the generated PDF; overrides any file picker selection). Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF and PPTX. It emits
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, optional `readOnlyWord`, and optional `additionalPdfContentVersionIds` (array of ContentVersion IDs merged after the generated PDF; overrides any file picker selection). Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF, PPTX, and XLSX. XLSX generation requires **Own Template**. It emits
 `docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)
@@ -194,7 +194,7 @@ The component performs validation before calling the Apex method:
 |---------------|-------|----------|
 | "Composite Document ID is required" | `compositeDocumentId` property is blank | Set the Composite Document ID property |
 | "At least one record ID is required" | Neither `recordId` nor `additionalRecordIds` is provided | Set Record ID Field Name (on record pages) or Additional Record IDs |
-| "Output Format must be PDF, DOCX, or PPTX" | `outputFormat` property has an unsupported value | Clear Output Format Override to use the composite default, or set it to PDF, DOCX, or PPTX |
+| "Output Format must be PDF, DOCX, PPTX, or XLSX" | `outputFormat` property has an unsupported value | Clear Output Format Override to use the composite default, or set it to PDF, DOCX, PPTX, or XLSX. XLSX requires the Own Template strategy. |
 
 ### Generation Errors
 
@@ -283,7 +283,7 @@ If the Apex method fails (e.g., template not found, missing namespace data), an 
    - Set **Composite Document ID** (required)
    - Set **Record ID Field Name** if using the page's record (e.g., `accountId`)
    - Set **Additional Record IDs (JSON)** if needed
-   - Leave **Output Format Override** blank to use the composite default, or set it to PDF, DOCX, or PPTX
+   - Leave **Output Format Override** blank to use the composite default, or set it to PDF, DOCX, PPTX, or XLSX. XLSX requires the **Own Template** strategy.
    - Customize **Button Label** and **Success Message**
 7. **Save** the page
 8. **Activate** the page (assign to org default or specific profiles/apps)

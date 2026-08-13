@@ -6,3 +6,4 @@ export { mergeTemplate, validateMergeData, extractImageUrls } from './merge';
 export { applyWatermarkToDocx } from './docx-postprocess';
 export { prepareRichTextData, htmlToWordprocessingMl } from './rich-text';
 export { concatenateDocx } from './concatenate';
+export { mergeXlsxTemplate } from './xlsx';

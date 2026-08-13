@@ -2,7 +2,7 @@
  * Salesforce File Upload Module (T-12)
  *
  * Handles:
- * - ContentVersion upload (PDF/DOCX files)
+ * - ContentVersion upload (PDF/DOCX/PPTX/XLSX files)
  * - Generated_Document__c updates (status tracking)
  * - Orchestration of upload + update flow
  *
@@ -40,7 +40,7 @@ export async function uploadContentVersion(
   options?: CorrelationOptions
 ): Promise<{ contentVersionId: string; contentDocumentId: string }> {
   // Extract title from filename (remove extension)
-  const title = fileName.replace(/\.(pdf|docx|pptx|jpe?g)$/i, '');
+  const title = fileName.replace(/\.(pdf|docx|pptx|xlsx|jpe?g)$/i, '');
 
   // Prepare ContentVersion creation payload
   const payload: ContentVersionCreateRequest = {

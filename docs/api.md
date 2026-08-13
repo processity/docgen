@@ -131,7 +131,7 @@ curl http://localhost:8080/readyz
 
 ### POST /generate
 
-Generate a PDF, DOCX, or PPTX document from a Salesforce template.
+Generate a PDF, DOCX, PPTX, or XLSX document from a Salesforce template.
 
 **Authentication**: Required (Azure AD Bearer token)
 
@@ -147,7 +147,7 @@ Generate a PDF, DOCX, or PPTX document from a Salesforce template.
   // Template configuration
   templateId: string;              // ContentVersionId of template (required)
   outputFileName: string;          // Output file name (required)
-  outputFormat: "PDF" | "DOCX" | "PPTX"; // Output format (required)
+  outputFormat: "PDF" | "DOCX" | "PPTX" | "XLSX"; // Output format (required)
 
   // Locale/timezone configuration
   locale?: string;                 // e.g., "en-US", "en-GB" (optional, default: "en-US")
@@ -202,9 +202,9 @@ Generate a PDF, DOCX, or PPTX document from a Salesforce template.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `templateId` | string | Yes | ContentVersionId of the DOCX template |
+| `templateId` | string | Yes | ContentVersionId of the DOCX, PPTX, or XLSX template |
 | `outputFileName` | string | Yes | Name for generated file (supports merge fields like `{{Account.Name}}`) |
-| `outputFormat` | string | Yes | "PDF" or "DOCX" |
+| `outputFormat` | string | Yes | `PDF`, `DOCX`, `PPTX`, or `XLSX` |
 | `locale` | string | No | Locale for number/date formatting (default: "en-US") |
 | `timezone` | string | No | Timezone for date formatting (default: "UTC") |
 | `options.storeMergedDocx` | boolean | No | Store merged DOCX in addition to PDF (default: false) |

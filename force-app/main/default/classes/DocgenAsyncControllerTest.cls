@@ -924,10 +924,10 @@ private class DocgenAsyncControllerTest {
 
         Test.startTest();
         try {
-            DocgenAsyncController.startGeneration(template.Id, null, account.Id, 'XLSX');
+            DocgenAsyncController.startGeneration(template.Id, null, account.Id, 'CSV');
             Assert.fail('Invalid output format should throw an AuraHandledException');
         } catch (AuraHandledException e) {
-            Assert.isTrue(e.getMessage().contains('Output Format must be PDF, DOCX, or PPTX'), 'Error should explain allowed formats');
+            Assert.isTrue(e.getMessage().contains('Output Format must be PDF, DOCX, PPTX, or XLSX'), 'Error should explain allowed formats');
         }
         Test.stopTest();
     }

@@ -5,7 +5,7 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 /**
  * LWC component for interactive document generation
- * Allows users to generate PDF/DOCX documents from Salesforce records
+ * Allows users to generate PDF/DOCX/PPTX/XLSX documents from Salesforce records
  *
  * @component docgenButton
  * @example
@@ -31,7 +31,7 @@ export default class DocgenButton extends LightningElement {
   @api templateName;
 
   /**
-   * Output format override (PDF, DOCX, or PPTX). Blank uses the template default.
+   * Output format override (PDF, DOCX, PPTX, or XLSX). Blank uses the template default.
    * @type {string}
    * @required
    */
@@ -39,7 +39,7 @@ export default class DocgenButton extends LightningElement {
 
   /**
    * Protect generated DOCX content while leaving supported form fields editable.
-   * Ignored for PDF and PPTX output.
+   * Ignored for PDF, PPTX, and XLSX output.
    * @type {boolean}
    */
   @api readOnlyWord = false;

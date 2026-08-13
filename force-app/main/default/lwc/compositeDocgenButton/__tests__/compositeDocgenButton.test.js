@@ -541,7 +541,7 @@ describe('c-composite-docgen-button', () => {
     expect(previewHandler).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['DOCX', 'PPTX'])(
+  it.each(['DOCX', 'PPTX', 'XLSX'])(
     'shows preview-not-supported without exposing a file link for pending %s',
     async outputFormat => {
       const element = createPreviewElement(outputFormat);

@@ -337,7 +337,7 @@ DocgenController.GenerateResult result = DocgenController.generate(
 System.debug('Download URL: ' + result.downloadUrl);
 ```
 
-Existing calls that omit `readOnlyWord` remain supported and default to `false`. The option is ignored for PDF and PPTX output.
+Existing calls that omit `readOnlyWord` remain supported and default to `false`. The option is ignored for PDF, PPTX, and XLSX output.
 
 #### 5.3 Verify Generated Document Record
 

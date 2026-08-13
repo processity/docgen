@@ -1,4 +1,4 @@
-# Docgen - Salesforce PDF Generation Service
+# Docgen - Salesforce Document Generation Service
 
 [![CI](https://github.com/bigmantra/docgen/actions/workflows/ci.yml/badge.svg)](https://github.com/bigmantra/docgen/actions/workflows/ci.yml)
 [![Node.js Coverage](https://img.shields.io/codecov/c/github/bigmantra/docgen/main?flag=nodejs&label=Node.js&logo=codecov)](https://codecov.io/gh/bigmantra/docgen?flags[0]=nodejs)
@@ -10,18 +10,18 @@
 [![Salesforce](https://img.shields.io/badge/Salesforce-Integration-00A1E0?logo=salesforce)](https://www.salesforce.com/)
 [![Salesforce Package](https://img.shields.io/badge/Package-v0.3.1-00A1E0?logo=salesforce)](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tWS000001jy7XYAQ)
 
-A production-ready document generation service that creates PDF documents from Salesforce data using DOCX templates and LibreOffice, deployed on Azure Container Apps.
+A production-ready service that generates PDF, DOCX, PPTX, and XLSX documents from Salesforce data, deployed on Azure Container Apps.
 
 ## Overview
 
 Docgen enables both **interactive** and **batch** document generation directly from Salesforce records:
 
-- **Interactive Generation**: Users click a Lightning Web Component button to instantly generate and download PDFs
+- **Interactive Generation**: Users click a Lightning Web Component button to generate and download documents
 - **Flow Automation**: Invocable action queues document generation from record-triggered, scheduled, or screen flows
 - **Batch Processing**: Apex Batch/Queueable classes enqueue thousands of documents for background processing
-- **Template-Based**: Use familiar Microsoft Word (DOCX) templates with merge fields for data population
+- **Template-Based**: Use Microsoft Word, PowerPoint, or Excel templates with merge fields for data population
 - **Multi-Object Support**: Generate documents from Accounts, Opportunities, Cases, Contacts, Leads, and custom objects
-- **Composite Documents**: Combine multiple data sources (SOQL queries or Apex providers) into unified PDF output with namespace isolation
+- **Composite Documents**: Combine multiple data sources (SOQL queries or Apex providers) into one document with namespace isolation; XLSX uses the Own Template strategy
 
 ## Architecture
 
@@ -253,7 +253,7 @@ sf org assign permset --name Docgen_User
 
 ### First Document Generation
 
-1. **Upload a template**: Navigate to the Docgen app → Docgen Templates tab → Create new template with DOCX file
+1. **Upload a template**: Navigate to the Docgen app → Docgen Templates tab → Create a template with a DOCX, PPTX, or XLSX file
 2. **Add LWC button**: Edit an Account/Opportunity/Case page → Drag `docgenButton` component onto the layout
 3. **Generate**: Click "Generate Document" → Select template → Use the template default format or choose an override → Generate
 
@@ -271,6 +271,7 @@ For detailed setup instructions, see [Quick Start Guide](docs/quick-start.md).
 | **[Testing Guide](docs/testing.md)**                         | Running tests (Node.js, Apex, LWC, E2E) and CI/CD configuration                                               |
 | **[API Reference](docs/api.md)**                             | REST API endpoints, request/response formats, error handling, composite envelope format                       |
 | **[Template Authoring](docs/template-authoring.md)**         | Creating DOCX templates with merge fields, loops, conditionals, and composite namespaces                      |
+| **[Excel Template Authoring](docs/excel-template-authoring.md)** | Creating XLSX templates with scalar fields, repeating rows, formulas, and composite constraints           |
 | **[Field Path Conventions](docs/field-path-conventions.md)** | Data structure and field path syntax including namespace-scoped paths                                         |
 | **[ADRs](docs/adr/)**                                        | Architecture Decision Records (runtime, auth, worker, caching)                                                |
 
@@ -366,7 +367,7 @@ The **Docgen** app includes:
 | ------------------- | --------------------------------------------------------------- |
 | **Runtime**         | Node.js 20+ with TypeScript                                     |
 | **Web Framework**   | Fastify                                                         |
-| **Template Engine** | docx-templates                                                  |
+| **Template Engine** | docx-templates, ExcelJS, JSZip                                  |
 | **PDF Conversion**  | LibreOffice (headless)                                          |
 | **Authentication**  | Azure AD OAuth2 (inbound), Salesforce JWT Bearer (outbound)     |
 | **Testing**         | Jest, Supertest, Nock, Playwright                               |
@@ -383,7 +384,7 @@ The **Docgen** app includes:
 
 ### Document Generation
 
-- **POST /generate**: Generate PDF/DOCX/PPTX from template (requires Azure AD token)
+- **POST /generate**: Generate PDF/DOCX/PPTX/XLSX from a template (requires Azure AD token)
 
 ### Worker Management
 

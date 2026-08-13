@@ -134,6 +134,9 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     if (this.outputFormatLabel === 'PPTX') {
       return 'doctype:ppt';
     }
+    if (this.outputFormatLabel === 'XLSX') {
+      return 'doctype:excel';
+    }
     return 'doctype:attachment';
   }
 
@@ -316,8 +319,8 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
       return false;
     }
 
-    if (request.outputFormat && !['PDF', 'DOCX', 'PPTX'].includes(request.outputFormat)) {
-      this.handleError('Output Format must be PDF, DOCX, or PPTX.');
+    if (request.outputFormat && !['PDF', 'DOCX', 'PPTX', 'XLSX'].includes(request.outputFormat)) {
+      this.handleError('Output Format must be PDF, DOCX, PPTX, or XLSX.');
       return false;
     }
 

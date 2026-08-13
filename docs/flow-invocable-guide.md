@@ -24,8 +24,8 @@ Generation is asynchronous by design: record-triggered flows run with uncommitte
 | **Record ID** | String | Yes | ID of the source record (Account, Opportunity, Case, or any other supported object). |
 | **Template ID** | String | One of Template ID / Template Name | ID of the `Docgen_Template__c` record. Takes precedence when both are provided. |
 | **Template Name** | String | One of Template ID / Template Name | Name of the `Docgen_Template__c` record. Used when Template ID is blank. |
-| **Output Format** | String | No | `PDF`, `DOCX`, or `PPTX`. Leave blank to use the template's **Default Output Format** (falls back to `PDF`). |
-| **Read-Only Word** | Boolean | No | When `true`, DOCX output is generated as a protected read-only document. Ignored for PDF and PPTX. Defaults to `false`. |
+| **Output Format** | String | No | `PDF`, `DOCX`, `PPTX`, or `XLSX`. Leave blank to use the template's **Default Output Format** (falls back to `PDF`). |
+| **Read-Only Word** | Boolean | No | When `true`, DOCX output is generated as a protected read-only document. Ignored for PDF, PPTX, and XLSX. Defaults to `false`. |
 
 ## Action Outputs
 

@@ -61,7 +61,7 @@ export interface DocgenOptions {
   watermarkStyle?: string | null;
 }
 
-export type DocgenOutputFormat = 'PDF' | 'DOCX' | 'PPTX';
+export type DocgenOutputFormat = 'PDF' | 'DOCX' | 'PPTX' | 'XLSX';
 
 export type PdfAttachmentWarningCode =
   | 'INVALID_CONTENT_VERSION_ID'
@@ -176,7 +176,7 @@ export interface DocgenRequest {
   options: DocgenOptions;
   data: Record<string, any>;
   parents?: DocgenParents;
-  /** Optional PDF ContentVersions appended after generated PDF pages. Ignored for DOCX/PPTX. */
+  /** Optional PDF ContentVersions appended after generated PDF pages. Ignored for DOCX/PPTX/XLSX. */
   additionalPdfContentVersionIds?: string[];
   requestHash?: string;
   generatedDocumentId?: string; // T-12: Apex passes this for status updates

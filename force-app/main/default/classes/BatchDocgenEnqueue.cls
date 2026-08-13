@@ -39,7 +39,7 @@
  * @see CompositeDocgenDataProvider
  */
 public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, Database.Stateful {
-    private static final Set<String> VALID_OUTPUT_FORMATS = new Set<String>{'PDF', 'DOCX', 'PPTX'};
+    private static final Set<String> VALID_OUTPUT_FORMATS = new Set<String>{'PDF', 'DOCX', 'PPTX', 'XLSX'};
 
     // State variables - Single Template
     private Id templateId;
@@ -65,7 +65,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor
      * @param templateId ID of the Docgen_Template__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', 'PPTX', or 'XLSX'
      * @throws QueryException if template not found
      */
     public BatchDocgenEnqueue(Id templateId, List<Id> recordIds, String outputFormat) {
@@ -134,7 +134,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor for Composite Documents
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', 'PPTX', or 'XLSX'
      * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
      * @throws QueryException if composite not found
      */
@@ -151,7 +151,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
      * Constructor for Composite Documents with Additional Static RecordIds
      * @param compositeDocId ID of the Composite_Document__c record
      * @param recordIds List of record IDs to process (Account, Opportunity, Case, etc.)
-     * @param outputFormat Output format: 'PDF', 'DOCX', or 'PPTX'
+     * @param outputFormat Output format: 'PDF', 'DOCX', 'PPTX', or 'XLSX'
      * @param recordIdFieldName Variable name for batch record IDs (e.g., 'accountId', 'opportunityId')
      * @param additionalRecordIds Static IDs shared across all batch records (e.g., {'termsId': termRecord.Id})
      * @throws QueryException if composite not found
@@ -521,7 +521,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
             return;
         }
         if (!VALID_OUTPUT_FORMATS.contains(outputFormat)) {
-            throw new IllegalArgumentException('outputFormat must be PDF, DOCX, or PPTX');
+            throw new IllegalArgumentException('outputFormat must be PDF, DOCX, PPTX, or XLSX');
         }
     }
 

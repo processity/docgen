@@ -253,6 +253,72 @@ private class DocgenEnvelopeServiceTest {
     }
 
     @isTest
+    static void testXlsxOutputFormatUsesWorkbookExtension() {
+        Account acc = DocgenTestDataFactory.createAccount('Excel Test Account');
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Excel Quote Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000043AAA',
+            false,
+            false,
+            false
+        );
+
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            acc.Id, template, 'xlsx', 'en-GB', 'Europe/London', true
+        );
+
+        Assert.areEqual('XLSX', env.outputFormat, 'XLSX should be normalized and accepted');
+        Assert.isTrue(env.outputFileName.endsWith('.xlsx'), 'Generated filename should use the XLSX extension');
+        Assert.areEqual(false, env.options.get('readOnlyWord'), 'Word protection must be ignored for XLSX');
+    }
+
+    @isTest
+    static void testCompositeOwnTemplateSupportsXlsx() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 1, 'Own Template');
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => scenario.testRecordId };
+
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            scenario.compositeDoc.Id,
+            recordIds,
+            'XLSX',
+            'en-GB',
+            'Europe/London'
+        );
+
+        Assert.areEqual('XLSX', env.outputFormat, 'Own Template composites should support XLSX');
+        Assert.areEqual('Own Template', env.templateStrategy, 'The composite strategy should be preserved');
+        Assert.isTrue(env.outputFileName.endsWith('.xlsx'), 'Composite filename should use the XLSX extension');
+    }
+
+    @isTest
+    static void testCompositeConcatenationRejectsXlsx() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 1, 'Concatenate Templates');
+        Map<String, Id> recordIds = new Map<String, Id>{ 'accountId' => scenario.testRecordId };
+
+        try {
+            DocgenEnvelopeService.buildForComposite(
+                scenario.compositeDoc.Id,
+                recordIds,
+                'XLSX',
+                'en-GB',
+                'Europe/London'
+            );
+            Assert.fail('Concatenate Templates should reject XLSX output');
+        } catch (IllegalArgumentException e) {
+            Assert.isTrue(
+                e.getMessage().contains('Own Template strategy'),
+                'The validation message should explain the supported XLSX strategy'
+            );
+        }
+    }
+
+    @isTest
     static void testToJSON() {
         // Given: An envelope
         DocgenEnvelopeService.Envelope env = new DocgenEnvelopeService.Envelope();

@@ -6,7 +6,7 @@ The **Docgen Document Selector** (`docgenDocumentSelector`) is a Lightning Web C
 
 1. **Source selection** - the user chooses between a single template and a composite document.
 2. **Document lookup** - a debounced search over `Docgen_Template__c` (by name) or active `Composite_Document__c` records (SOSL over description and composite number), scoped to the record's object. Blank searches show recently viewed records first.
-3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box. The action label is format-based for both sources: `Generate PDF`, `Generate DOCX`, or `Generate PPTX`.
+3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box. The action label is format-based for both sources: `Generate PDF`, `Generate DOCX`, `Generate PPTX`, or `Generate XLSX`.
 
 The component is object-agnostic: it works for any object that has templates or composite documents configured (`PrimaryParent__c`).
 
@@ -20,7 +20,7 @@ The component is object-agnostic: it works for any object that has templates or 
 | **objectApiName** | String | (auto) | API name of the object whose templates/composite documents are offered. Provided automatically on record pages; must be set explicitly when embedded by another LWC. |
 | **objectLabel** | String | derived | Display label used in lookup labels and empty-state messages (e.g. `Quote` renders "Quote template", "Search Quote templates..."). Defaults to a label derived from `objectApiName` (`SBQQ__Quote__c` → `Quote`). |
 | **recordIdField** | String | `recordId` | Variable name for the record ID in composite generation. Must match the record ID variable expected by the composite document's templates (e.g. `quoteId`, `accountId`). |
-| **outputFormat** | String | `PDF` | Output format passed to the generator (`PDF`, `DOCX`, `PPTX`). |
+| **outputFormat** | String | `PDF` | Output format passed to the generator (`PDF`, `DOCX`, `PPTX`, `XLSX`). |
 | **previewBeforeSave** | Boolean | `false` | Generate in preview mode: the user reviews the document and must Save or Cancel before it is linked to the record. |
 | **docgenType** | String | — | Optional preset: `template` or `composite`. See [Preset selection lock](#preset-selection-lock). |
 | **docgenName** | String | — | Optional preset document name. See [Preset selection lock](#preset-selection-lock). |

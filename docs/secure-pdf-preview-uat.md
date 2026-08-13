@@ -32,7 +32,7 @@ ContentDocument record page in a new tab. Salesforce `NavigationMixin.GenerateUr
 builds the container-specific URL, so the component does not assume a domain,
 site name, or route prefix and the complete document remains available.
 
-DOCX and PPTX files do not have a pre-Save preview. After Save, their card uses a
+DOCX, PPTX, and XLSX files do not have a pre-Save preview. After Save, their card uses a
 file-type icon and can be selected to open Salesforce's available file view. The
 separate Download action retrieves the complete saved file.
 
@@ -78,6 +78,7 @@ Use predictable page headings or page numbers so page order is easy to verify.
 | Image-heavy PDF | A multi-page PDF containing large or high-resolution images. |
 | DOCX | A template configured to produce DOCX. |
 | PPTX | A template configured to produce PPTX. |
+| XLSX | An Excel template configured to produce XLSX. |
 
 Testers need permission to generate and save documents. The another-user test
 also requires a second user who can open the same source record but did not
@@ -134,7 +135,7 @@ Preview is limited to the first 20 of 24 pages.
 - Save the document and confirm Download returns the complete PDF, including
   pages after page 20.
 
-## DOCX And PPTX Checks
+## DOCX, PPTX, And XLSX Checks
 
 Generate each format and confirm no document content, file link, or browser
 preview is displayed before Save.
@@ -147,6 +148,10 @@ DOCX preview is not supported. Save the document to download and review it.
 
 ```text
 PPTX preview is not supported. Save the document to download and review it.
+```
+
+```text
+XLSX preview is not supported. Save the document to download and review it.
 ```
 
 Confirm Save and Cancel are available and Download is not available. After Save
@@ -189,7 +194,7 @@ Download retrieves the complete file.
 2. Start DocGen and select a direct template.
 3. Generate each PDF test file and complete the PDF preview, Save, Download, and
    Cancel checks above.
-4. Generate the DOCX and PPTX files and complete the unsupported-preview checks.
+4. Generate the DOCX, PPTX, and XLSX files and complete the unsupported-preview checks.
 5. Confirm the selected direct template name and saved file belong to the same
    source record.
 
@@ -202,8 +207,8 @@ Download retrieves the complete file.
    configured template order.
 4. Complete the same PDF preview, page-limit, Save, Download, and Cancel checks
    used for the direct template.
-5. Generate DOCX and PPTX outputs from the composite document, when configured, and complete the
-   unsupported-preview checks.
+5. Generate DOCX, PPTX, and XLSX outputs from the composite document, when configured, and complete the
+   unsupported-preview checks. XLSX requires the Own Template strategy.
 6. Confirm direct and composite generation have the same controls, messages,
    and saved-state behavior.
 
@@ -233,6 +238,10 @@ configured page that does not work fails the test.
     "PPTX": {
       "url": "/lightning/r/Account/001.../view",
       "generateButton": "Generate PPTX"
+    },
+    "XLSX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate XLSX"
     }
   },
   "composite": {
@@ -247,6 +256,10 @@ configured page that does not work fails the test.
     "PPTX": {
       "url": "/lightning/r/Account/001.../view",
       "generateButton": "Generate PPTX"
+    },
+    "XLSX": {
+      "url": "/lightning/r/Account/001.../view",
+      "generateButton": "Generate XLSX"
     }
   }
 }
