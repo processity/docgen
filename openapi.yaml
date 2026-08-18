@@ -704,6 +704,27 @@ components:
             Salesforce ContentVersionId (18 chars) of the DOCX, PPTX, or XLSX template.
             Template is cached immutably by this ID.
           example: '068xx000000abcdXXX'
+        templates:
+          type: array
+          description: Ordered template sections for the Concatenate Templates composite strategy.
+          items:
+            type: object
+            required:
+              - templateId
+              - namespace
+              - sequence
+            properties:
+              templateId:
+                type: string
+              namespace:
+                type: string
+              sequence:
+                type: integer
+              pdfAppendix:
+                type: boolean
+                description: |
+                  For PDF output, render this section independently in sequence so its native formatting,
+                  header, and footer are preserved. Composite watermark settings are not applied to it.
         outputFileName:
           type: string
           description: |

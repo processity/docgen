@@ -1582,6 +1582,84 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body.contentVersionId).toBe(testContentVersionId);
     });
 
+    it('should append PDF appendix templates without merging them into the quote DOCX package', async () => {
+      const testTemplateId = '068000000000190AAA';
+      const appendixTemplateId = '068000000000191AAA';
+      const testContentVersionId = '068000000000192AAA';
+      const baseDocx = await createTestDocxWithContent('Quote Content');
+      const appendixDocx = await createTestDocxWithContent('PS Appendix Content');
+      let uploadedVersionData = '';
+
+      nock('https://login.salesforce.com')
+        .post('/services/oauth2/token')
+        .reply(200, {
+          access_token: 'test-access-token',
+          instance_url: 'https://test.salesforce.com',
+        });
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${testTemplateId}/VersionData`)
+        .reply(200, baseDocx);
+      nock('https://test.salesforce.com')
+        .get(`/services/data/v59.0/sobjects/ContentVersion/${appendixTemplateId}/VersionData`)
+        .reply(200, appendixDocx);
+      nock('https://test.salesforce.com')
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          uploadedVersionData = (body as { VersionData: string }).VersionData;
+          return true;
+        })
+        .reply(201, {
+          id: testContentVersionId,
+          success: true,
+          errors: [],
+        });
+      nock('https://test.salesforce.com')
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          totalSize: 1,
+          done: true,
+          records: [{
+            Id: testContentVersionId,
+            ContentDocumentId: '069000000000190AAA',
+          }],
+        });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/generate',
+        payload: {
+          compositeDocumentId: 'a00000000000190AAA',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            { templateId: testTemplateId, namespace: 'Quote', sequence: 1 },
+            {
+              templateId: appendixTemplateId,
+              namespace: 'CMT_00285',
+              sequence: 10,
+              pdfAppendix: true,
+            },
+          ],
+          outputFileName: 'composite-with-appendix.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-US',
+          timezone: 'America/New_York',
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: false,
+            watermarkText: 'DRAFT',
+          },
+          data: {
+            Quote: { Name: 'Quote' },
+            CMT_00285: { Name: 'Appendix' },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
+      expect(uploadedPdf.getPageCount()).toBe(2);
+    });
+
     it('should respect sequence ordering in concatenation', async () => {
       const compositeDocId = 'a00000000000003AAA';
       const testTemplateId1 = '068000000000025AAA';

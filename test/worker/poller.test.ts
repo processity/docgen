@@ -1076,6 +1076,85 @@ describeTests('PollerService', () => {
       expect(result.documentId).toBe(mockDoc.Id);
     }, 60000);
 
+    it('should process PDF appendix templates independently in queued generation', async () => {
+      const mockDoc: QueuedDocument = {
+        Id: 'a00COMP000000120',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          compositeDocumentId: 'a00yyy120',
+          templateStrategy: 'Concatenate Templates',
+          templates: [
+            { templateId: '068000000000120AAA', namespace: 'Quote', sequence: 1 },
+            {
+              templateId: '068000000000121AAA',
+              namespace: 'CMT_00285',
+              sequence: 10,
+              pdfAppendix: true,
+            },
+          ],
+          outputFileName: 'composite-appendix.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: {
+            storeMergedDocx: false,
+            returnDocxToBrowser: false,
+            watermarkText: 'DRAFT',
+          },
+          data: {
+            Quote: { Name: 'Quote', GeneratedDate__formatted: '15 August 2026' },
+            CMT_00285: { Name: 'Appendix', GeneratedDate__formatted: '15 August 2026' },
+          },
+          parents: { AccountId: '001000000000120AAA' },
+          requestHash: 'sha256:composite-appendix-hash',
+          generatedDocumentId: 'a00COMP000000120',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'comp-corr-appendix',
+        Template__c: null,
+        CreatedDate: new Date().toISOString(),
+      };
+      const { createTestDocxBuffer } = await import('../helpers/test-docx');
+      const validDocx = await createTestDocxBuffer();
+      let uploadedVersionData = '';
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000120AAA/VersionData')
+        .reply(200, validDocx);
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000121AAA/VersionData')
+        .reply(200, validDocx);
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentVersion', (body) => {
+          uploadedVersionData = (body as { VersionData: string }).VersionData;
+          return true;
+        })
+        .reply(201, {
+          id: '068000000000122AAA',
+          success: true,
+        });
+      nock(baseUrl)
+        .get('/services/data/v59.0/query')
+        .query(true)
+        .reply(200, {
+          totalSize: 1,
+          done: true,
+          records: [{ ContentDocumentId: '069000000000120AAA' }],
+        });
+      nock(baseUrl)
+        .post('/services/data/v59.0/sobjects/ContentDocumentLink')
+        .reply(201, { id: '06A000000000120AAA', success: true });
+      nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`)
+        .reply(204);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(true);
+      const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
+      expect(uploadedPdf.getPageCount()).toBe(2);
+    }, 60000);
+
     it('should process mixed queue of single and composite documents', async () => {
       const { createTestDocxBuffer } = await import('../helpers/test-docx');
       const validDocx = await createTestDocxBuffer();

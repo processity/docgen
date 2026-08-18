@@ -8,6 +8,7 @@ import { mergePptxTemplate } from '../templates/pptx';
 import { mergeXlsxTemplate } from '../templates/xlsx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { appendAdditionalPdfPages } from '../pdf/attachments';
+import { convertCompositeSectionsToPdf, hasPdfAppendixSections } from '../pdf/composite';
 import { deleteContentDocuments, uploadContentVersion, updateGeneratedDocument } from '../sf/files';
 import { PdfPageRenderer } from '../preview/pdf-page-renderer';
 import { PdfPreviewArtifacts, uploadPdfPreviewArtifacts } from '../preview/artifacts';
@@ -375,6 +376,7 @@ export class PollerService {
       let mergedDocx: Buffer | null = null;
       let mergedPptx: Buffer | null = null;
       let mergedXlsx: Buffer | null = null;
+      let compositeSections: TemplateSection[] | null = null;
 
       if (isComposite) {
         // COMPOSITE DOCUMENT PROCESSING
@@ -466,8 +468,11 @@ export class PollerService {
               buffer: mergedSection,
               sequence: templateRef.sequence,
               namespace: templateRef.namespace,
+              pdfAppendix: templateRef.pdfAppendix === true,
             });
           }
+
+          compositeSections = sections;
 
           // Concatenate all sections
           log.debug({ sectionCount: sections.length }, 'Concatenating document sections');
@@ -516,12 +521,26 @@ export class PollerService {
       let outputBuffer: Buffer;
       let attachmentWarnings: PdfAttachmentWarning[] = initialAttachmentWarnings;
       if (request.outputFormat === 'PDF') {
-        log.debug('Converting DOCX to PDF');
-        outputBuffer = await convertDocxToPdf(mergedDocx!, {
+        const conversion = {
           timeout: getConfig().conversionTimeout,
           workdir: getConfig().conversionWorkdir,
           correlationId: doc.CorrelationId__c,
-        });
+        };
+
+        if (compositeSections && hasPdfAppendixSections(compositeSections)) {
+          log.debug(
+            { appendixCount: compositeSections.filter((section) => section.pdfAppendix).length },
+            'Converting composite PDF with independent appendix sections'
+          );
+          outputBuffer = await convertCompositeSectionsToPdf(compositeSections, {
+            watermarkText: request.options.watermarkText,
+            watermarkStyle: request.options.watermarkStyle,
+            conversion,
+          });
+        } else {
+          log.debug('Converting DOCX to PDF');
+          outputBuffer = await convertDocxToPdf(mergedDocx!, conversion);
+        }
         const attachmentResult = await appendAdditionalPdfPages(
           outputBuffer,
           request.additionalPdfContentVersionIds,

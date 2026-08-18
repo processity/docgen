@@ -12,6 +12,83 @@ import COMPOSITE_ID_FIELD from '@salesforce/schema/Composite_Document__c.Id';
 import COMPOSITE_CONTENT_VERSION_FIELD from '@salesforce/schema/Composite_Document__c.TemplateContentVersionId__c';
 import COMPOSITE_STRATEGY_FIELD from '@salesforce/schema/Composite_Document__c.Template_Strategy__c';
 
+const SORT_FIELD = 'LastModifiedDate';
+const SORT_DIRECTION = 'desc';
+
+const getRowActions = (row, doneCallback) => {
+    doneCallback([
+        {
+            label: 'Use this version',
+            name: 'use',
+            iconName: 'utility:check',
+            disabled: row.isCurrent
+        },
+        {
+            label: 'Download',
+            name: 'download',
+            iconName: 'utility:download'
+        },
+        {
+            label: 'Delete',
+            name: 'delete',
+            iconName: 'utility:delete',
+            disabled: row.isCurrent
+        }
+    ]);
+};
+
+const COLUMNS = [
+    {
+        label: 'File Name',
+        fieldName: 'viewUrl',
+        type: 'url',
+        wrapText: true,
+        typeAttributes: {
+            label: { fieldName: 'Title' },
+            target: '_blank',
+            tooltip: { fieldName: 'Title' }
+        }
+    },
+    {
+        label: 'Last Modified',
+        fieldName: SORT_FIELD,
+        type: 'date',
+        sortable: true,
+        initialWidth: 190,
+        typeAttributes: {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        }
+    },
+    {
+        label: 'Version',
+        fieldName: 'versionLabel',
+        type: 'text',
+        initialWidth: 90
+    },
+    {
+        label: 'Status',
+        fieldName: 'statusLabel',
+        type: 'text',
+        initialWidth: 120,
+        cellAttributes: {
+            iconName: { fieldName: 'statusIcon' },
+            class: { fieldName: 'statusClass' }
+        }
+    },
+    {
+        type: 'action',
+        initialWidth: 64,
+        typeAttributes: {
+            rowActions: getRowActions,
+            menuAlignment: 'right'
+        }
+    }
+];
+
 export default class DocgenTemplateFileManager extends LightningElement {
     @api recordId; // Can be either Docgen_Template__c or Composite_Document__c Id
     @track files = [];
@@ -19,6 +96,10 @@ export default class DocgenTemplateFileManager extends LightningElement {
     @track isUploading = false;
     @track recordMetadata = {};
     @track isLoading = true;
+
+    columns = COLUMNS;
+    sortedBy = SORT_FIELD;
+    sortDirection = SORT_DIRECTION;
 
     // Component lifecycle - load metadata when initialized
     async connectedCallback() {
@@ -80,12 +161,22 @@ export default class DocgenTemplateFileManager extends LightningElement {
     async loadFiles() {
         try {
             const result = await getTemplateFiles({ recordId: this.recordId });
-            this.files = result.map(file => ({
-                ...file,
-                isCurrent: file.Id === this.currentFileId,
-                downloadUrl: `/sfc/servlet.shepherd/version/download/${file.Id}`,
-                viewUrl: `/lightning/r/ContentDocument/${file.ContentDocumentId}/view`
-            }));
+            this.files = this.sortFiles(
+                result.map(file => {
+                    const isCurrent = file.Id === this.currentFileId;
+                    return {
+                        ...file,
+                        isCurrent,
+                        versionLabel: `v${file.VersionNumber}`,
+                        statusLabel: isCurrent ? 'Current' : '',
+                        statusIcon: isCurrent ? 'utility:check' : null,
+                        statusClass: isCurrent ? 'slds-text-color_success' : null,
+                        downloadUrl: `/sfc/servlet.shepherd/version/download/${file.Id}`,
+                        viewUrl: `/lightning/r/ContentDocument/${file.ContentDocumentId}/view`
+                    };
+                }),
+                SORT_DIRECTION
+            );
         } catch (error) {
             this.showToast('Error', 'Failed to load template files', 'error');
             console.error('Error loading files:', error);
@@ -184,10 +275,37 @@ export default class DocgenTemplateFileManager extends LightningElement {
         this.isUploading = false;
     }
 
-    // Handle "Use This Version" button click
-    async handleUseVersion(event) {
-        const versionId = event.target.dataset.versionId;
+    handleSort(event) {
+        this.sortedBy = event.detail.fieldName;
+        this.sortDirection = event.detail.sortDirection;
+        this.files = this.sortFiles(this.files, this.sortDirection);
+    }
 
+    sortFiles(files, direction) {
+        const multiplier = direction === 'asc' ? 1 : -1;
+        return [...files].sort((left, right) => {
+            const dateDifference = new Date(left.LastModifiedDate).getTime() -
+                new Date(right.LastModifiedDate).getTime();
+            if (dateDifference !== 0) {
+                return dateDifference * multiplier;
+            }
+            return left.Id.localeCompare(right.Id) * multiplier;
+        });
+    }
+
+    async handleRowAction(event) {
+        const { action, row } = event.detail;
+
+        if (action.name === 'use') {
+            await this.useVersion(row.Id);
+        } else if (action.name === 'download') {
+            window.open(row.downloadUrl, '_blank');
+        } else if (action.name === 'delete') {
+            await this.deleteFile(row);
+        }
+    }
+
+    async useVersion(versionId) {
         try {
             // Update using the new Apex method
             await updateTemplateContentVersionId({
@@ -216,14 +334,7 @@ export default class DocgenTemplateFileManager extends LightningElement {
     }
 
     // Handle file deletion
-    async handleDeleteFile(event) {
-        const documentId = event.target.dataset.documentId;
-        const fileToDelete = this.files.find(f => f.ContentDocumentId === documentId);
-
-        if (!fileToDelete) {
-            return;
-        }
-
+    async deleteFile(fileToDelete) {
         // Prevent deleting the current template file
         if (fileToDelete.isCurrent) {
             this.showToast(
@@ -245,7 +356,7 @@ export default class DocgenTemplateFileManager extends LightningElement {
 
         try {
             // Delete the ContentDocument (this deletes all versions)
-            await this.deleteContentDocument(documentId);
+            await this.deleteContentDocument(fileToDelete.ContentDocumentId);
 
             this.showToast(
                 'Success',

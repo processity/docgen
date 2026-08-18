@@ -1225,6 +1225,65 @@ private class DocgenEnvelopeServiceTest {
     }
 
     @isTest
+    static void testLoadTemplateSequenceMarksAdditionalTemplatesAsPdfAppendices() {
+        Docgen_Template__c quoteTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'Quote Header',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000128AAA',
+            false,
+            false,
+            false
+        );
+        Docgen_Template__c additionalTemplate = DocgenTestDataFactory.createTemplateWithConfig(
+            'PS Additional Template',
+            null,
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000129AAA',
+            false,
+            false,
+            false
+        );
+        Composite_Document__c composite = new Composite_Document__c(
+            Template_Strategy__c = 'Concatenate Templates',
+            PrimaryParent__c = 'Account',
+            IsActive__c = true
+        );
+        insert composite;
+
+        Composite_Document_Template__c quoteJunction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = quoteTemplate.Id,
+            Namespace__c = 'Quote',
+            Sequence__c = 1,
+            Inclusion_Formula__c = 'Status__c = "Draft"',
+            IsActive__c = true
+        );
+        Composite_Document_Template__c additionalJunction = new Composite_Document_Template__c(
+            Composite_Document__c = composite.Id,
+            Document_Template__c = additionalTemplate.Id,
+            Namespace__c = 'CMT_00285',
+            Sequence__c = 10,
+            Inclusion_Formula__c = 'CONTAINS(Additional_Templates__c, "CMT_00285")',
+            IsActive__c = true
+        );
+        insert new List<Composite_Document_Template__c>{ quoteJunction, additionalJunction };
+
+        List<DocgenEnvelopeService.TemplateRef> templates = DocgenEnvelopeService.loadTemplateSequence(
+            composite.Id,
+            new Set<Id>{ quoteJunction.Id, additionalJunction.Id }
+        );
+
+        Assert.areEqual(2, templates.size(), 'Both included templates should be returned');
+        Assert.areEqual(false, templates[0].pdfAppendix, 'Ordinary quote sections should retain current behavior');
+        Assert.areEqual(true, templates[1].pdfAppendix, 'PS additional templates should render independently');
+    }
+
+    @isTest
     static void testBuildForCompositeOwnTemplateStrategy() {
         // Given: Composite with "Own Template" strategy
         Account acc = DocgenTestDataFactory.createAccount('Own Template Account');

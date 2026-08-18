@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>65.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Generated Document Details</masterLabel>
+    <description>Shows generated files, source records, and collapsed request and response details.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property
+                name="displayMode"
+                type="String"
+                label="Display mode"
+                description="Choose whether this instance shows all content, main record details, or request and response diagnostics."
+                datasource="Full,Main,Diagnostics"
+                default="Full"
+            />
+            <objects>
+                <object>Generated_Document__c</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>

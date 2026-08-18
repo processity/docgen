@@ -66,6 +66,7 @@ public with sharing class DocgenEnvelopeService {
         public String templateId; // ContentVersionId
         public String namespace; // Data key
         public Integer sequence; // Ordering
+        public Boolean pdfAppendix; // Render independently in sequence for PDF output
     }
 
     /**
@@ -650,10 +651,17 @@ public with sharing class DocgenEnvelopeService {
             ref.templateId = junction.Document_Template__r.TemplateContentVersionId__c;
             ref.namespace = junction.Namespace__c;
             ref.sequence = Integer.valueOf(junction.Sequence__c);
+            ref.pdfAppendix = isPdfAppendixFormula(junction.Inclusion_Formula__c);
             templates.add(ref);
         }
 
         return templates;
+    }
+
+    @TestVisible
+    private static Boolean isPdfAppendixFormula(String inclusionFormula) {
+        return String.isNotBlank(inclusionFormula) &&
+            inclusionFormula.toLowerCase().contains('additional_templates__c');
     }
 
     /**

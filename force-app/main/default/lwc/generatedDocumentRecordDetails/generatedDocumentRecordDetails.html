@@ -1,0 +1,156 @@
+<template>
+  <div class="record-view">
+    <template if:true={isLoading}>
+      <div class="state state_loading">
+        <lightning-spinner alternative-text="Loading generated document details" size="medium">
+        </lightning-spinner>
+      </div>
+    </template>
+
+    <template if:true={loadError}>
+      <div class="state state_error" role="alert">
+        <lightning-icon
+          icon-name="utility:error"
+          alternative-text="Error"
+          size="small"
+          variant="error"
+        >
+        </lightning-icon>
+        <p>{loadError}</p>
+      </div>
+    </template>
+
+    <template if:false={isLoading}>
+      <template if:false={loadError}>
+        <template if:true={showMainContent}>
+          <section class="section" aria-labelledby="generation-details-heading">
+            <div class="section__heading">
+              <lightning-icon icon-name="standard:document" size="small"></lightning-icon>
+              <h2 id="generation-details-heading">Generation details</h2>
+            </div>
+
+            <template if:true={hasSummaryFields}>
+              <lightning-record-view-form record-id={recordId} object-api-name={objectApiName}>
+                <div class="field-grid">
+                  <template for:each={summaryFields} for:item="field">
+                    <lightning-output-field
+                      key={field.fieldApiName}
+                      field-name={field.fieldApiName}
+                      variant="label-stacked"
+                    >
+                    </lightning-output-field>
+                  </template>
+                </div>
+              </lightning-record-view-form>
+            </template>
+          </section>
+
+          <div class="resource-grid">
+            <template if:true={hasLookupFields}>
+              <section class="section resource-section" aria-labelledby="related-records-heading">
+                <div class="section__heading">
+                  <lightning-icon icon-name="utility:record_lookup" size="small"></lightning-icon>
+                  <h2 id="related-records-heading">Related records</h2>
+                </div>
+
+                <lightning-record-view-form
+                  record-id={recordId}
+                  object-api-name={objectApiName}
+                >
+                  <div class="field-grid field-grid_compact">
+                    <template for:each={lookupFields} for:item="lookup">
+                      <lightning-output-field
+                        key={lookup.fieldApiName}
+                        field-name={lookup.fieldApiName}
+                        variant="label-stacked"
+                      >
+                      </lightning-output-field>
+                    </template>
+                  </div>
+                </lightning-record-view-form>
+              </section>
+            </template>
+
+            <section class="section resource-section" aria-labelledby="generated-files-heading">
+              <div class="section__heading">
+                <lightning-icon icon-name="utility:file" size="small"></lightning-icon>
+                <h2 id="generated-files-heading">Generated files</h2>
+              </div>
+
+              <template if:true={hasFiles}>
+                <div class="file-grid">
+                  <template for:each={files} for:item="file">
+                    <a
+                      key={file.contentVersionId}
+                      class="file-tile"
+                      href={file.recordUrl}
+                      target="_blank"
+                      rel="noopener"
+                      title={file.displayName}
+                    >
+                      <lightning-icon
+                        icon-name={file.iconName}
+                        alternative-text={file.fileExtension}
+                        size="medium"
+                      >
+                      </lightning-icon>
+                      <span class="file-tile__body">
+                        <span class="file-tile__name">{file.displayName}</span>
+                        <span class="file-tile__detail">{file.detail}</span>
+                      </span>
+                      <lightning-icon
+                        class="file-tile__open"
+                        icon-name="utility:new_window"
+                        alternative-text="Open in new tab"
+                        size="x-small"
+                      >
+                      </lightning-icon>
+                    </a>
+                  </template>
+                </div>
+              </template>
+
+              <template if:false={hasFiles}>
+                <p class="empty-state">No generated file is available yet.</p>
+              </template>
+            </section>
+          </div>
+        </template>
+
+        <template if:true={showDiagnostics}>
+          <section
+            class="section section_last diagnostics"
+            aria-labelledby="request-response-heading"
+          >
+            <div class="section__heading">
+              <lightning-icon icon-name="utility:contract_doc" size="small"></lightning-icon>
+              <h2 id="request-response-heading">Request & Response</h2>
+            </div>
+
+            <template if:true={hasPayloads}>
+              <lightning-accordion
+                allow-multiple-sections-open
+                active-section-name={openPayloadSections}
+              >
+                <template for:each={payloads} for:item="payload">
+                  <lightning-accordion-section
+                    key={payload.key}
+                    name={payload.key}
+                    label={payload.label}
+                  >
+                    <p class="payload__summary">{payload.summary}</p>
+                    <pre class="payload" tabindex="0">{payload.value}</pre>
+                  </lightning-accordion-section>
+                </template>
+              </lightning-accordion>
+            </template>
+
+            <template if:false={hasPayloads}>
+              <p class="empty-state">No request or response details are available.</p>
+            </template>
+          </section>
+        </template>
+      </template>
+    </template>
+  </div>
+</template>

@@ -50,86 +50,23 @@
                         <div class="slds-m-top_large">
                             <h3 class="slds-text-heading_small slds-m-bottom_small">File Versions</h3>
                             <p class="slds-text-body_small slds-m-bottom_medium slds-text-color_weak">
-                                All DOCX, PPTX, and XLSX files attached to this record. Click "Use This Version" to set the active template.
+                                All DOCX, PPTX, and XLSX files attached to this record. Use the row menu to select the active template.
                             </p>
 
-                            <table class="slds-table slds-table_bordered slds-table_cell-buffer">
-                                <thead>
-                                    <tr class="slds-line-height_reset">
-                                        <th scope="col">
-                                            <div class="slds-truncate" title="File Name">File Name</div>
-                                        </th>
-                                        <th scope="col">
-                                            <div class="slds-truncate" title="Modified Date">Modified Date</div>
-                                        </th>
-                                        <th scope="col">
-                                            <div class="slds-truncate" title="Version">Version</div>
-                                        </th>
-                                        <th scope="col">
-                                            <div class="slds-truncate" title="Status">Status</div>
-                                        </th>
-                                        <th scope="col">
-                                            <div class="slds-truncate" title="Actions">Actions</div>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template for:each={files} for:item="file">
-                                        <tr key={file.Id} class="slds-hint-parent">
-                                            <td data-label="File Name">
-                                                <div class="slds-truncate">
-                                                    <a href={file.viewUrl} target="_blank">{file.Title}</a>
-                                                </div>
-                                            </td>
-                                            <td data-label="Modified Date">
-                                                <lightning-formatted-date-time
-                                                    value={file.LastModifiedDate}
-                                                    year="numeric"
-                                                    month="short"
-                                                    day="2-digit"
-                                                    hour="2-digit"
-                                                    minute="2-digit">
-                                                </lightning-formatted-date-time>
-                                            </td>
-                                            <td data-label="Version">
-                                                <div class="slds-truncate">v{file.VersionNumber}</div>
-                                            </td>
-                                            <td data-label="Status">
-                                                <template if:true={file.isCurrent}>
-                                                    <lightning-badge label="Current" variant="success"></lightning-badge>
-                                                </template>
-                                            </td>
-                                            <td data-label="Actions">
-                                                <template if:false={file.isCurrent}>
-                                                    <lightning-button
-                                                        label="Use This Version"
-                                                        variant="brand"
-                                                        data-version-id={file.Id}
-                                                        onclick={handleUseVersion}>
-                                                    </lightning-button>
-                                                </template>
-                                                <a href={file.downloadUrl} download>
-                                                    <lightning-button-icon
-                                                        icon-name="utility:download"
-                                                        alternative-text="Download"
-                                                        title="Download"
-                                                        class="slds-m-left_x-small">
-                                                    </lightning-button-icon>
-                                                </a>
-                                                <lightning-button-icon
-                                                    icon-name="utility:delete"
-                                                    alternative-text="Delete"
-                                                    title="Delete this file"
-                                                    variant="border-filled"
-                                                    class="slds-m-left_x-small"
-                                                    data-document-id={file.ContentDocumentId}
-                                                    onclick={handleDeleteFile}>
-                                                </lightning-button-icon>
-                                            </td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
+                            <div class="file-table">
+                                <lightning-datatable
+                                    key-field="Id"
+                                    data={files}
+                                    columns={columns}
+                                    sorted-by={sortedBy}
+                                    sorted-direction={sortDirection}
+                                    onsort={handleSort}
+                                    onrowaction={handleRowAction}
+                                    column-widths-mode="fixed"
+                                    wrap-text-max-lines="2"
+                                    hide-checkbox-column>
+                                </lightning-datatable>
+                            </div>
                         </div>
                     </template>
 

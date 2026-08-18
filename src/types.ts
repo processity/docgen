@@ -110,6 +110,8 @@ export interface TemplateReference {
   namespace: string;
   /** Sequence number for ordering (lower numbers first) */
   sequence: number;
+  /** Render this section independently in sequence for PDF output. */
+  pdfAppendix?: boolean;
 }
 
 /**
@@ -262,6 +264,8 @@ export interface TemplateSection {
   sequence: number;
   /** Namespace identifier for this section (e.g., "Account", "Terms") */
   namespace: string;
+  /** Render this section independently in sequence for PDF output. */
+  pdfAppendix?: boolean;
 }
 
 /**

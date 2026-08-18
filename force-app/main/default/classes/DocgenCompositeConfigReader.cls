@@ -92,7 +92,7 @@ public without sharing class DocgenCompositeConfigReader {
         }
 
         return [
-            SELECT Id, Namespace__c, Sequence__c,
+            SELECT Id, Namespace__c, Sequence__c, Inclusion_Formula__c,
                    Document_Template__r.TemplateContentVersionId__c
             FROM Composite_Document_Template__c
             WHERE Composite_Document__c = :compositeDocumentId

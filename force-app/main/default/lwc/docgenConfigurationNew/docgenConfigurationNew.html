@@ -1,0 +1,249 @@
+<template>
+  <template if:true={isSupportedObject}>
+    <main class="page-shell">
+      <header class="hero">
+        <div class="hero__icon">
+          <lightning-icon icon-name="standard:document" size="small"></lightning-icon>
+        </div>
+        <div>
+          <h1>{pageTitle}</h1>
+          <p>{pageDescription}</p>
+        </div>
+      </header>
+
+      <template if:true={isBusy}>
+        <div class="busy-overlay" role="status" aria-live="polite">
+          <lightning-spinner alternative-text="Saving configuration" size="medium"></lightning-spinner>
+        </div>
+      </template>
+
+      <lightning-record-edit-form object-api-name={objectApiName} onsubmit={handleSubmit}>
+        <lightning-messages></lightning-messages>
+
+        <template if:true={formError}>
+          <div class="form-alert" role="alert">
+            <lightning-icon icon-name="utility:error" size="x-small" variant="error"></lightning-icon>
+            <span>{formError}</span>
+          </div>
+        </template>
+
+        <section class="form-section" aria-labelledby="basics-heading">
+          <div class="section-heading">
+            <h2 id="basics-heading">Basics</h2>
+            <p>Primary Parent choices come from active Docgen Supported Object metadata.</p>
+          </div>
+          <div class="field-grid field-grid--three">
+            <template if:true={isTemplate}>
+              <lightning-input-field
+                field-name="Name"
+                variant="label-stacked"
+                required
+              ></lightning-input-field>
+            </template>
+            <template if:true={isComposite}>
+              <lightning-input-field
+                field-name="Description__c"
+                variant="label-stacked"
+              ></lightning-input-field>
+            </template>
+            <lightning-combobox
+              data-validate
+              label="Primary Parent Object"
+              value={primaryParent}
+              placeholder={primaryParentPlaceholder}
+              options={primaryParentOptions}
+              onchange={handlePrimaryParentChange}
+              disabled={isLoadingPrimaryParents}
+              field-level-help="Only active objects configured in Docgen Supported Objects are listed."
+            ></lightning-combobox>
+            <lightning-input-field
+              field-name="Default_Output_Format__c"
+              variant="label-stacked"
+            ></lightning-input-field>
+          </div>
+          <template if:true={primaryParentError}>
+            <p class="inline-warning">{primaryParentError}</p>
+          </template>
+        </section>
+
+        <section class="form-section" aria-labelledby="source-heading">
+          <div class="section-heading">
+            <h2 id="source-heading">Source and data</h2>
+            <p>The source file is optional during creation and can be uploaded from the record later.</p>
+          </div>
+
+          <template if:true={isComposite}>
+            <div class="field-grid field-grid--two">
+              <lightning-input-field
+                field-name="Template_Strategy__c"
+                value={templateStrategy}
+                onchange={handleStrategyChange}
+                variant="label-stacked"
+                required
+              ></lightning-input-field>
+            </div>
+
+            <template if:true={isConcatenateStrategy}>
+              <div class="guidance guidance--success">
+                <lightning-icon icon-name="utility:layers" size="x-small"></lightning-icon>
+                <p>
+                  No master file is needed. Create the composite, then add its ordered templates on
+                  the record page.
+                </p>
+              </div>
+            </template>
+          </template>
+
+          <template if:true={showsTemplateUpload}>
+            <div class="upload-block">
+              <div class="upload-copy">
+                <h3>Source file <span class="optional">Optional now</span></h3>
+                <p>
+                  Upload DOCX, PPTX, or XLSX now, or leave it for later. Deferred configurations are
+                  marked <code>TBD</code> until the record-page file manager sets the exact version.
+                </p>
+              </div>
+
+              <template if:false={uploadedFile}>
+                <div class="upload-control">
+                  <lightning-file-upload
+                    name="templateUpload"
+                    label="Choose source file"
+                    accept={acceptedTemplateFormats}
+                    onuploadfinished={handleUploadFinished}
+                    disabled={isBusy}
+                  ></lightning-file-upload>
+                  <p>The file remains private until this configuration is created.</p>
+                </div>
+              </template>
+
+              <template if:true={uploadedFile}>
+                <div class="uploaded-file" role="status">
+                  <lightning-icon icon-name={uploadedFileIcon} size="small"></lightning-icon>
+                  <div class="uploaded-file__details">
+                    <p class="uploaded-file__name">{uploadedFileName}</p>
+                    <p>{uploadedFileDetails} · Ready</p>
+                  </div>
+                  <lightning-button-icon
+                    icon-name="utility:close"
+                    alternative-text="Remove staged source file"
+                    title="Remove staged source file"
+                    onclick={handleRemoveFile}
+                    disabled={isBusy}
+                  ></lightning-button-icon>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template if:true={isTemplate}>
+            <div class="subsection">
+              <div class="subsection__heading">
+                <h3>Data contract</h3>
+                <p>Use SOQL for declarative data or a DocgenDataProvider Apex class for custom data.</p>
+              </div>
+              <div class="field-grid field-grid--two">
+                <lightning-input-field
+                  field-name="DataSource__c"
+                  value={dataSource}
+                  onchange={handleDataSourceChange}
+                  variant="label-stacked"
+                  required
+                ></lightning-input-field>
+                <template if:true={isSoqlDataSource}>
+                  <lightning-input-field
+                    field-name="ReturnMultipleRecords__c"
+                    variant="label-stacked"
+                  ></lightning-input-field>
+                </template>
+              </div>
+
+              <template if:true={isSoqlDataSource}>
+                <lightning-input-field
+                  field-name="SOQL__c"
+                  variant="label-stacked"
+                  required
+                ></lightning-input-field>
+                <p class="field-guidance">
+                  Use <code>:recordId</code> for the generated record. Enable multiple records only
+                  for templates with a <code>FOR item IN records</code> loop.
+                </p>
+              </template>
+
+              <template if:true={isCustomDataSource}>
+                <lightning-input-field
+                  field-name="ClassName__c"
+                  variant="label-stacked"
+                  required
+                ></lightning-input-field>
+                <p class="field-guidance">
+                  Enter the exact Apex class implementing <code>DocgenDataProvider</code>.
+                </p>
+              </template>
+            </div>
+          </template>
+        </section>
+
+        <lightning-accordion class="advanced-settings">
+          <lightning-accordion-section
+            name="advanced"
+            label="Optional file naming, storage, and watermark settings"
+          >
+            <div class="field-grid field-grid--two">
+              <lightning-input-field
+                field-name="Output_File_Name_Field__c"
+                variant="label-stacked"
+              ></lightning-input-field>
+              <lightning-input-field
+                field-name="StoreMergedDocx__c"
+                variant="label-stacked"
+              ></lightning-input-field>
+              <lightning-input-field
+                field-name="Watermark_Text__c"
+                variant="label-stacked"
+              ></lightning-input-field>
+              <lightning-input-field
+                field-name="Watermark_Condition_Field__c"
+                variant="label-stacked"
+              ></lightning-input-field>
+              <div class="field-grid__full">
+                <lightning-input-field
+                  field-name="Watermark_Style__c"
+                  variant="label-stacked"
+                ></lightning-input-field>
+              </div>
+            </div>
+            <template if:true={isTemplate}>
+              <p class="field-guidance">
+                File name is a data path such as <code>Account.Document_Name__c</code>, not literal
+                text. Leave it blank for timestamp naming.
+              </p>
+            </template>
+            <template if:true={isComposite}>
+              <p class="field-guidance">
+                File name is a namespace-qualified data path such as
+                <code>Quote.Conga_Offer_FileName__c</code>. Leave it blank for timestamp naming.
+              </p>
+            </template>
+          </lightning-accordion-section>
+        </lightning-accordion>
+
+        <footer class="form-footer">
+          <lightning-button label="Cancel" onclick={handleCancel} disabled={isBusy}></lightning-button>
+          <lightning-button
+            type="submit"
+            variant="brand"
+            label={saveLabel}
+            disabled={isBusy}
+          ></lightning-button>
+        </footer>
+      </lightning-record-edit-form>
+    </main>
+  </template>
+
+  <template if:false={isSupportedObject}>
+    <div class="unsupported" role="alert">
+      This creation experience supports Docgen Templates and Composite Documents only.
+    </div>
+  </template>
+</template>

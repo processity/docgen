@@ -10,6 +10,10 @@ import { mergeXlsxTemplate } from '../templates/xlsx';
 import { convertDocxToPdf } from '../convert/soffice';
 import { uploadAndLinkFiles } from '../sf/files';
 import { appendAdditionalPdfPages } from '../pdf/attachments';
+import {
+  convertCompositeSectionsToPdf,
+  hasPdfAppendixSections,
+} from '../pdf/composite';
 import { loadConfig } from '../config';
 import { trackMetric } from '../obs';
 import {
@@ -77,6 +81,10 @@ const docgenRequestSchema = {
           sequence: {
             type: 'number',
             description: 'Ordering sequence (lower numbers first)',
+          },
+          pdfAppendix: {
+            type: 'boolean',
+            description: 'Render this section independently for PDF output without the composite watermark or inherited header/footer',
           },
         },
       },
@@ -229,6 +237,7 @@ async function generateHandler(
     let mergedDocx: Buffer | null = null;
     let mergedPptx: Buffer | null = null;
     let mergedXlsx: Buffer | null = null;
+    let compositeSections: TemplateSection[] | null = null;
 
     if (isComposite) {
       // COMPOSITE DOCUMENT PATH
@@ -335,8 +344,11 @@ async function generateHandler(
             buffer: mergedSection,
             sequence: templateRef.sequence,
             namespace: templateRef.namespace,
+            pdfAppendix: templateRef.pdfAppendix === true,
           });
         }
+
+        compositeSections = sections;
 
         // Concatenate all sections
         request.log.info({ correlationId, sectionCount: sections.length }, 'Concatenating template sections');
@@ -389,12 +401,26 @@ async function generateHandler(
     let attachmentWarnings: DocgenResponse['attachmentWarnings'] = [];
 
     if (request.body.outputFormat === 'PDF') {
-      request.log.info({ correlationId }, 'Converting DOCX to PDF');
-      pdfBuffer = await convertDocxToPdf(mergedDocx!, {
+      const conversion = {
         timeout: config.conversionTimeout,
         workdir: config.conversionWorkdir,
         correlationId,
-      });
+      };
+
+      if (compositeSections && hasPdfAppendixSections(compositeSections)) {
+        request.log.info(
+          { correlationId, appendixCount: compositeSections.filter(section => section.pdfAppendix).length },
+          'Converting composite PDF with independent appendix sections'
+        );
+        pdfBuffer = await convertCompositeSectionsToPdf(compositeSections, {
+          watermarkText: request.body.options.watermarkText,
+          watermarkStyle: request.body.options.watermarkStyle,
+          conversion,
+        });
+      } else {
+        request.log.info({ correlationId }, 'Converting DOCX to PDF');
+        pdfBuffer = await convertDocxToPdf(mergedDocx!, conversion);
+      }
 
       const attachmentResult = await appendAdditionalPdfPages(
         pdfBuffer,

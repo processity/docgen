@@ -1,0 +1,23 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.file-table {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #c9c9c9;
+  border-radius: 4px;
+}
+
+.file-table:focus-within {
+  border-color: #0176d3;
+  box-shadow: 0 0 0 1px #0176d3;
+}
+
+@media (max-width: 48rem) {
+  .file-table {
+    font-size: 0.75rem;
+  }
+}

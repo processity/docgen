@@ -382,6 +382,10 @@
         <apexClass>DocgenTestPageController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>GeneratedDocumentRecordController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
 
     <!-- Custom Tab Visibility -->
     <tabSettings>
