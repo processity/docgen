@@ -443,37 +443,16 @@ public with sharing class DocgenAsyncController {
             throw new IllegalArgumentException('Template ID or Template Name is required');
         }
 
-        List<Docgen_Template__c> templates;
-        if (templateId != null) {
-            templates = [
-                SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
-                       ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                       ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
-                       Default_Output_Format__c
-                FROM Docgen_Template__c
-                WHERE Id = :templateId
-                LIMIT 1
-            ];
-        } else {
-            templates = [
-                SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
-                       ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                       ReturnMultipleRecords__c, Output_File_Name_Field__c,
-                       Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
-                       Default_Output_Format__c
-                FROM Docgen_Template__c
-                WHERE Name = :templateName
-                LIMIT 1
-            ];
-        }
+        Docgen_Template__c template = templateId != null
+            ? DocgenTemplateConfigReader.loadTemplateById(templateId)
+            : DocgenTemplateConfigReader.loadTemplateByName(templateName);
 
-        if (templates.isEmpty()) {
+        if (template == null) {
             String identifier = templateId != null ? String.valueOf(templateId) : templateName;
             throw new IllegalArgumentException('Template not found: ' + identifier);
         }
 
-        return templates[0];
+        return template;
     }
 
     private static Generated_Document__c findExistingDocument(String requestHash) {
