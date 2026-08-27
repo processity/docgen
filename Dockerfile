@@ -31,13 +31,17 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
 
-# Enable contrib repository for ttf-mscorefonts-installer
-RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources.list
+# Enable contrib repository for ttf-mscorefonts-installer and backports for LibreOffice.
+# Bookworm ships LibreOffice 7.4.7, which silently drops the table row that lands on a
+# page boundary when a table splits across pages (OTO-4027: quote totals disappeared).
+# Backports provides 25.2.x, which paginates those tables correctly.
+RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources.list && \
+    echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list
 
 # Install runtime dependencies:
 # - nodejs: Node.js runtime
-# - libreoffice-writer-nogui: LibreOffice without GUI for document conversion
-# - libreoffice-java-common: Java support for LibreOffice
+# - libreoffice-writer-nogui: LibreOffice without GUI for document conversion (from backports)
+# - libreoffice-java-common: Java support for LibreOffice (from backports, kept in step with core)
 # - ghostscript: PDF processing
 # - fonts-dejavu fonts-liberation: Common fonts
 # - fonts-noto-cjk: Japanese regular/bold fallback when licensed Meiryo UI files are unavailable
@@ -46,10 +50,12 @@ RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources
 # - curl: For health checks
 RUN apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
-    apt-get install -y \
-        nodejs \
+    apt-get install -y -t bookworm-backports \
         libreoffice-writer-nogui \
         libreoffice-java-common \
+        && \
+    apt-get install -y \
+        nodejs \
         ghostscript \
         fonts-dejavu \
         fonts-liberation \

@@ -270,6 +270,129 @@ describe('DOCX template post-processing', () => {
     expect(settingsXml).toContain('<w:documentProtection w:edit="forms" w:enforcement="1"/>');
   });
 
+  it('converts editable markers Word split across several runs', async () => {
+    const runProperties = '<w:rPr><w:b/><w:sz w:val="20"/></w:rPr>';
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:proofErr w:type="spellStart"/>
+        <w:r>${runProperties}<w:t>{{</w:t></w:r>
+        <w:r>${runProperties}<w:t>TEXTBOX</w:t></w:r>
+        <w:proofErr w:type="spellEnd"/>
+        <w:r>${runProperties}<w:t>:</w:t></w:r>
+        <w:r>${runProperties}<w:t>Partner Signature</w:t></w:r>
+        <w:r>${runProperties}<w:t>}}</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(template, {}, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('w:val="Partner Signature"');
+    expect(documentXml).not.toContain('__DOCGEN_CONTROL_');
+    expect(documentXml).toMatch(/<w:sdtPr><w:rPr>\s*<w:b\/>/);
+    expect(documentXml).toMatch(/<w:sdtContent><w:r><w:rPr>\s*<w:b\/>/);
+  });
+
+  it('keeps text around editable markers and converts every marker in a paragraph', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:r><w:t xml:space="preserve">Name: {{TEXT</w:t></w:r>
+        <w:r><w:t>BOX:Name</w:t></w:r>
+        <w:r><w:t xml:space="preserve">}} Title: {{TEXTBOX:Title}}</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(template, {}, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('<w:t xml:space="preserve">Name: </w:t>');
+    expect(documentXml).toContain('<w:t xml:space="preserve"> Title: </w:t>');
+    expect(documentXml).toContain('w:val="Name"');
+    expect(documentXml).toContain('w:val="Title"');
+    expect(documentXml.match(/<w:sdt>/g)).toHaveLength(2);
+  });
+
+  it('prefills an editable control from a marker expression', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">By: {{TEXT</w:t></w:r>
+        <w:r><w:rPr><w:b/></w:rPr><w:t>BOX: = partnerLegal</w:t></w:r>
+        <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Name }} (partner)</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(template, { partnerLegalName: 'Contoso Ltd' }, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('w:val="partnerLegalName"');
+    expect(documentXml).toMatch(
+      /<w:sdtContent><w:r><w:rPr>\s*<w:b\/>\s*<\/w:rPr>\s*<w:t xml:space="preserve">Contoso Ltd<\/w:t>\s*<\/w:r><\/w:sdtContent>/
+    );
+    expect(documentXml).toContain('<w:t xml:space="preserve">By: </w:t>');
+    expect(documentXml).toContain('<w:t xml:space="preserve"> (partner)</w:t>');
+    expect(documentXml).not.toContain('__DOCGEN_CONTROL_');
+  });
+
+  it('accepts INS as well as = in a marker expression', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{TEXTBOX: INS Account.Name }}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('w:val="Account.Name"');
+    expect(documentXml).toContain('<w:t xml:space="preserve">Acme</w:t>');
+  });
+
+  it('keeps merged content when a prefill value spans paragraphs', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t xml:space="preserve">Clause: {{TEXTBOX: = Clause.Text__c }} end</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      { Clause: { Text__c: '<p>First para</p><p>Second para</p>' } },
+      { ...baseOptions, readOnly: true } as MergeOptions & { readOnly: boolean }
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('First para');
+    expect(documentXml).toContain('Second para');
+    expect(documentXml).not.toContain('__DOCGEN_CONTROL_');
+    expect(documentXml).not.toContain('<w:sdt>');
+  });
+
+  it('leaves data fields split across runs to the template engine', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p>
+        <w:r><w:t>{{Account.</w:t></w:r>
+        <w:r><w:t>Name}}</w:t></w:r>
+      </w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: { Name: 'Acme' } }, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('Acme');
+    expect(documentXml).not.toContain('<w:sdt>');
+  });
+
   it('inserts watermark XML into a generated header when requested', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:p><w:r><w:t>{{Account.Name}}</w:t></w:r></w:p>

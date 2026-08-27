@@ -16,6 +16,14 @@ const SETTINGS_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml';
 const WORDPROCESSING_NAMESPACE =
   'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const EDITABLE_MARKER_PATTERN =
+  /\{\{\s*(TEXTBOX|DATE|DATEBOX|DATEPICKER)\s*:\s*([^{}]+?)\s*\}\}/gi;
+const CONTROL_TOKEN_PATTERN = /__DOCGEN_CONTROL_(\d+)(?:_(START|END))?__/g;
+const DEFAULT_EXPRESSION_PATTERN = /^(?:=|INS\b)\s*(.*)$/i;
+const PARAGRAPH_PATTERN = /<w:p(?:\s[^>]*?)?>[\s\S]*?<\/w:p>/g;
+const RUN_PATTERN = /<w:r(?:\s[^>]*?)?>[\s\S]*?<\/w:r>/g;
+const TEXT_NODE_PATTERN = /<w:t(?:\s[^>]*?)?>([\s\S]*?)<\/w:t>/g;
+const RUN_PROPERTIES_PATTERN = /^\s*(<w:rPr\b(?:[^>]*\/>|[\s\S]*?<\/w:rPr>))/;
 
 export interface DocxPostProcessContext {
   controls: ControlMarker[];
@@ -24,7 +32,6 @@ export interface DocxPostProcessContext {
 }
 
 interface ControlMarker {
-  token: string;
   name: string;
   type: 'text' | 'date';
 }
@@ -220,21 +227,90 @@ function replaceEditableMarkers(
   controls: ControlMarker[]
 ): { xml: string; changed: boolean } {
   let changed = false;
-  const nextXml = xml.replace(
-    /\{\{\s*(TEXTBOX|DATE|DATEBOX|DATEPICKER)\s*:\s*([^{}]+?)\s*\}\}/gi,
-    (_, markerType: string, rawName: string) => {
-      const token = `__DOCGEN_CONTROL_${controls.length}__`;
-      controls.push({
-        token,
-        name: rawName.trim(),
-        type: markerType.toUpperCase() === 'TEXTBOX' ? 'text' : 'date',
-      });
-      changed = true;
-      return token;
-    }
-  );
+  const nextXml = xml.replace(PARAGRAPH_PATTERN, (paragraphXml) => {
+    const result = replaceEditableMarkersInParagraph(paragraphXml, controls);
+    changed = changed || result.changed;
+    return result.xml;
+  });
 
   return { xml: nextXml, changed };
+}
+
+/**
+ * Word splits a marker the author typed as one word across several runs
+ * (revision ids, spell check, styling), so markers are matched against the
+ * paragraph's combined `<w:t>` text and the token replaces the marker text in
+ * whichever runs it spans.
+ */
+function replaceEditableMarkersInParagraph(
+  paragraphXml: string,
+  controls: ControlMarker[]
+): { xml: string; changed: boolean } {
+  const nodes = collectTextNodes(paragraphXml);
+  if (nodes.length === 0) {
+    return { xml: paragraphXml, changed: false };
+  }
+
+  const offsets: number[] = [];
+  let combinedText = '';
+  for (const node of nodes) {
+    offsets.push(combinedText.length);
+    combinedText += node.text;
+  }
+
+  const edits: { start: number; end: number; replacement: string }[] = [];
+
+  for (const match of combinedText.matchAll(EDITABLE_MARKER_PATTERN)) {
+    const markerStart = match.index;
+    const markerEnd = markerStart + match[0].length;
+    const index = controls.length;
+    // `{{TEXTBOX: = expr}}` keeps `expr` as a template command so the engine
+    // resolves it; the sentinels tell the post-process pass which merged text
+    // becomes the control's editable default.
+    const expression = DEFAULT_EXPRESSION_PATTERN.exec(match[2].trim())?.[1].trim();
+    const token = expression
+      ? `__DOCGEN_CONTROL_${index}_START__{{= ${expression} }}__DOCGEN_CONTROL_${index}_END__`
+      : `__DOCGEN_CONTROL_${index}__`;
+    controls.push({
+      name: decodeXmlText(expression ?? match[2]).trim(),
+      type: match[1].toUpperCase() === 'TEXTBOX' ? 'text' : 'date',
+    });
+
+    let tokenPlaced = false;
+    for (const [index, node] of nodes.entries()) {
+      const nodeStart = offsets[index];
+      const overlapStart = Math.max(markerStart, nodeStart);
+      const overlapEnd = Math.min(markerEnd, nodeStart + node.text.length);
+      if (overlapStart >= overlapEnd) {
+        continue;
+      }
+
+      edits.push({
+        start: node.start + (overlapStart - nodeStart),
+        end: node.start + (overlapEnd - nodeStart),
+        replacement: tokenPlaced ? '' : token,
+      });
+      tokenPlaced = true;
+    }
+  }
+
+  if (edits.length === 0) {
+    return { xml: paragraphXml, changed: false };
+  }
+
+  let nextXml = paragraphXml;
+  for (const edit of edits.reverse()) {
+    nextXml = nextXml.slice(0, edit.start) + edit.replacement + nextXml.slice(edit.end);
+  }
+
+  return { xml: nextXml, changed: true };
+}
+
+function collectTextNodes(xml: string): { start: number; text: string }[] {
+  return [...xml.matchAll(TEXT_NODE_PATTERN)].map((match) => ({
+    start: match.index + match[0].indexOf('>') + 1,
+    text: match[1],
+  }));
 }
 
 function addRowSuppressionMarkers(
@@ -442,22 +518,113 @@ function isRemovableEmptyParagraph(paragraphXml: string): boolean {
 }
 
 function applyEditableControls(xml: string, controls: ControlMarker[]): string {
-  let nextXml = xml;
-
-  for (const control of controls) {
-    const tokenPattern = escapeRegExp(control.token);
-    const controlXml = contentControlXml(control);
-    nextXml = nextXml.replace(
-      new RegExp(`<w:r\\b[^>]*>[\\s\\S]*?${tokenPattern}[\\s\\S]*?<\\/w:r>`, 'g'),
-      controlXml
-    );
-    nextXml = nextXml.replace(new RegExp(tokenPattern, 'g'), controlXml);
+  if (controls.length === 0) {
+    return xml;
   }
 
-  return nextXml;
+  const nextXml = xml.replace(RUN_PATTERN, (runXml) =>
+    runXml.includes('__DOCGEN_CONTROL_') ? splitRunAtControls(runXml, controls) : runXml
+  );
+
+  return nextXml.replace(CONTROL_TOKEN_PATTERN, '');
 }
 
-function contentControlXml(control: ControlMarker): string {
+/**
+ * A `<w:sdt>` is a sibling of runs rather than run content, so the run holding
+ * a token is rebuilt as prefix run + control + suffix run. Text either side of
+ * the marker and the run's own formatting are carried over to both.
+ */
+function splitRunAtControls(runXml: string, controls: ControlMarker[]): string {
+  const openTag = /^<w:r(?:\s[^>]*?)?>/.exec(runXml);
+  if (!openTag) {
+    return runXml;
+  }
+
+  const inner = runXml.slice(openTag[0].length, runXml.lastIndexOf('</w:r>'));
+  const propertiesMatch = RUN_PROPERTIES_PATTERN.exec(inner);
+  const runProperties = propertiesMatch ? propertiesMatch[1] : '';
+  const body = propertiesMatch ? inner.slice(propertiesMatch[0].length) : inner;
+
+  const pieces: string[] = [];
+  let pendingBody = '';
+  // Set while between a START and END sentinel: content accumulates into the
+  // control's editable default instead of into a plain run.
+  let capturing: { control: ControlMarker; body: string } | null = null;
+
+  const append = (xml: string): void => {
+    if (capturing) {
+      capturing.body += xml;
+    } else {
+      pendingBody += xml;
+    }
+  };
+  const flushRun = (): void => {
+    if (hasRunContent(pendingBody)) {
+      pieces.push(`${openTag[0]}${runProperties}${pendingBody}</w:r>`);
+    }
+    pendingBody = '';
+  };
+
+  let cursor = 0;
+  for (const node of body.matchAll(TEXT_NODE_PATTERN)) {
+    append(body.slice(cursor, node.index));
+    cursor = node.index + node[0].length;
+
+    if (!node[1].includes('__DOCGEN_CONTROL_')) {
+      append(node[0]);
+      continue;
+    }
+
+    let textCursor = 0;
+    for (const token of node[1].matchAll(CONTROL_TOKEN_PATTERN)) {
+      append(textNodeXml(node[1].slice(textCursor, token.index)));
+      textCursor = token.index + token[0].length;
+      const control = controls[Number(token[1])];
+      if (!control) {
+        continue;
+      }
+
+      if (token[2] === 'START') {
+        flushRun();
+        capturing = { control, body: '' };
+      } else if (token[2] === 'END') {
+        if (capturing) {
+          pieces.push(contentControlXml(control, runProperties, capturing.body));
+          capturing = null;
+        }
+      } else {
+        flushRun();
+        pieces.push(contentControlXml(control, runProperties));
+      }
+    }
+    append(textNodeXml(node[1].slice(textCursor)));
+  }
+
+  append(body.slice(cursor));
+
+  // A START with no END in this run: the merged value spanned runs or
+  // paragraphs, so keep the text as-is rather than emit an unbalanced control.
+  if (capturing) {
+    pendingBody += capturing.body;
+  }
+  flushRun();
+
+  return pieces.join('');
+}
+
+function textNodeXml(text: string): string {
+  return text ? `<w:t xml:space="preserve">${text}</w:t>` : '';
+}
+
+function hasRunContent(runBody: string): boolean {
+  return /<w:[a-zA-Z]/.test(runBody.replace(/<w:t(?:\s[^>]*?)?><\/w:t>/g, ''));
+}
+
+function contentControlXml(
+  control: ControlMarker,
+  runProperties = '',
+  contentBody = ''
+): string {
   const id = stableControlId(control.name);
   const escapedName = escapeXmlAttribute(control.name);
   const controlProperties =
@@ -465,7 +632,9 @@ function contentControlXml(control: ControlMarker): string {
       ? `<w:date><w:dateFormat w:val="M/d/yyyy"/><w:lid w:val="en-US"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>`
       : '<w:text/>';
 
-  return `<w:sdt><w:sdtPr><w:alias w:val="${escapedName}"/><w:tag w:val="${escapedName}"/><w:id w:val="${id}"/>${controlProperties}</w:sdtPr><w:sdtContent><w:r><w:t></w:t></w:r></w:sdtContent></w:sdt>`;
+  const content = hasRunContent(contentBody) ? contentBody : '<w:t></w:t>';
+
+  return `<w:sdt><w:sdtPr>${runProperties}<w:alias w:val="${escapedName}"/><w:tag w:val="${escapedName}"/><w:id w:val="${id}"/>${controlProperties}</w:sdtPr><w:sdtContent><w:r>${runProperties}${content}</w:r></w:sdtContent></w:sdt>`;
 }
 
 function stableControlId(input: string): number {
