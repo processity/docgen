@@ -24,6 +24,21 @@ const PARAGRAPH_PATTERN = /<w:p(?:\s[^>]*?)?>[\s\S]*?<\/w:p>/g;
 const RUN_PATTERN = /<w:r(?:\s[^>]*?)?>[\s\S]*?<\/w:r>/g;
 const TEXT_NODE_PATTERN = /<w:t(?:\s[^>]*?)?>([\s\S]*?)<\/w:t>/g;
 const RUN_PROPERTIES_PATTERN = /^\s*(<w:rPr\b(?:[^>]*\/>|[\s\S]*?<\/w:rPr>))/;
+const SETTINGS_TAG_PATTERN = /<(\/?)w:([A-Za-z0-9]+)[^>]*?(\/?)>/g;
+/**
+ * `CT_Settings` is an ordered sequence, so `w:documentProtection` has to be
+ * inserted after these and before everything else, or Word discards it.
+ */
+const SETTINGS_BEFORE_PROTECTION = new Set([
+  'writeProtection', 'view', 'zoom', 'removePersonalInformation', 'removeDateAndTime',
+  'doNotDisplayPageBoundaries', 'displayBackgroundShape', 'printPostScriptOverText',
+  'printFractionalCharacterWidth', 'printFormsData', 'embedTrueTypeFonts', 'embedSystemFonts',
+  'saveSubsetFonts', 'saveFormsData', 'mirrorMargins', 'alignBordersAndEdges',
+  'bordersDoNotSurroundHeader', 'bordersDoNotSurroundFooter', 'gutterAtTop',
+  'hideSpellingErrors', 'hideGrammaticalErrors', 'activeWritingStyle', 'proofState',
+  'formsDesign', 'attachedTemplate', 'linkStyles', 'stylePaneFormatFilter',
+  'stylePaneSortMethod', 'documentType', 'mailMerge', 'revisionView', 'trackChanges',
+]);
 
 export interface DocxPostProcessContext {
   controls: ControlMarker[];
@@ -657,12 +672,36 @@ async function addDocumentProtection(zip: JSZip, editMode: string): Promise<void
   if (/<w:documentProtection\b[^>]*\/>/.test(settingsXml)) {
     settingsXml = settingsXml.replace(/<w:documentProtection\b[^>]*\/>/, protectionXml);
   } else {
-    settingsXml = settingsXml.replace('</w:settings>', `${protectionXml}</w:settings>`);
+    const insertAt = documentProtectionInsertIndex(settingsXml);
+    settingsXml =
+      insertAt === null
+        ? settingsXml.replace('</w:settings>', `${protectionXml}</w:settings>`)
+        : settingsXml.slice(0, insertAt) + protectionXml + settingsXml.slice(insertAt);
   }
 
   zip.file(settingsPath, settingsXml);
   await ensureContentTypeOverride(zip, '/word/settings.xml', SETTINGS_CONTENT_TYPE);
   await ensureDocumentRelationship(zip, SETTINGS_REL_TYPE, 'settings.xml');
+}
+
+/** Offset of the first direct child of `w:settings` that must follow protection. */
+function documentProtectionInsertIndex(settingsXml: string): number | null {
+  let depth = 0;
+
+  for (const match of settingsXml.matchAll(SETTINGS_TAG_PATTERN)) {
+    if (match[1]) {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 1 && !SETTINGS_BEFORE_PROTECTION.has(match[2])) {
+      return match.index;
+    }
+    if (match[3] !== '/') {
+      depth += 1;
+    }
+  }
+
+  return null;
 }
 
 function shouldProtectDocument(options: ExtendedMergeOptions): boolean {

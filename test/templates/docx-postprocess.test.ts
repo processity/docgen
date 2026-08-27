@@ -393,6 +393,38 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).not.toContain('<w:sdt>');
   });
 
+  it('inserts document protection at its schema position in settings.xml', async () => {
+    // CT_Settings is an ordered sequence: evenAndOddHeaders and compat must
+    // follow w:documentProtection, so appending at the end is invalid and Word
+    // discards the protection.
+    const template = await createTestDocxFromBodyXml(
+      `<w:p><w:r><w:t>{{TEXTBOX:Approver}}</w:t></w:r></w:p>`
+    );
+    const zip = await JSZip.loadAsync(template);
+    zip.file(
+      'word/settings.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:displayBackgroundShape/><w:evenAndOddHeaders w:val="true"/>' +
+        '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="x" w:val="15"/></w:compat>' +
+        '</w:settings>'
+    );
+
+    const result = await mergeTemplate(await zip.generateAsync({ type: 'nodebuffer' }), {}, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const settingsXml = await readDocxXml(result, 'word/settings.xml');
+    expect(settingsXml).toContain('<w:documentProtection w:edit="forms" w:enforcement="1"/>');
+    expect(settingsXml.indexOf('<w:documentProtection')).toBeGreaterThan(
+      settingsXml.indexOf('<w:displayBackgroundShape')
+    );
+    expect(settingsXml.indexOf('<w:documentProtection')).toBeLessThan(
+      settingsXml.indexOf('<w:evenAndOddHeaders')
+    );
+  });
+
   it('inserts watermark XML into a generated header when requested', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:p><w:r><w:t>{{Account.Name}}</w:t></w:r></w:p>
