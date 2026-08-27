@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_SUBSCRIPTION_ID: e6890ad9-401e-4696-bee4-c50fe72aa287
+  AZURE_SUBSCRIPTION_ID: e17586a0-be7a-491e-b35e-20cc104a103a
   RESOURCE_GROUP: docgen-uat-rg
   APP_NAME: docgen-uat
   ACR_NAME: docgenuat
