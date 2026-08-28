@@ -1,6 +1,9 @@
 import JSZip from 'jszip';
 import type { MergeOptions } from '../types';
 import { applyRichTextToWordprocessingXml } from './rich-text';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('templates:docx-postprocess');
 
 const DOCUMENT_XML = 'word/document.xml';
 const DOCUMENT_RELS = 'word/_rels/document.xml.rels';
@@ -20,6 +23,7 @@ const EDITABLE_MARKER_PATTERN =
   /\{\{\s*(TEXTBOX|DATE|DATEBOX|DATEPICKER)\s*:\s*([^{}]+?)\s*\}\}/gi;
 const CONTROL_TOKEN_PATTERN = /__DOCGEN_CONTROL_(\d+)(?:_(START|END))?__/g;
 const DEFAULT_EXPRESSION_PATTERN = /^(?:=|INS\b)\s*(.*)$/i;
+const UNRESOLVED_PREFILL = '__DOCGEN_PREFILL_UNRESOLVED__';
 const PARAGRAPH_PATTERN = /<w:p(?:\s[^>]*?)?>[\s\S]*?<\/w:p>/g;
 const RUN_PATTERN = /<w:r(?:\s[^>]*?)?>[\s\S]*?<\/w:r>/g;
 const TEXT_NODE_PATTERN = /<w:t(?:\s[^>]*?)?>([\s\S]*?)<\/w:t>/g;
@@ -284,7 +288,7 @@ function replaceEditableMarkersInParagraph(
     // becomes the control's editable default.
     const expression = DEFAULT_EXPRESSION_PATTERN.exec(match[2].trim())?.[1].trim();
     const token = expression
-      ? `__DOCGEN_CONTROL_${index}_START__{{= ${expression} }}__DOCGEN_CONTROL_${index}_END__`
+      ? `__DOCGEN_CONTROL_${index}_START__{{= ${safePrefillExpression(expression)} }}__DOCGEN_CONTROL_${index}_END__`
       : `__DOCGEN_CONTROL_${index}__`;
     controls.push({
       name: decodeXmlText(expression ?? match[2]).trim(),
@@ -319,6 +323,19 @@ function replaceEditableMarkersInParagraph(
   }
 
   return { xml: nextXml, changed: true };
+}
+
+/**
+ * An editable control is meant to be filled in, so a default that cannot be
+ * resolved leaves the box empty instead of failing the document. Written
+ * without `=>` or adjacent braces so it survives XML text and the `{{`/`}}`
+ * command delimiters.
+ */
+function safePrefillExpression(expression: string): string {
+  return (
+    `(function () { try { var v = (${expression}); return v == null ? '' : v } ` +
+    `catch (e) { return '${UNRESOLVED_PREFILL}' } })()`
+  );
 }
 
 function collectTextNodes(xml: string): { start: number; text: string }[] {
@@ -646,6 +663,14 @@ function contentControlXml(
     control.type === 'date'
       ? `<w:date><w:dateFormat w:val="M/d/yyyy"/><w:lid w:val="en-US"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>`
       : '<w:text/>';
+
+  if (contentBody.includes(UNRESOLVED_PREFILL)) {
+    logger.warn(
+      { control: control.name },
+      'Editable control default could not be resolved; leaving the control empty'
+    );
+    contentBody = '';
+  }
 
   const content = hasRunContent(contentBody) ? contentBody : '<w:t></w:t>';
 

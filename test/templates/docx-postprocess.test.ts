@@ -357,6 +357,37 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('<w:t xml:space="preserve">Acme</w:t>');
   });
 
+  it('leaves the control empty when a prefill expression cannot be resolved', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t xml:space="preserve">Entity: {{TEXTBOX: = uipathSigningEntity }}</w:t></w:r></w:p>
+      <w:p><w:r><w:t xml:space="preserve">Partner: {{TEXTBOX: = Account.Missing }}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(template, { Account: {} }, {
+      ...baseOptions,
+      readOnly: true,
+    } as MergeOptions & { readOnly: boolean });
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('w:val="uipathSigningEntity"');
+    expect(documentXml).toContain('w:val="Account.Missing"');
+    expect(documentXml).toContain('<w:t xml:space="preserve">Entity: </w:t>');
+    expect(documentXml).not.toContain('__DOCGEN_PREFILL_UNRESOLVED__');
+    expect(documentXml.match(/<w:sdtContent><w:r><w:t><\/w:t><\/w:r><\/w:sdtContent>/g)).toHaveLength(2);
+  });
+
+  it('still fails loudly when a plain data field cannot be resolved', async () => {
+    const template = await createTestDocxFromBodyXml(
+      `<w:p><w:r><w:t>{{= uipathSigningEntity }}</w:t></w:r></w:p>`
+    );
+
+    await expect(
+      mergeTemplate(template, {}, { ...baseOptions, readOnly: true } as MergeOptions & {
+        readOnly: boolean;
+      })
+    ).rejects.toThrow(/uipathSigningEntity/);
+  });
+
   it('keeps merged content when a prefill value spans paragraphs', async () => {
     const template = await createTestDocxFromBodyXml(`
       <w:p><w:r><w:t xml:space="preserve">Clause: {{TEXTBOX: = Clause.Text__c }} end</w:t></w:r></w:p>
