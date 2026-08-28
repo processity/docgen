@@ -102,8 +102,13 @@ export async function mergeTemplate(
       if (error.message.includes('ENOENT') || error.message.includes('not found')) {
         throw new TemplateInvalidFormatError('Template file not found or invalid DOCX format');
       }
-      if (error.message.includes('Invalid field')) {
-        throw new TemplateMergeError(`${error.message}. Check that all field paths exist in data.`);
+      // A missing field path is the most common merge failure, so name what the
+      // envelope actually provides instead of leaving the author guessing.
+      if (error.message.includes('is not defined') || error.message.includes('Invalid field')) {
+        const available = Object.keys(data).sort().join(', ') || '(none)';
+        throw new TemplateMergeError(
+          `${error.message}. Available top-level data fields: ${available}`
+        );
       }
       throw new TemplateMergeError(error.message);
     }
