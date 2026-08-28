@@ -1,5 +1,31 @@
 const RICH_TEXT_TAG_PATTERN = /<\/?(p|div|br|b|strong|i|em|u|ul|ol|li|a)(\s|>|\/)/i;
 const JAPANESE_TEXT_PATTERN = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+const HTML_ENTITIES: Record<string, string> = {
+  nbsp: ' ',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  rsquo: '’',
+  lsquo: '‘',
+  ldquo: '“',
+  rdquo: '”',
+  ndash: '–',
+  mdash: '—',
+  hellip: '…',
+  bull: '•',
+  trade: '™',
+  reg: '®',
+  copy: '©',
+  deg: '°',
+};
+/** Built from `HTML_ENTITIES` so the match test and the decoder can never disagree. */
+const HTML_ENTITY_SOURCE = `&(?:(${Object.keys(HTML_ENTITIES).join(
+  '|'
+)})|#x([0-9a-f]+)|#([0-9]+));`;
+const HTML_ENTITY_PATTERN = new RegExp(HTML_ENTITY_SOURCE, 'i');
+const HTML_ENTITY_GLOBAL_PATTERN = new RegExp(HTML_ENTITY_SOURCE, 'gi');
 const JAPANESE_FONT_FAMILY = 'Meiryo UI';
 export const DOCGEN_LITERAL_XML_DELIMITER = '__DOCGEN_LITERAL_XML_BOUNDARY_8E31A9__';
 
@@ -76,7 +102,7 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraphXml) => {
     const html = extractParagraphText(paragraphXml);
     if (!RICH_TEXT_TAG_PATTERN.test(html)) {
-      return paragraphXml;
+      return decodeHtmlEntitiesInTextNodes(paragraphXml);
     }
 
     const paragraphs = parseRichTextHtml(html);
@@ -101,6 +127,27 @@ export function applyRichTextToWordprocessingXml(xml: string): string {
       })
       .join('');
   });
+}
+
+/**
+ * Rich-text fields often carry HTML entities without any markup around them
+ * (`UiPath&#39;s`, `the &quot;Agreement&quot;`). Those paragraphs never reach the
+ * run-rebuilding path above, so decode the entities in place instead. Text nodes
+ * without an entity are returned untouched, because decoding and re-escaping is
+ * not a byte-identical round trip.
+ */
+function decodeHtmlEntitiesInTextNodes(paragraphXml: string): string {
+  return paragraphXml.replace(
+    /(<w:t\b[^>]*>)([\s\S]*?)(<\/w:t>)/g,
+    (textNode, openingTag: string, content: string, closingTag: string) => {
+      const text = decodeXmlText(content);
+      if (!HTML_ENTITY_PATTERN.test(text)) {
+        return textNode;
+      }
+
+      return `${openingTag}${escapeXmlText(decodeHtmlEntities(text))}${closingTag}`;
+    }
+  );
 }
 
 function createContinuationParagraphProperties(paragraphProperties: string): string {
@@ -300,16 +347,35 @@ function decodeXmlText(text: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/**
+ * Decodes in a single pass, so an escaped entity such as `&amp;quot;` resolves to
+ * the literal text `&quot;` instead of being decoded twice into `"`. Anything
+ * that does not resolve to a character Word can store is left as written.
+ */
 function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#([0-9]+);/g, (_, decimal: string) => String.fromCodePoint(parseInt(decimal, 10)));
+  return text.replace(
+    HTML_ENTITY_GLOBAL_PATTERN,
+    (entity, name: string | undefined, hex: string | undefined, decimal: string | undefined) => {
+      if (name !== undefined) {
+        return HTML_ENTITIES[name.toLowerCase()] ?? entity;
+      }
+
+      const codePoint = parseInt(hex ?? (decimal as string), hex === undefined ? 10 : 16);
+      return isXmlCodePoint(codePoint) ? String.fromCodePoint(codePoint) : entity;
+    }
+  );
+}
+
+/** Rejects code points XML forbids, so a stray `&#0;` cannot produce a file Word refuses to open. */
+function isXmlCodePoint(codePoint: number): boolean {
+  return (
+    codePoint === 0x9 ||
+    codePoint === 0xa ||
+    codePoint === 0xd ||
+    (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+    (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+    (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+  );
 }
 
 function escapeXmlText(text: string): string {

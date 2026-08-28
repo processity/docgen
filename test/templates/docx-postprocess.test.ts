@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { applyWatermarkToDocx } from '../../src/templates/docx-postprocess';
 import { mergeTemplate } from '../../src/templates/merge';
+import { applyRichTextToWordprocessingXml } from '../../src/templates/rich-text';
 import type { MergeOptions } from '../../src/types';
 import { createTestDocxFromBodyXml, readDocxXml } from '../helpers/test-docx';
 
@@ -66,6 +67,94 @@ describe('DOCX template post-processing', () => {
     expect(documentXml).toContain('<w:t xml:space="preserve">ガバナンス</w:t>');
     expect(documentXml).toContain('<w:t xml:space="preserve"> 本注文書に適用されます。</w:t>');
     expect(documentXml.match(/w:eastAsia="Meiryo UI"/g)).toHaveLength(2);
+  });
+
+  it('decodes HTML entities in rich-text fields that contain no markup', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Quote.FlowDown}}</w:t></w:r></w:p>
+      <w:p><w:r><w:t>{{Quote.Advocacy}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Quote: {
+          // Verbatim Commercial_Clause__c.Text__c values from OTO-4032.
+          FlowDown:
+            'Customer’s use of the Products Bundle is governed by this Schedule which supplements the terms and conditions of the Public Sector EULA (the &quot;Agreement&quot;).',
+          Advocacy:
+            'Distributor authorizes UiPath to publicly identify it as a distributor and include Distributor’s name, trademarks, and logo on UiPath&#39;s website.',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    expect(documentXml).toContain('the "Agreement").');
+    expect(documentXml).toContain("on UiPath's website.");
+    expect(documentXml).not.toContain('&amp;quot;');
+    expect(documentXml).not.toContain('&amp;#39;');
+  });
+
+  it('keeps the merged document well-formed when decoding entities', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Clause.Text__c}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        Clause: {
+          // `&amp;` must survive as a literal ampersand, and an escaped entity
+          // must not be decoded a second time.
+          Text__c:
+            'R&amp;D &quot;unit&quot; UiPath&apos;s &lt;tag&gt; &amp;quot; &nbsp;&mdash;&rsquo;end',
+        },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const paragraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).find((candidate) =>
+      candidate.includes('R&amp;D')
+    );
+
+    expect(paragraph).toContain('R&amp;D "unit" UiPath\'s &lt;tag&gt; &amp;quot;  —’end');
+    // Every ampersand left in the part must be a valid XML entity reference.
+    expect(documentXml).not.toMatch(/&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-f]+);)/i);
+  });
+
+  it('leaves numeric references XML cannot store as written', async () => {
+    const template = await createTestDocxFromBodyXml(`
+      <w:p><w:r><w:t>{{Clause.Text__c}}</w:t></w:r></w:p>
+    `);
+
+    const result = await mergeTemplate(
+      template,
+      {
+        // A NUL, a lone surrogate and an out-of-range code point would each
+        // produce a file Word refuses to open, so they stay literal.
+        Clause: { Text__c: 'a&#0;b&#xD800;c&#99999999;d&#8212;e' },
+      },
+      baseOptions
+    );
+
+    const documentXml = await readDocxXml(result, 'word/document.xml');
+    const paragraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) ?? []).find((candidate) =>
+      candidate.includes('a&amp;#0;b')
+    );
+
+    expect(paragraph).toContain('a&amp;#0;b&amp;#xD800;c&amp;#99999999;d—e');
+    expect(documentXml).not.toMatch(/&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-f]+);)/i);
+  });
+
+  it('leaves paragraphs without HTML entities untouched', () => {
+    // `&amp;`/`&lt;` are XML escaping, not HTML entities, so nothing should be
+    // rewritten here — decoding and re-escaping is not a byte-identical round trip.
+    const staticParagraph =
+      '<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">Tom &amp; Jerry said &quot;hi&quot; &lt;here&gt; M&amp;M;s</w:t></w:r></w:p>';
+
+    expect(applyRichTextToWordprocessingXml(staticParagraph)).toBe(staticParagraph);
   });
 
   it('preserves template paragraph formatting on every rich-text paragraph', async () => {
