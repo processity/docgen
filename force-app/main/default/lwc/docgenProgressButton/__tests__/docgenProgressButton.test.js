@@ -1,6 +1,7 @@
 import { createElement } from 'lwc';
 import DocgenProgressButton from 'c/docgenProgressButton';
 import startGeneration from '@salesforce/apex/DocgenAsyncController.startGeneration';
+import wakePoller from '@salesforce/apex/DocgenAsyncController.wakePoller';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
@@ -34,6 +35,17 @@ jest.mock(
   () => {
     return {
       default: jest.fn(),
+    };
+  },
+  { virtual: true }
+);
+
+jest.mock(
+  '@salesforce/apex/DocgenAsyncController.wakePoller',
+  () => {
+    // Apex imports always resolve to a Promise; wakePoller is fire-and-forget.
+    return {
+      default: jest.fn(() => Promise.resolve()),
     };
   },
   { virtual: true }
@@ -207,6 +219,85 @@ describe('c-docgen-progress-button', () => {
       '/sfc/servlet.shepherd/version/download/068123',
       '_blank'
     );
+    expect(successHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('wakes the poller after enqueueing a non-terminal generation', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton,
+    });
+    element.templateId = 'a0T1234567890ABC';
+    element.recordId = '0011234567890ABC';
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'QUEUED',
+      progressValue: 20,
+      isTerminal: false,
+    });
+    getGenerationStatus.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+    });
+
+    document.body.appendChild(element);
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    expect(wakePoller).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wake the poller when generation is already terminal', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton,
+    });
+    element.templateId = 'a0T1234567890ABC';
+    element.recordId = '0011234567890ABC';
+
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+    });
+
+    document.body.appendChild(element);
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+
+    expect(wakePoller).not.toHaveBeenCalled();
+  });
+
+  it('still completes generation when the poller wake fails', async () => {
+    const element = createElement('c-docgen-progress-button', {
+      is: DocgenProgressButton,
+    });
+    element.templateId = 'a0T1234567890ABC';
+    element.recordId = '0011234567890ABC';
+
+    wakePoller.mockRejectedValueOnce(new Error('callout failed'));
+    startGeneration.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'QUEUED',
+      progressValue: 20,
+      isTerminal: false,
+    });
+    getGenerationStatus.mockResolvedValue({
+      generatedDocumentId: 'a0G123',
+      status: 'SUCCEEDED',
+      progressValue: 100,
+      isTerminal: true,
+    });
+
+    const successHandler = jest.fn();
+    document.body.appendChild(element);
+    element.addEventListener('docgensuccess', successHandler);
+    element.shadowRoot.querySelector('lightning-button').click();
+    await flushPromises();
+    await flushPromises();
+
     expect(successHandler).toHaveBeenCalledTimes(1);
   });
 

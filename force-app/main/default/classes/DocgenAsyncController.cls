@@ -4,6 +4,7 @@
 public with sharing class DocgenAsyncController {
     private static final Integer MAX_INLINE_PREVIEW_BYTES = 2500000;
     private static final Integer MAX_PDF_PREVIEW_PAGES = 20;
+    private static final Integer WAKE_TIMEOUT_MS = 10000;
 
     public class StartResult {
         @AuraEnabled public String generatedDocumentId { get; set; }
@@ -270,6 +271,52 @@ public with sharing class DocgenAsyncController {
             readOnlyWord,
             DocgenAttachmentService.sortSet(additionalPdfContentVersionIds)
         );
+    }
+
+    /**
+     * Get Named Credential name from Custom Settings
+     * Allows configuring different Named Credentials for different environments
+     * Defaults to 'Docgen_Node_API' if not configured
+     */
+    @TestVisible
+    private static String getNamedCredentialName() {
+        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
+        if (settings != null && String.isNotBlank(settings.Named_Credential_Name__c)) {
+            return settings.Named_Credential_Name__c;
+        }
+        return 'Docgen_Node_API'; // Default to production Named Credential
+    }
+
+    /**
+     * Tell the worker to poll immediately instead of waiting for its next tick.
+     *
+     * Called by the LWC right after an interactive generation is enqueued. Runs in
+     * its own transaction so there is no pending DML blocking the callout, which is
+     * why this is a separate @AuraEnabled method rather than part of startGeneration.
+     *
+     * Best-effort by design: any failure just means the document waits for the normal
+     * poll interval, so nothing here is allowed to surface to the user.
+     */
+    @AuraEnabled
+    public static void wakePoller() {
+        try {
+            HttpRequest req = new HttpRequest();
+            req.setEndpoint('callout:' + getNamedCredentialName() + '/worker/wake');
+            req.setMethod('POST');
+            req.setHeader('Content-Type', 'application/json');
+            req.setBody('{}');
+            req.setTimeout(WAKE_TIMEOUT_MS);
+
+            HTTPResponse res = new Http().send(req);
+            if (res.getStatusCode() != 202) {
+                System.debug(
+                    LoggingLevel.WARN,
+                    'Poller wake returned unexpected status: ' + res.getStatusCode()
+                );
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Poller wake failed: ' + e.getMessage());
+        }
     }
 
     @AuraEnabled

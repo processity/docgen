@@ -2,6 +2,7 @@ import { createElement } from 'lwc';
 import CompositeDocgenButton from 'c/compositeDocgenButton';
 import generateComposite from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
+import wakePoller from '@salesforce/apex/DocgenAsyncController.wakePoller';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
 import getPdfPreviewPage from '@salesforce/apex/DocgenAsyncController.getPdfPreviewPage';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
@@ -47,6 +48,17 @@ jest.mock(
   () => {
     return {
       default: jest.fn()
+    };
+  },
+  { virtual: true }
+);
+
+jest.mock(
+  '@salesforce/apex/DocgenAsyncController.wakePoller',
+  () => {
+    // Apex imports always resolve to a Promise; wakePoller is fire-and-forget.
+    return {
+      default: jest.fn(() => Promise.resolve()),
     };
   },
   { virtual: true }
@@ -172,6 +184,35 @@ describe('c-composite-docgen-button', () => {
     window.history.replaceState({}, '', '/');
     // Clear all mocks
     jest.clearAllMocks();
+  });
+
+  it('wakes the poller after enqueueing a pending preview', async () => {
+    const element = createPreviewElement();
+    // A real enqueue comes back non-terminal; the preview arrives on a later poll.
+    getGenerationStatus.mockResolvedValue(buildPendingStatus('PDF'));
+    await startPendingPreview(
+      element,
+      buildPendingStatus('PDF', { status: 'QUEUED', progressValue: 20, isTerminal: false })
+    );
+
+    expect(wakePoller).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wake the poller on the immediate (non-preview) path', async () => {
+    const element = createElement('c-composite-docgen-button', {
+      is: CompositeDocgenButton
+    });
+    element.compositeDocumentId = 'a0Y1234567890ABC';
+    element.recordId = '0011234567890ABC';
+    element.recordIdField = 'accountId';
+
+    generateComposite.mockResolvedValue({ success: true, downloadUrl: '/download' });
+
+    document.body.appendChild(element);
+    findButton(element, 'Generate Composite Document').click();
+    await flushPromises();
+
+    expect(wakePoller).not.toHaveBeenCalled();
   });
 
   it('calls generateComposite with correct parameters on button click', async () => {

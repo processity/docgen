@@ -71,6 +71,8 @@ export class PollerService {
   };
   private startTime: number | null = null;
   private inFlightPromises: Set<Promise<any>> = new Set();
+  private batchInFlight: boolean = false;
+  private wakePending: boolean = false;
 
   constructor() {
     logger.info('PollerService initialized');
@@ -188,12 +190,41 @@ export class PollerService {
 
   /**
    * Main processing batch cycle
+   *
+   * Single-flight: only one batch runs at a time per replica. Document locking
+   * is not atomic (lockDocument is an unconditional PATCH), so two concurrent
+   * batches would fetch the same rows and generate each document twice.
+   *
+   * A call arriving mid-batch sets wakePending rather than being dropped: the
+   * in-flight batch may already have fetched before the new row was inserted,
+   * so coalescing alone would leave that row waiting for the next timer tick.
+   * The trailing cycle guarantees it is picked up promptly.
    */
   async processBatch(): Promise<void> {
     if (!this.running) {
       return;
     }
 
+    if (this.batchInFlight) {
+      this.wakePending = true;
+      return;
+    }
+
+    this.batchInFlight = true;
+    try {
+      do {
+        this.wakePending = false;
+        await this.runBatchCycle();
+      } while (this.wakePending && this.running);
+    } finally {
+      this.batchInFlight = false;
+    }
+  }
+
+  /**
+   * Run a single fetch-and-process cycle
+   */
+  private async runBatchCycle(): Promise<void> {
     const correlationId = `poll-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const log = logger.child({ correlationId });
 

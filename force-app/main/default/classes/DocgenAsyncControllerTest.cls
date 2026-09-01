@@ -10,6 +10,93 @@ private class DocgenAsyncControllerTest {
         DocgenTestDataFactory.createAccount('Async Account Ltd');
     }
 
+    private class MockWakeAccepted implements HttpCalloutMock {
+        public Integer calls = 0;
+
+        public HTTPResponse respond(HTTPRequest req) {
+            calls++;
+            Assert.areEqual('POST', req.getMethod(), 'Wake should be a POST');
+            Assert.areEqual(
+                'callout:Docgen_Node_API/worker/wake',
+                req.getEndpoint(),
+                'Wake should hit the worker endpoint via the Named Credential'
+            );
+
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(202);
+            res.setStatus('Accepted');
+            res.setHeader('Content-Type', 'application/json');
+            res.setBody('{"triggered":true,"correlationId":"test-correlation-id"}');
+            return res;
+        }
+    }
+
+    private class MockWakeServerError implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(503);
+            res.setStatus('Service Unavailable');
+            res.setBody('{"error":"unavailable"}');
+            return res;
+        }
+    }
+
+    private class MockWakeThrows implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            throw new CalloutException('Read timed out');
+        }
+    }
+
+    @IsTest
+    static void testWakePollerCallsWorkerEndpoint() {
+        MockWakeAccepted mock = new MockWakeAccepted();
+        Test.setMock(HttpCalloutMock.class, mock);
+
+        Test.startTest();
+        DocgenAsyncController.wakePoller();
+        Test.stopTest();
+
+        Assert.areEqual(1, mock.calls, 'Wake should issue exactly one callout');
+    }
+
+    @IsTest
+    static void testWakePollerUsesConfiguredNamedCredential() {
+        insert new Docgen_Settings__c(
+            SetupOwnerId = UserInfo.getOrganizationId(),
+            Named_Credential_Name__c = 'Docgen_Node_API_CI'
+        );
+
+        Test.startTest();
+        String credential = DocgenAsyncController.getNamedCredentialName();
+        Test.stopTest();
+
+        Assert.areEqual(
+            'Docgen_Node_API_CI',
+            credential,
+            'Wake should honour the Named Credential override'
+        );
+    }
+
+    @IsTest
+    static void testWakePollerSwallowsErrorResponse() {
+        Test.setMock(HttpCalloutMock.class, new MockWakeServerError());
+
+        Test.startTest();
+        DocgenAsyncController.wakePoller();
+        Test.stopTest();
+        // Reaching here is the assertion: a non-202 must not surface to the caller.
+    }
+
+    @IsTest
+    static void testWakePollerSwallowsCalloutException() {
+        Test.setMock(HttpCalloutMock.class, new MockWakeThrows());
+
+        Test.startTest();
+        DocgenAsyncController.wakePoller();
+        Test.stopTest();
+        // A failed wake degrades to waiting for the normal poll, never an error.
+    }
+
     private static ContentVersion createTestContentVersion(String title) {
         return createTestContentVersion(title, 'pdf', Blob.valueOf('Test PDF Content'));
     }

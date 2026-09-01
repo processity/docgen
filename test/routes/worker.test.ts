@@ -1,6 +1,7 @@
 import { config as dotenvConfig } from 'dotenv';
 import nock from 'nock';
 import { build } from '../../src/server';
+import { pollerService } from '../../src/worker';
 import { loadConfig } from '../../src/config';
 import { createSalesforceAuth } from '../../src/sf/auth';
 import { generateValidJWT } from '../helpers/jwt-helper';
@@ -75,6 +76,16 @@ describe('Worker Routes', () => {
     };
   }
 
+  async function post(url: string, token?: string) {
+    const headers = token ? { authorization: `Bearer ${token}` } : undefined;
+    const response = await app.inject({ method: 'POST', url, headers });
+    return {
+      status: response.statusCode,
+      body: response.json(),
+      headers: response.headers,
+    };
+  }
+
   describe('GET /worker/status', () => {
     it('should return current poller status', async () => {
       const token = await generateValidJWT();
@@ -140,6 +151,78 @@ describe('Worker Routes', () => {
       const response = await get('/worker/stats');
 
       expect(response.status).toBe(401);
+    });
+  });
+
+  describe('POST /worker/wake', () => {
+    // build() does not start the poller, so isRunning() is false here and the
+    // handler would skip processBatch(). Spy on both to test the wired path.
+    let processBatch: jest.SpyInstance;
+    let isRunning: jest.SpyInstance;
+
+    beforeEach(() => {
+      processBatch = jest.spyOn(pollerService, 'processBatch').mockResolvedValue(undefined);
+      isRunning = jest.spyOn(pollerService, 'isRunning').mockReturnValue(true);
+    });
+
+    afterEach(() => {
+      processBatch.mockRestore();
+      isRunning.mockRestore();
+    });
+
+    it('should accept the wake and trigger a poll cycle', async () => {
+      const token = await generateValidJWT();
+
+      const response = await post('/worker/wake', token);
+
+      expect(response.status).toBe(202);
+      expect(response.body.triggered).toBe(true);
+      expect(response.body).toHaveProperty('correlationId');
+      expect(processBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not await the poll cycle', async () => {
+      const token = await generateValidJWT();
+      let release: () => void = () => {};
+      processBatch.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          })
+      );
+
+      const response = await post('/worker/wake', token);
+
+      expect(response.status).toBe(202);
+      release();
+    });
+
+    it('should report triggered=false when the poller is not running', async () => {
+      const token = await generateValidJWT();
+      isRunning.mockReturnValue(false);
+
+      const response = await post('/worker/wake', token);
+
+      expect(response.status).toBe(202);
+      expect(response.body.triggered).toBe(false);
+      expect(processBatch).not.toHaveBeenCalled();
+    });
+
+    it('should still return 202 when the poll cycle rejects', async () => {
+      const token = await generateValidJWT();
+      processBatch.mockRejectedValue(new Error('poll failed'));
+
+      const response = await post('/worker/wake', token);
+
+      expect(response.status).toBe(202);
+      expect(response.body.triggered).toBe(true);
+    });
+
+    it('should require AAD authentication', async () => {
+      const response = await post('/worker/wake');
+
+      expect(response.status).toBe(401);
+      expect(processBatch).not.toHaveBeenCalled();
     });
   });
 

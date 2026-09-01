@@ -1,6 +1,7 @@
 import { LightningElement, api } from 'lwc';
 import generateCompositeWithAttachments from '@salesforce/apex/DocgenController.generateCompositeWithAttachments';
 import startCompositeGeneration from '@salesforce/apex/DocgenAsyncController.startCompositeGeneration';
+import wakePoller from '@salesforce/apex/DocgenAsyncController.wakePoller';
 import getGenerationStatus from '@salesforce/apex/DocgenAsyncController.getGenerationStatus';
 import saveGeneratedDocument from '@salesforce/apex/DocgenAsyncController.saveGeneratedDocument';
 import cancelGeneratedDocument from '@salesforce/apex/DocgenAsyncController.cancelGeneratedDocument';
@@ -396,6 +397,10 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
       if (startResult.isTerminal) {
         return this.finish(startResult);
       }
+
+      // Nudge the worker so it picks this up now rather than on its next
+      // scheduled tick. Fire and forget - never awaited, never surfaced.
+      wakePoller().catch(() => {});
 
       return this.waitForTerminalStatus();
     } catch (error) {

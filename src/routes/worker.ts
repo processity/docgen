@@ -1,12 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { pollerService } from '../worker';
+import { getCorrelationId } from '../utils/correlation-id';
 
 /**
  * Worker routes for monitoring the document generation poller
  *
  * NOTE: In multi-replica deployments (Azure Container Apps with 1-5 replicas),
- * the poller runs automatically on ALL replicas. The Salesforce lock mechanism
- * (LockedUntil__c) prevents duplicate work. Status and stats are per-replica.
+ * the poller runs automatically on ALL replicas. Status and stats are per-replica.
+ *
+ * Within a replica, PollerService.processBatch() is single-flight, so a wake and
+ * a scheduled tick cannot overlap. Across replicas there is no such guarantee:
+ * lockDocument() is an unconditional PATCH, not an atomic claim, so two replicas
+ * fetching in the same window can both process a document. Pre-existing; making
+ * the claim atomic is tracked separately.
  *
  * All endpoints require AAD authentication
  */
@@ -116,6 +122,56 @@ export async function workerRoutes(fastify: FastifyInstance) {
           correlationId,
         });
       }
+    }
+  );
+
+  /**
+   * POST /worker/wake
+   * Trigger an immediate poll cycle on this replica
+   *
+   * Lets Salesforce signal that an interactive job was just enqueued, instead of
+   * waiting out the adaptive timer (15s active / 60s idle). Returns immediately
+   * without awaiting the batch: holding the request open would count against the
+   * HTTP autoscale rule and stall the caller's callout for the batch duration.
+   *
+   * Safe to call repeatedly and concurrently - processBatch() is single-flight
+   * and a wake arriving mid-batch schedules exactly one trailing cycle.
+   */
+  fastify.post(
+    '/wake',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        description: 'Trigger an immediate poll cycle on this replica',
+        tags: ['worker'],
+        security: [{ oauth2: [] }],
+        response: {
+          202: {
+            description: 'Wake accepted',
+            type: 'object',
+            properties: {
+              triggered: { type: 'boolean' },
+              correlationId: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const correlationId = getCorrelationId(request);
+      const triggered = pollerService.isRunning();
+
+      if (triggered) {
+        // Fire and forget - processBatch() handles its own errors, the catch is
+        // a backstop so a rejection can never become an unhandled rejection.
+        void pollerService.processBatch().catch((error: unknown) => {
+          fastify.log.error({ error, correlationId }, 'Wake-triggered poll cycle failed');
+        });
+      } else {
+        fastify.log.warn({ correlationId }, 'Wake received but poller is not running');
+      }
+
+      return reply.code(202).send({ triggered, correlationId });
     }
   );
 }

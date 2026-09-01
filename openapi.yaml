@@ -510,6 +510,43 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /worker/wake:
+    post:
+      summary: Trigger an immediate poll cycle
+      description: |
+        Wakes this replica's poller so a just-enqueued document is picked up now
+        instead of on the next scheduled tick (15s active / 60s idle).
+
+        Called by Salesforce right after an interactive generation is enqueued.
+        Returns immediately without awaiting the batch. Safe to call repeatedly
+        and concurrently: processBatch() is single-flight, and a wake arriving
+        mid-batch schedules exactly one trailing cycle.
+
+        Only reaches the replica that serves the request. Batch-originated
+        documents are not woken and continue on the normal poll schedule.
+      tags:
+        - worker
+      security:
+        - oauth2: []
+      responses:
+        '202':
+          description: Wake accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  triggered:
+                    type: boolean
+                    description: False when this replica's poller is not running
+                  correlationId:
+                    type: string
+              example:
+                triggered: true
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /worker/status:
     get:
       summary: Get current poller status
