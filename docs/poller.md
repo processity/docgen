@@ -185,7 +185,7 @@ async lockDocument(documentId: string): Promise<boolean> {
 
 ### Concurrency Control
 
-- **Parallel processing**: All documents in a batch (up to 20) are processed concurrently via `Promise.allSettled`
+- **Parallel processing**: Fetch-and-claim cycles are serialized while claimed documents process in the background (up to 20 in flight)
 - **LibreOffice pool limit**: Only 8 conversions run simultaneously; others queue internally
 - **Memory safety**: 20 jobs × ~5MB avg payload = ~100MB working set (well within 4GB container limit)
 

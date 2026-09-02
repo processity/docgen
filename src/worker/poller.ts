@@ -70,8 +70,11 @@ export class PollerService {
     uptimeSeconds: 0,
   };
   private startTime: number | null = null;
-  private inFlightPromises: Set<Promise<any>> = new Set();
+  private inFlightPromises: Set<Promise<void>> = new Set();
+  private maxInFlightDocuments: number = 20;
+  private queueMayHaveMore: boolean = false;
   private batchInFlight: boolean = false;
+  private batchPromise: Promise<void> | null = null;
   private wakePending: boolean = false;
 
   constructor() {
@@ -93,6 +96,7 @@ export class PollerService {
 
     logger.info('Starting poller service');
     this.running = true;
+    this.maxInFlightDocuments = config.poller.batchSize;
     this.startTime = Date.now();
     this.stats.isRunning = true;
 
@@ -116,6 +120,11 @@ export class PollerService {
     if (this.pollingTimer) {
       clearTimeout(this.pollingTimer);
       this.pollingTimer = null;
+    }
+
+    // Let any active fetch-and-claim cycle dispatch its claimed documents.
+    if (this.batchPromise) {
+      await Promise.allSettled([this.batchPromise]);
     }
 
     // Wait for in-flight jobs to complete
@@ -189,19 +198,25 @@ export class PollerService {
   }
 
   /**
-   * Main processing batch cycle
+   * Main fetch-and-claim cycle
    *
-   * Single-flight: only one batch runs at a time per replica. Document locking
-   * is not atomic (lockDocument is an unconditional PATCH), so two concurrent
-   * batches would fetch the same rows and generate each document twice.
+   * Fetching and claiming remain single-flight per replica because document
+   * locking is not atomic (lockDocument is an unconditional PATCH). Claimed
+   * documents process in the background so later wakes can fill unused capacity
+   * without waiting for the current documents to finish.
    *
-   * A call arriving mid-batch sets wakePending rather than being dropped: the
-   * in-flight batch may already have fetched before the new row was inserted,
+   * A call arriving mid-claim sets wakePending rather than being dropped: the
+   * in-flight cycle may already have fetched before the new row was inserted,
    * so coalescing alone would leave that row waiting for the next timer tick.
    * The trailing cycle guarantees it is picked up promptly.
    */
   async processBatch(): Promise<void> {
     if (!this.running) {
+      return;
+    }
+
+    if (this.inFlightPromises.size >= this.maxInFlightDocuments) {
+      this.queueMayHaveMore = true;
       return;
     }
 
@@ -211,18 +226,34 @@ export class PollerService {
     }
 
     this.batchInFlight = true;
-    try {
+    const batchPromise = (async () => {
       do {
         this.wakePending = false;
         await this.runBatchCycle();
-      } while (this.wakePending && this.running);
+      } while (
+        this.wakePending &&
+        this.running &&
+        this.inFlightPromises.size < this.maxInFlightDocuments
+      );
+
+      if (this.wakePending && this.running) {
+        this.queueMayHaveMore = true;
+      }
+    })();
+    this.batchPromise = batchPromise;
+
+    try {
+      await batchPromise;
     } finally {
+      if (this.batchPromise === batchPromise) {
+        this.batchPromise = null;
+      }
       this.batchInFlight = false;
     }
   }
 
   /**
-   * Run a single fetch-and-process cycle
+   * Run a single fetch-and-claim cycle
    */
   private async runBatchCycle(): Promise<void> {
     const correlationId = `poll-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -232,9 +263,12 @@ export class PollerService {
     this.stats.lastPollTime = new Date().toISOString();
 
     try {
-      // Fetch queued documents
-      const documents = await this.fetchQueuedDocuments();
+      const availableCapacity = this.maxInFlightDocuments - this.inFlightPromises.size;
+
+      // Fetch only enough queued documents to fill the current capacity
+      const documents = await this.fetchQueuedDocuments(availableCapacity);
       this.setQueueDepth(documents.length);
+      this.queueMayHaveMore = documents.length === availableCapacity;
 
       // Track queue depth metric
       trackGauge('queue_depth', documents.length, {
@@ -248,26 +282,24 @@ export class PollerService {
 
       log.info({ count: documents.length }, 'Fetched queued documents');
 
-      // Lock and process documents
-      const results = await Promise.allSettled(documents.map((doc) => this.lockAndProcess(doc)));
-
-      // Update statistics
-      results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value) {
-          this.stats.totalProcessed++;
-          if (result.value.success) {
-            this.stats.totalSucceeded++;
-          } else {
-            this.stats.totalFailed++;
-            if (result.value.retried) {
-              this.stats.totalRetries++;
-            }
+      // Finish claims before another fetch, but do not wait for processing.
+      const claims = await Promise.all(
+        documents.map(async (doc) => {
+          const locked = await this.lockDocument(doc.Id);
+          if (!locked) {
+            logger.debug({ documentId: doc.Id }, 'Failed to lock document, skipping');
+            return false;
           }
-        }
-      });
+
+          this.startProcessing(doc);
+          return true;
+        })
+      );
 
       log.info(
         {
+          claimed: claims.filter(Boolean).length,
+          inFlight: this.inFlightPromises.size,
           processed: this.stats.totalProcessed,
           succeeded: this.stats.totalSucceeded,
           failed: this.stats.totalFailed,
@@ -280,37 +312,44 @@ export class PollerService {
   }
 
   /**
-   * Lock a document and process it
+   * Process a claimed document and refill capacity when queued work remains.
    */
-  private async lockAndProcess(doc: QueuedDocument): Promise<ProcessingResult | null> {
-    const promise = (async () => {
-      // Try to lock the document
-      const locked = await this.lockDocument(doc.Id);
-      if (!locked) {
-        logger.debug({ documentId: doc.Id }, 'Failed to lock document, skipping');
-        return null;
+  private startProcessing(doc: QueuedDocument): void {
+    const processing = this.processDocument(doc)
+      .then((result: ProcessingResult) => {
+        this.stats.totalProcessed++;
+        if (result.success) {
+          this.stats.totalSucceeded++;
+        } else {
+          this.stats.totalFailed++;
+          if (result.retried) {
+            this.stats.totalRetries++;
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        logger.error({ documentId: doc.Id, error }, 'Unhandled document processing error');
+      });
+
+    this.inFlightPromises.add(processing);
+
+    void processing.finally(() => {
+      this.inFlightPromises.delete(processing);
+
+      if (this.running && this.queueMayHaveMore) {
+        void this.processBatch().catch((error: unknown) => {
+          logger.error({ error }, 'Failed to refill document processing capacity');
+        });
       }
-
-      // Process the document
-      const result = await this.processDocument(doc);
-      return result;
-    })();
-
-    // Track in-flight promise
-    this.inFlightPromises.add(promise);
-
-    try {
-      const result = await promise;
-      return result;
-    } finally {
-      this.inFlightPromises.delete(promise);
-    }
+    });
   }
 
   /**
    * Fetch queued documents from Salesforce
    */
-  async fetchQueuedDocuments(): Promise<QueuedDocument[]> {
+  async fetchQueuedDocuments(
+    limit: number = getConfig().poller.batchSize
+  ): Promise<QueuedDocument[]> {
     try {
       const sfAuth = getSalesforceAuth();
       if (!sfAuth) {
@@ -319,8 +358,6 @@ export class PollerService {
       const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
 
       const now = new Date().toISOString();
-      const batchSize = getConfig().poller.batchSize;
-
       // Query for QUEUED documents that are not locked or have expired locks
       const soql = `
         SELECT Id, Status__c, RequestJSON__c, RequestJSON02__c, RequestJSON03__c,
@@ -333,7 +370,7 @@ export class PollerService {
         WHERE Status__c = 'QUEUED'
           AND (LockedUntil__c < ${now} OR LockedUntil__c = null)
         ORDER BY Priority__c DESC NULLS LAST, CreatedDate ASC
-        LIMIT ${batchSize}
+        LIMIT ${limit}
       `.trim();
 
       const response = await sfApi.get<{ records: QueuedDocument[] }>(

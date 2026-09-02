@@ -1,4 +1,5 @@
 import { PollerService } from '../../src/worker/poller';
+import type { ProcessingResult, QueuedDocument } from '../../src/types';
 
 // Mock logger to suppress output during tests
 jest.mock('pino', () => {
@@ -15,7 +16,7 @@ jest.mock('pino', () => {
 });
 
 /**
- * Single-flight behaviour of PollerService.processBatch().
+ * Single-flight fetch-and-claim behaviour of PollerService.processBatch().
  *
  * POST /worker/wake lets Salesforce trigger a poll cycle out of band, so
  * processBatch() is no longer only reachable from one serial timer chain.
@@ -31,6 +32,10 @@ describe('PollerService single-flight', () => {
   let cycles: number;
   let concurrent: number;
   let maxConcurrent: number;
+
+  function successfulResult(documentId: string): ProcessingResult {
+    return { documentId, success: true };
+  }
 
   /** Stub a cycle that takes a tick, so overlapping calls land mid-batch. */
   function stubFetch(): jest.SpyInstance {
@@ -62,7 +67,7 @@ describe('PollerService single-flight', () => {
     expect(maxConcurrent).toBe(1);
   });
 
-  it('runs a trailing cycle for a wake that arrives mid-batch', async () => {
+  it('runs a trailing cycle for a wake that arrives mid-claim', async () => {
     stubFetch();
 
     // The in-flight cycle has already fetched by the time the second call lands,
@@ -73,6 +78,58 @@ describe('PollerService single-flight', () => {
     await inFlight;
 
     expect(cycles).toBe(2);
+  });
+
+  it('claims later wakes and refills capacity without waiting for earlier processing', async () => {
+    const documents = ['a001', 'a002', 'a003'].map((Id) => ({ Id }) as QueuedDocument);
+    const resolvers = new Map<string, (result: ProcessingResult) => void>();
+    let active = 0;
+    let maxActive = 0;
+
+    (poller as unknown as { maxInFlightDocuments: number }).maxInFlightDocuments = 2;
+    const fetchSpy = jest
+      .spyOn(poller, 'fetchQueuedDocuments')
+      .mockResolvedValueOnce([documents[0]])
+      .mockResolvedValueOnce([documents[1]])
+      .mockResolvedValueOnce([documents[2]]);
+    jest.spyOn(poller, 'lockDocument').mockResolvedValue(true);
+    jest.spyOn(poller, 'processDocument').mockImplementation(
+      (document) =>
+        new Promise<ProcessingResult>((resolve) => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          resolvers.set(document.Id, (result) => {
+            active--;
+            resolve(result);
+          });
+        })
+    );
+
+    await poller.processBatch();
+    await poller.processBatch();
+
+    expect(active).toBe(2);
+    expect(fetchSpy).toHaveBeenNthCalledWith(1, 2);
+    expect(fetchSpy).toHaveBeenNthCalledWith(2, 1);
+
+    // A wake at capacity is remembered and refilled when one job finishes.
+    await poller.processBatch();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    resolvers.get(documents[0].Id)!(successfulResult(documents[0].Id));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(3, 1);
+    expect(resolvers.has(documents[2].Id)).toBe(true);
+    expect(active).toBe(2);
+    expect(maxActive).toBe(2);
+
+    const stopping = poller.stop();
+    resolvers.get(documents[1].Id)!(successfulResult(documents[1].Id));
+    resolvers.get(documents[2].Id)!(successfulResult(documents[2].Id));
+    await stopping;
+
+    expect(poller.getStats().totalSucceeded).toBe(3);
   });
 
   it('does not run a trailing cycle when no wake arrives', async () => {

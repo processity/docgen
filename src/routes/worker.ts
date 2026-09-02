@@ -8,8 +8,10 @@ import { getCorrelationId } from '../utils/correlation-id';
  * NOTE: In multi-replica deployments (Azure Container Apps with 1-5 replicas),
  * the poller runs automatically on ALL replicas. Status and stats are per-replica.
  *
- * Within a replica, PollerService.processBatch() is single-flight, so a wake and
- * a scheduled tick cannot overlap. Across replicas there is no such guarantee:
+ * Within a replica, PollerService serializes fetch-and-claim cycles, so a wake
+ * and a scheduled tick cannot claim the same rows. Document processing continues
+ * in the background while later cycles fill unused capacity. Across replicas
+ * there is no such guarantee:
  * lockDocument() is an unconditional PATCH, not an atomic claim, so two replicas
  * fetching in the same window can both process a document. Pre-existing; making
  * the claim atomic is tracked separately.
@@ -131,11 +133,11 @@ export async function workerRoutes(fastify: FastifyInstance) {
    *
    * Lets Salesforce signal that an interactive job was just enqueued, instead of
    * waiting out the adaptive timer (15s active / 60s idle). Returns immediately
-   * without awaiting the batch: holding the request open would count against the
-   * HTTP autoscale rule and stall the caller's callout for the batch duration.
+   * without awaiting the claim cycle: holding the request open would count against
+   * the HTTP autoscale rule and unnecessarily stall the caller's callout.
    *
-   * Safe to call repeatedly and concurrently - processBatch() is single-flight
-   * and a wake arriving mid-batch schedules exactly one trailing cycle.
+   * Safe to call repeatedly and concurrently - fetch-and-claim is single-flight,
+   * and a wake arriving mid-claim schedules exactly one trailing cycle.
    */
   fastify.post(
     '/wake',
