@@ -36,6 +36,28 @@ public with sharing class DocgenEnvelopeService {
         return value == null ? null : String.valueOf(value);
     }
 
+    private static void addGenerationDateFields(
+        Map<String, Object> data,
+        String locale,
+        String timezone
+    ) {
+        Date generationDate = dateInTimezone(Datetime.now(), timezone);
+        String formattedGenerationDate = StandardSOQLProvider.formatDate(generationDate, locale);
+
+        data.put('Today', generationDate);
+        data.put('Today__formatted', formattedGenerationDate);
+        data.put('GeneratedDate', generationDate);
+        data.put('GeneratedDate__formatted', formattedGenerationDate);
+    }
+
+    @TestVisible
+    private static Date dateInTimezone(Datetime timestamp, String timezone) {
+        String effectiveTimezone = String.isBlank(timezone)
+            ? UserInfo.getTimeZone().getID()
+            : timezone;
+        return Date.valueOf(timestamp.format('yyyy-MM-dd', effectiveTimezone));
+    }
+
     /**
      * Envelope structure matching TypeScript DocgenRequest interface
      */
@@ -160,6 +182,7 @@ public with sharing class DocgenEnvelopeService {
         // Get data from appropriate provider
         DocgenDataProvider provider = getProvider(template);
         env.data = provider.buildData(recordId, template, locale, timezone);
+        addGenerationDateFields(env.data, locale, timezone);
         env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String objectType = recordId.getSObjectType().getDescribe().getName();
         String watermarkText = resolveWatermarkText(template, env.data, objectType);
@@ -558,6 +581,7 @@ public with sharing class DocgenEnvelopeService {
                 timezone
             );
         env.data = compositeBuildResult.data;
+        addGenerationDateFields(env.data, locale, timezone);
         env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String watermarkText = resolveWatermarkText(composite, env.data, null);
         if (String.isNotBlank(watermarkText)) {

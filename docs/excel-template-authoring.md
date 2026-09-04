@@ -24,6 +24,12 @@ Use the same dotted field paths used by other Docgen templates:
 
 When a placeholder occupies the whole cell, numbers and booleans remain native Excel values. Salesforce dates arrive through JSON as strings; use the provider's `__formatted` value when a display-specific date is required. A missing or null value produces a blank cell. Salesforce text beginning with `=` remains text and is not executed as a formula.
 
+### Generation Date
+
+Use `{{Today__formatted}}` to insert the date on which Docgen generated the workbook. Docgen resolves the date using the request timezone and locale, then writes it into the output as a fixed value. It does not change when the workbook is reopened.
+
+`{{GeneratedDate__formatted}}` is an equivalent descriptive alias. Raw ISO date values are also available as `{{Today}}` and `{{GeneratedDate}}`.
+
 ## Repeating Table Rows
 
 Put all fields for one collection in the same prototype row:

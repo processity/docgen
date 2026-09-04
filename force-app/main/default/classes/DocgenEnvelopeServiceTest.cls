@@ -277,6 +277,58 @@ private class DocgenEnvelopeServiceTest {
     }
 
     @isTest
+    static void testBuildEnvelopeIncludesGenerationDateFields() {
+        Account acc = DocgenTestDataFactory.createAccount('Generation Date Test Account');
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Generation Date Template',
+            'Account',
+            'SOQL',
+            'SELECT Id, Name FROM Account WHERE Id = :recordId',
+            null,
+            '068000000000044AAA',
+            false,
+            false,
+            false
+        );
+
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(
+            acc.Id, template, 'XLSX', 'en-GB', 'Europe/London'
+        );
+
+        Date generationDate = (Date) env.data.get('Today');
+        String formattedGenerationDate = (String) env.data.get('Today__formatted');
+
+        Assert.isNotNull(generationDate, 'Today should contain the fixed generation date');
+        Assert.areEqual(
+            StandardSOQLProvider.formatDate(generationDate, 'en-GB'),
+            formattedGenerationDate,
+            'Today__formatted should use the requested locale'
+        );
+        Assert.areEqual(generationDate, env.data.get('GeneratedDate'), 'GeneratedDate should alias Today');
+        Assert.areEqual(
+            formattedGenerationDate,
+            env.data.get('GeneratedDate__formatted'),
+            'GeneratedDate__formatted should alias Today__formatted'
+        );
+    }
+
+    @isTest
+    static void testGenerationDateUsesRequestedTimezone() {
+        Datetime timestamp = Datetime.newInstanceGMT(2026, 9, 4, 23, 30, 0);
+
+        Assert.areEqual(
+            Date.newInstance(2026, 9, 5),
+            DocgenEnvelopeService.dateInTimezone(timestamp, 'Asia/Tokyo'),
+            'Generation date should advance in a timezone east of UTC'
+        );
+        Assert.areEqual(
+            Date.newInstance(2026, 9, 4),
+            DocgenEnvelopeService.dateInTimezone(timestamp, 'America/Los_Angeles'),
+            'Generation date should remain on the local calendar day west of UTC'
+        );
+    }
+
+    @isTest
     static void testCompositeOwnTemplateSupportsXlsx() {
         DocgenTestDataFactory.CompositeScenario scenario =
             DocgenTestDataFactory.createCompositeScenario('Account', 1, 'Own Template');

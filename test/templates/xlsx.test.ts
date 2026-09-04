@@ -102,6 +102,27 @@ describe('XLSX template merge', () => {
     expect(cell.formula).toBeUndefined();
   });
 
+  it('writes generation dates as fixed values', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Quote');
+    sheet.getCell('A1').value = '{{Today__formatted}}';
+    sheet.getCell('A2').value = '{{GeneratedDate__formatted}}';
+
+    const result = await mergeXlsxTemplate(Buffer.from(await workbook.xlsx.writeBuffer()), {
+      Today__formatted: '04 Sep 2026',
+      GeneratedDate__formatted: '04 Sep 2026',
+    });
+
+    const merged = new ExcelJS.Workbook();
+    await merged.xlsx.load(result as unknown as Parameters<typeof merged.xlsx.load>[0]);
+    const mergedSheet = merged.getWorksheet('Quote')!;
+
+    expect(mergedSheet.getCell('A1').value).toBe('04 Sep 2026');
+    expect(mergedSheet.getCell('A1').formula).toBeUndefined();
+    expect(mergedSheet.getCell('A2').value).toBe('04 Sep 2026');
+    expect(mergedSheet.getCell('A2').formula).toBeUndefined();
+  });
+
   it('supports arrays of primitive values', async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Tags');
