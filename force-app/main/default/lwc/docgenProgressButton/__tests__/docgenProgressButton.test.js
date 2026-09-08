@@ -355,13 +355,11 @@ describe('c-docgen-progress-button', () => {
     await flushPromises();
     await flushPromises();
 
-    const progressBar = element.shadowRoot.querySelector('.docgen-progress__track');
-    const progressFill = element.shadowRoot.querySelector('.docgen-progress__bar');
-    expect(progressBar).not.toBeNull();
-    expect(progressBar.getAttribute('role')).toBe('progressbar');
-    expect(progressBar.getAttribute('aria-valuenow')).toBe('60');
-    expect(progressFill.style.width).toBe('60%');
-    expect(element.shadowRoot.querySelector('lightning-progress-bar')).toBeNull();
+    const indicator = element.shadowRoot.querySelector('c-docgen-progress-indicator');
+    expect(indicator).not.toBeNull();
+    expect(indicator.status).toBe('PROCESSING');
+    expect(indicator.shadowRoot.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('60');
+    expect(indicator.shadowRoot.textContent).toContain('60%');
     expect(button.disabled).toBe(true);
   });
 

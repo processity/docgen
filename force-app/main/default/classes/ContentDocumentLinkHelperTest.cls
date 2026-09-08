@@ -528,4 +528,69 @@ private class ContentDocumentLinkHelperTest {
 
         Assert.areEqual(1, links.size(), 'Should only create link for valid ID');
     }
+    @isTest
+    static void testAssignsBothOutputFilesToStoredRequesterInBulk() {
+        String uniqueValue = String.valueOf(DateTime.now().getTime());
+        User requester = new User(
+            Alias = 'reqowner',
+            Email = 'requester@example.com',
+            EmailEncodingKey = 'UTF-8',
+            LastName = 'Requester',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_GB',
+            ProfileId = UserInfo.getProfileId(),
+            TimeZoneSidKey = 'Europe/London',
+            Username = 'docgen-owner-' + uniqueValue + '@example.com'
+        );
+        insert requester;
+
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            Id uploaderId = UserInfo.getUserId();
+            Id templateId = createTestTemplate();
+            ContentVersion output = createTestContentVersion('Requester Output');
+            ContentVersion merged = createTestContentVersion('Requester Merged DOCX');
+            ContentVersion otherOutput = createTestContentVersion('Other Requester Output');
+            ContentVersion legacyOutput = createTestContentVersion('Legacy Output');
+            List<Generated_Document__c> docs = new List<Generated_Document__c>{
+                new Generated_Document__c(
+                    Template__c = templateId, RequestHash__c = 'sha256:owner-requester',
+                    Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF',
+                    OutputFileId__c = output.Id, MergedDocxFileId__c = merged.Id,
+                    RequestedBy__c = requester.Id, RequestJSON__c = '{"parents":{}}'
+                ),
+                new Generated_Document__c(
+                    Template__c = templateId, RequestHash__c = 'sha256:owner-other',
+                    Status__c = 'SUCCEEDED', OutputFormat__c = 'DOCX',
+                    OutputFileId__c = otherOutput.Id, MergedDocxFileId__c = otherOutput.Id,
+                    RequestedBy__c = uploaderId, RequestJSON__c = '{"parents":{}}'
+                ),
+                new Generated_Document__c(
+                    Template__c = templateId, RequestHash__c = 'sha256:owner-legacy',
+                    Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF',
+                    OutputFileId__c = legacyOutput.Id, RequestJSON__c = '{"parents":{}}'
+                )
+            };
+            insert docs;
+            Set<Id> docIds = new Map<Id, Generated_Document__c>(docs).keySet();
+            // Callers need not have selected RequestedBy; the helper reads the stored value.
+            docs = [SELECT Id, OutputFileId__c, MergedDocxFileId__c, RequestJSON__c
+                    FROM Generated_Document__c WHERE Id IN :docIds];
+            Test.startTest();
+            ContentDocumentLinkHelper.createLinksFromGeneratedDocuments(docs);
+            Test.stopTest();
+
+            Set<Id> fileIds = new Set<Id>{output.ContentDocumentId, merged.ContentDocumentId,
+                                       otherOutput.ContentDocumentId, legacyOutput.ContentDocumentId};
+            Map<Id, ContentDocument> files = new Map<Id, ContentDocument>([
+                SELECT Id, OwnerId, CreatedById FROM ContentDocument WHERE Id IN :fileIds
+            ]);
+            Assert.areEqual(requester.Id, files.get(output.ContentDocumentId).OwnerId);
+            Assert.areEqual(requester.Id, files.get(merged.ContentDocumentId).OwnerId);
+            Assert.areEqual(uploaderId, files.get(output.ContentDocumentId).CreatedById,
+                            'Ownership transfer must not rewrite the upload audit identity.');
+            Assert.areEqual(uploaderId, files.get(otherOutput.ContentDocumentId).OwnerId);
+            Assert.areEqual(uploaderId, files.get(legacyOutput.ContentDocumentId).OwnerId,
+                            'Leave legacy file ownership unchanged when no requester was recorded.');
+        }
+    }
 }

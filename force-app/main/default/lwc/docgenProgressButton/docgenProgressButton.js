@@ -99,11 +99,6 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     return '';
   }
 
-  get progressBarStyle() {
-    const progress = Math.max(0, Math.min(100, Number(this.progressValue) || 0));
-    return `width: ${progress}%`;
-  }
-
   get fallbackMessage() {
     const format = this.outputFormatLabel || 'this file type';
     return `${format} preview is not supported. Save the document to download and review it.`;
@@ -213,24 +208,6 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     this._readOnlyWord = this.normalizeBoolean(value, false);
   }
 
-  get displayStatus() {
-    if (this.status === 'QUEUED') {
-      return 'Queued';
-    }
-    if (this.status === 'PROCESSING') {
-      return 'Processing';
-    }
-    if (this.status === 'SUCCEEDED') {
-      return 'Complete';
-    }
-    if (this.status === 'FAILED') {
-      return 'Failed';
-    }
-    if (this.status === 'CANCELED') {
-      return 'Canceled';
-    }
-    return this.isProcessing ? 'Starting' : '';
-  }
 
   disconnectedCallback() {
     this.clearPollTimer();

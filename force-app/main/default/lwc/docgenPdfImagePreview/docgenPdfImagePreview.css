@@ -12,7 +12,6 @@
 .preview__frame {
   position: relative;
   width: 100%;
-  height: clamp(22rem, 65vh, 52rem);
   min-height: 22rem;
 }
 

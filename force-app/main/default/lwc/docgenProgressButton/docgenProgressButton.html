@@ -19,22 +19,7 @@
     </template>
 
     <template if:true={showProgressPanel}>
-      <div class="docgen-progress slds-m-top_small" aria-live="polite">
-        <div class="docgen-progress__header">
-          <span class="docgen-progress__status">{displayStatus}</span>
-          <span class="docgen-progress__percent">{progressValue}%</span>
-        </div>
-        <div
-          class="docgen-progress__track"
-          role="progressbar"
-          aria-label="Document generation progress"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow={progressValue}
-        >
-          <div class="docgen-progress__bar" style={progressBarStyle}></div>
-        </div>
-      </div>
+      <c-docgen-progress-indicator status={status} progress-value={progressValue}></c-docgen-progress-indicator>
     </template>
 
     <template if:true={showPreviewPanel}>

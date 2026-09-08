@@ -1,0 +1,154 @@
+:host {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.progress {
+  padding: 0.5rem 0;
+}
+
+.progress__content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.progress__visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background: #eaf5fe;
+}
+
+.progress__document {
+  position: relative;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 2.125rem;
+  padding: 0.5rem 0.3rem;
+  overflow: hidden;
+  border: 1.5px solid #0176d3;
+  border-radius: 0.25rem;
+  background: #fff;
+}
+
+.progress__line {
+  display: block;
+  height: 2px;
+  margin-bottom: 0.3rem;
+  border-radius: 1px;
+  background: #90c7f1;
+}
+
+.progress__line_short {
+  width: 65%;
+}
+
+.progress__scan {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent, #b6e0ff 85%, #0176d3);
+  opacity: 0.65;
+  animation: document-scan 2.6s ease-in-out infinite;
+}
+
+.progress__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.progress__title {
+  color: #181818;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.progress__description {
+  margin-top: 0.2rem;
+  color: #444;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.progress__track {
+  height: 8px;
+  margin-top: 1rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d8e6f6;
+}
+
+.progress__percent {
+  color: #0b5cab;
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__fill {
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0b5cab, #0176d3);
+  transition: width 800ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.progress__sweep {
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: progress-sweep 2s ease-in-out infinite;
+}
+
+.progress_succeeded .progress__visual {
+  background: #e8f5e9;
+  --slds-c-icon-color-foreground-default: #2e844a;
+}
+
+.progress_failed .progress__visual {
+  background: #fef1ee;
+  --slds-c-icon-color-foreground-default: #ba0517;
+}
+
+.progress_canceled .progress__visual {
+  background: #f3f3f3;
+}
+
+@keyframes document-scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  75%,
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(235%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__fill {
+    transition: none;
+  }
+
+  .progress__scan {
+    animation: none;
+    display: none;
+  }
+
+  .progress__sweep {
+    animation: none;
+    display: none;
+  }
+}

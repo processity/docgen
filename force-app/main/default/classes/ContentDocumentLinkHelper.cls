@@ -20,13 +20,21 @@ public without sharing class ContentDocumentLinkHelper {
     public static void createLinksFromGeneratedDocuments(List<Generated_Document__c> generatedDocs) {
         // Collect all ContentVersion IDs to query ContentDocumentIds
         Set<Id> contentVersionIds = new Set<Id>();
+        Map<Id, Id> versionOwners = new Map<Id, Id>();
+        Map<Id, Generated_Document__c> requestJSONDocs = getRequestJSONSegments(generatedDocs);
 
         for (Generated_Document__c doc : generatedDocs) {
+            // Use the stored requester, not the user saving or processing the file.
+            Generated_Document__c storedDoc = requestJSONDocs.get(doc.Id);
+            Id requesterId = storedDoc == null ? null : storedDoc.RequestedBy__c;
             if (String.isNotBlank(doc.OutputFileId__c)) {
                 try {
                     // Validate it's a valid ID before adding to set
                     Id validId = (Id) doc.OutputFileId__c;
                     contentVersionIds.add(validId);
+                    if (requesterId != null) {
+                        versionOwners.put(validId, requesterId);
+                    }
                 } catch (Exception e) {
                     System.debug(LoggingLevel.WARN, 'Invalid OutputFileId for Generated_Document__c ' + doc.Id +
                                ': ' + doc.OutputFileId__c + ' - ' + e.getMessage());
@@ -37,6 +45,9 @@ public without sharing class ContentDocumentLinkHelper {
                     // Validate it's a valid ID before adding to set
                     Id validId = (Id) doc.MergedDocxFileId__c;
                     contentVersionIds.add(validId);
+                    if (requesterId != null) {
+                        versionOwners.put(validId, requesterId);
+                    }
                 } catch (Exception e) {
                     System.debug(LoggingLevel.WARN, 'Invalid MergedDocxFileId for Generated_Document__c ' + doc.Id +
                                ': ' + doc.MergedDocxFileId__c + ' - ' + e.getMessage());
@@ -50,8 +61,6 @@ public without sharing class ContentDocumentLinkHelper {
 
         // Query ContentDocumentIds from ContentVersions
         Map<Id, Id> contentVersionToDocumentMap = getContentDocumentIds(contentVersionIds);
-        Map<Id, Generated_Document__c> requestJSONDocs = getRequestJSONSegments(generatedDocs);
-
         // Prepare ContentDocumentLinks to insert
         List<ContentDocumentLink> linksToInsert = new List<ContentDocumentLink>();
 
@@ -99,6 +108,21 @@ public without sharing class ContentDocumentLinkHelper {
         if (!linksToInsert.isEmpty()) {
             insertContentDocumentLinks(linksToInsert);
         }
+
+        Map<Id, ContentDocument> ownershipUpdates = new Map<Id, ContentDocument>();
+        for (Id versionId : versionOwners.keySet()) {
+            Id documentId = contentVersionToDocumentMap.get(versionId);
+            if (documentId != null) {
+                ownershipUpdates.put(documentId, new ContentDocument(
+                    Id = documentId,
+                    OwnerId = versionOwners.get(versionId)
+                ));
+            }
+        }
+        // Ownership is required: propagate failures so Save/generation cannot report false success.
+        if (!ownershipUpdates.isEmpty()) {
+            update ownershipUpdates.values();
+        }
     }
 
     /**
@@ -140,7 +164,7 @@ public without sharing class ContentDocumentLinkHelper {
         }
 
         return new Map<Id, Generated_Document__c>([
-            SELECT Id, RequestJSON__c, RequestJSON02__c, RequestJSON03__c, RequestJSON04__c,
+            SELECT Id, RequestedBy__c, RequestJSON__c, RequestJSON02__c, RequestJSON03__c, RequestJSON04__c,
                    RequestJSON05__c, RequestJSON06__c, RequestJSON07__c, RequestJSON08__c,
                    RequestJSON09__c, RequestJSON10__c
             FROM Generated_Document__c

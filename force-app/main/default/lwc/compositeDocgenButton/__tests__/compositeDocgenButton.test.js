@@ -413,8 +413,9 @@ describe('c-composite-docgen-button', () => {
     // Assert - button disabled and progress shown without the blocking processing spinner
     return Promise.resolve().then(() => {
       expect(button.disabled).toBe(true);
-      expect(element.shadowRoot.querySelector('.docgen-progress__track')).not.toBeNull();
-      expect(element.shadowRoot.querySelector('.docgen-progress__bar').style.width).toBe('10%');
+      const indicator = element.shadowRoot.querySelector('c-docgen-progress-indicator');
+      expect(indicator).not.toBeNull();
+      expect(indicator.shadowRoot.querySelector('[role="progressbar"]')).not.toBeNull();
       const spinner = element.shadowRoot.querySelector('lightning-spinner');
       expect(spinner).toBeNull();
     });

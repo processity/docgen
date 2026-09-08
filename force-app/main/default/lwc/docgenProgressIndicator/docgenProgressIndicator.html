@@ -1,0 +1,46 @@
+<template>
+  <section class={stateClass} aria-label="Document generation">
+    <div class="progress__content">
+      <div class="progress__visual" aria-hidden="true">
+        <template if:true={isActive}>
+          <div class="progress__document">
+            <span class="progress__line"></span>
+            <span class="progress__line"></span>
+            <span class="progress__line progress__line_short"></span>
+            <span class="progress__scan"></span>
+          </div>
+        </template>
+        <template if:false={isActive}>
+          <lightning-icon
+            icon-name={terminalIcon}
+            size="small"
+            alternative-text=""
+          ></lightning-icon>
+        </template>
+      </div>
+      <div class="progress__copy" role="status" aria-live="polite" aria-atomic="true">
+        <h3 class="progress__title">{title}</h3>
+        <p class="progress__description">{description}</p>
+      </div>
+      <template if:true={showProgress}>
+        <span class="progress__percent" aria-hidden="true">{percentage}%</span>
+      </template>
+    </div>
+    <template if:true={showProgress}>
+      <div
+        class="progress__track"
+        role="progressbar"
+        aria-label={title}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={percentage}
+      >
+        <div class="progress__fill" style={fillStyle}>
+          <template if:true={isActive}>
+            <div class="progress__sweep"></div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </section>
+</template>
