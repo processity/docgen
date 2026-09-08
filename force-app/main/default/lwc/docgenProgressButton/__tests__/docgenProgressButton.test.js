@@ -108,6 +108,33 @@ const getButton = (element, label) =>
   );
 
 describe('c-docgen-progress-button', () => {
+  it('delegates start to the host while retaining preview handling', async () => {
+    const element = createElement('c-docgen-progress-button', { is: DocgenProgressButton });
+    element.recordId = '0011234567890ABC';
+    element.templateName = 'Host template';
+    element.previewBeforeSave = true;
+    element.startGenerationHandler = jest.fn().mockResolvedValue(pendingResult('PDF'));
+    document.body.appendChild(element);
+    await element.generate();
+    expect(element.startGenerationHandler).toHaveBeenCalledWith(expect.objectContaining({
+      recordId: element.recordId, previewMode: true
+    }));
+    expect(startGeneration).not.toHaveBeenCalled();
+    expect(element.shadowRoot.querySelector('c-docgen-pdf-image-preview')).not.toBeNull();
+  });
+
+  it('does not bypass a rejected host start using the default engine', async () => {
+    const element = createElement('c-docgen-progress-button', { is: DocgenProgressButton });
+    element.recordId = '0011234567890ABC';
+    element.templateName = 'Host template';
+    element.startGenerationHandler = jest.fn().mockRejectedValue(new Error('Not eligible'));
+    document.body.appendChild(element);
+    const failed = jest.fn();
+    element.addEventListener('docgenerror', failed);
+    await element.generate();
+    expect(startGeneration).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalled();
+  });
   afterEach(() => {
     while (document.body.firstChild) {
       document.body.removeChild(document.body.firstChild);

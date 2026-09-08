@@ -15,6 +15,28 @@ This document describes how the Salesforce PDF Generation system implements idem
 
 ---
 
+## Operation-Keyed Async Generation
+
+The optional `requestKey` overloads of `DocgenAsyncController.startGeneration()` and `startCompositeGeneration()` treat one user-requested operation as one `Generated_Document__c` record. They reuse the existing unique field rather than introducing a separate tracking object:
+
+```text
+RequestHash__c = request: + hex(SHA-256(current Salesforce user ID + ':' + requestKey))
+```
+
+`requestHashForKey()` applies the same calculation for recovery lookups. Keys must be nonblank and at most 128 characters. The host service must check authorization and reject reuse of a key with different operation inputs.
+
+| Call | Result |
+| --- | --- |
+| First call with a key | Create one queued Generated Document |
+| Same user and key | Return the existing attempt, without rebuilding the envelope or restarting it |
+| Existing FAILED or CANCELED attempt | Return its terminal state; no automatic requeue |
+| New key | Start a new operation, even when document contents are identical |
+| Different user, same key text | A distinct operation hash |
+
+The same key semantics apply to UI previews and non-preview API requests. Cancelling a keyed preview removes generated files but preserves the record as CANCELED. Callers should retain the Generated Document ID to poll or complete the original operation.
+
+Calls without a key keep their existing behavior: normal async requests use content-based caching and may requeue failed/canceled work; unkeyed previews receive a unique preview hash and their tracking record is deleted on cancellation. The following sections describe content-based caching, including the synchronous controller's cache window, rather than the keyed operation flow.
+
 ## How It Works
 
 ### 1. Request Hash Computation (Apex)

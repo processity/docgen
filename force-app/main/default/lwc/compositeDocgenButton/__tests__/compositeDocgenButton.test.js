@@ -165,6 +165,21 @@ const startPendingPreview = async (element, statusResult) => {
 };
 
 describe('c-composite-docgen-button', () => {
+  it('delegates a queued start without calling either built-in generation entrypoint', async () => {
+    const element = createElement('c-composite-docgen-button', { is: CompositeDocgenButton });
+    element.compositeDocumentId = 'a0Y123';
+    element.recordId = '0011234567890ABC';
+    element.recordIdField = 'quoteId';
+    element.previewBeforeSave = true;
+    element.startGenerationHandler = jest.fn().mockResolvedValue(buildPendingStatus('PDF'));
+    document.body.appendChild(element);
+    await element.generate();
+    expect(element.startGenerationHandler).toHaveBeenCalledWith(expect.objectContaining({
+      compositeDocumentId: 'a0Y123', recordIds: JSON.stringify({ quoteId: element.recordId }), previewMode: true
+    }));
+    expect(startCompositeGeneration).not.toHaveBeenCalled();
+    expect(generateComposite).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     getPdfPreviewPage.mockResolvedValue({
       contentType: 'image/jpeg',

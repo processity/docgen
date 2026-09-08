@@ -1,5 +1,66 @@
 @IsTest
 private class DocgenAsyncControllerTest {
+    @IsTest
+    static void operationKeyDoesNotRestartFailedGeneration() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        DocgenAsyncController.StartResult first = DocgenAsyncController.startGeneration(
+            template.Id, null, account.Id, 'PDF', false, false, (List<Id>) null, 'operation-one');
+        update new Generated_Document__c(Id = first.generatedDocumentId, Status__c = 'FAILED');
+        DocgenAsyncController.StartResult replay = DocgenAsyncController.startGeneration(
+            template.Id, null, account.Id, 'PDF', false, false, (List<Id>) null, 'operation-one');
+        Assert.areEqual(first.generatedDocumentId, replay.generatedDocumentId);
+        Assert.areEqual('FAILED', replay.status);
+        DocgenAsyncController.StartResult second = DocgenAsyncController.startGeneration(
+            template.Id, null, account.Id, 'PDF', false, false, (List<Id>) null, 'operation-two');
+        Assert.areNotEqual(first.generatedDocumentId, second.generatedDocumentId);
+        Assert.areEqual(2, [SELECT COUNT() FROM Generated_Document__c]);
+    }
+
+    @IsTest
+    static void operationPreviewCancellationRetainsHistory() {
+        Docgen_Template__c template = [SELECT Id FROM Docgen_Template__c LIMIT 1];
+        Account account = [SELECT Id FROM Account LIMIT 1];
+        DocgenAsyncController.StartResult first = DocgenAsyncController.startGeneration(
+            template.Id, null, account.Id, 'PDF', true, false, (List<Id>) null, 'preview-operation');
+        DocgenAsyncController.cancelGeneratedDocument(first.generatedDocumentId);
+        Generated_Document__c doc = [SELECT Status__c, PendingPreview__c, OutputFileId__c
+            FROM Generated_Document__c WHERE Id = :first.generatedDocumentId];
+        Assert.areEqual('CANCELED', doc.Status__c);
+        Assert.isFalse(doc.PendingPreview__c);
+        Assert.isNull(doc.OutputFileId__c);
+        DocgenAsyncController.StartResult replay = DocgenAsyncController.startGeneration(
+            template.Id, null, account.Id, 'PDF', true, false, (List<Id>) null, 'preview-operation');
+        Assert.areEqual(first.generatedDocumentId, replay.generatedDocumentId);
+        Assert.areEqual('CANCELED', replay.status);
+    }
+
+    @IsTest
+    static void operationKeyIsScopedToTheRequestingUser() {
+        String first = DocgenAsyncController.requestHashForKey('same-key');
+        User otherUser = new User(Alias = 'docother', Email = 'docgen@example.invalid',
+            EmailEncodingKey = 'UTF-8', LastName = 'Docgen Other', LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US', TimeZoneSidKey = 'Europe/London',
+            ProfileId = UserInfo.getProfileId(), Username = 'docgen-key-' + System.now().getTime() + '@example.invalid');
+        System.runAs(otherUser) {
+            Assert.areNotEqual(first, DocgenAsyncController.requestHashForKey('same-key'));
+        }
+    }
+
+    @IsTest
+    static void compositeOperationKeyReturnsTheSameAttempt() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Concatenate Templates');
+        String records = JSON.serialize(new Map<String, Id>{'accountId' => scenario.testRecordId});
+        DocgenAsyncController.StartResult first = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id, records, 'PDF', false, false, (List<Id>) null, 'composite-operation');
+        update new Generated_Document__c(Id = first.generatedDocumentId, Status__c = 'FAILED');
+        DocgenAsyncController.StartResult replay = DocgenAsyncController.startCompositeGeneration(
+            scenario.compositeDoc.Id, records, 'PDF', false, false, (List<Id>) null, 'composite-operation');
+        Assert.areEqual(first.generatedDocumentId, replay.generatedDocumentId);
+        Assert.areEqual('FAILED', replay.status);
+    }
+
     @testSetup
     static void setup() {
         DocgenTestDataFactory.createTemplate(

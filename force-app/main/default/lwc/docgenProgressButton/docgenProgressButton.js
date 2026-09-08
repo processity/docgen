@@ -21,6 +21,8 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
   @api maxPollSeconds = DEFAULT_MAX_POLL_SECONDS;
   @api pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
   @api additionalPdfContentVersionIds = [];
+  // Optional host-owned queued start. The host returns DocgenAsyncController.StartResult.
+  @api startGenerationHandler;
 
   _openOnSuccess = true;
   _hideButton = false;
@@ -265,7 +267,7 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     this.pollStartTime = Date.now();
 
     try {
-      const startResult = await startGeneration(request);
+      const startResult = await (this.startGenerationHandler || startGeneration)(request);
       this.applyStatus(startResult);
       this.generatedDocumentId = startResult.generatedDocumentId;
       this.dispatchDocgenEvent('docgenstart', startResult);

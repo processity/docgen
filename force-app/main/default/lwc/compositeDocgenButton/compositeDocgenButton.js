@@ -46,6 +46,8 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
    */
   @api readOnlyWord = false;
   @api additionalPdfContentVersionIds = [];
+  // Optional host-owned queued start; preview/poll/save/cancel remain generic.
+  @api startGenerationHandler;
 
   /**
    * Current record ID (automatically provided by Lightning runtime)
@@ -322,8 +324,8 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
       return null;
     }
 
-    if (this.shouldPreviewBeforeSave(config)) {
-      return this.runPreviewGeneration(request);
+    if (this.shouldPreviewBeforeSave(config) || this.startGenerationHandler) {
+      return this.runPreviewGeneration(request, this.shouldPreviewBeforeSave(config));
     }
 
     return this.runImmediateGeneration(request);
@@ -371,7 +373,7 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
     }
   }
 
-  async runPreviewGeneration(request) {
+  async runPreviewGeneration(request, previewMode = true) {
     this.clearPollTimer();
     this.isProcessing = true;
     this.progressValue = 10;
@@ -381,11 +383,11 @@ export default class CompositeDocgenButton extends NavigationMixin(LightningElem
     this.pollStartTime = Date.now();
 
     try {
-      const startResult = await startCompositeGeneration({
+      const startResult = await (this.startGenerationHandler || startCompositeGeneration)({
         compositeDocumentId: request.compositeDocumentId,
         recordIds: JSON.stringify(request.recordIds),
         outputFormat: request.outputFormat,
-        previewMode: true,
+        previewMode,
         readOnlyWord: request.readOnlyWord,
         additionalPdfContentVersionIds: request.additionalPdfContentVersionIds
       });

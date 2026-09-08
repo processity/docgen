@@ -26,6 +26,7 @@ The component is object-agnostic: it works for any object that has templates or 
 | **docgenName** | String | — | Optional preset document name. See [Preset selection lock](#preset-selection-lock). |
 | **hideFilePicker** | Boolean | `false` | Hide the additional PDF file picker rendered by the embedded generator. See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
 | **additionalPdfContentVersionIds** | String[] / JSON | `[]` | Optional preset ContentVersion IDs of PDF files merged after the generated document (PDF output only). See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
+| **startGenerationHandler** | Function | — | Optional parent-supplied queued-start delegate, forwarded to either embedded generator. Programmatic use only; see [Delegating start](#delegating-start-to-a-shared-apex-service). |
 
 ---
 
@@ -86,6 +87,31 @@ When passing preset attachment IDs, also set `hide-file-picker="true"`: the visi
 ```
 
 Combined with the preset selection lock, this yields a fully predetermined generation: the user can only click Generate.
+
+---
+
+## Delegating Start to a Shared Apex Service
+
+`docgenDocumentSelector`, `docgenProgressButton`, and `compositeDocgenButton` accept an optional `startGenerationHandler` function. A host application can route both its UI and external API through one Apex business service while reusing the package's progress, preview, Save and Cancel controls.
+
+```html
+<c-docgen-document-selector
+  record-id={recordId}
+  object-api-name={objectApiName}
+  preview-before-save="true"
+  start-generation-handler={startWithPolicy}
+></c-docgen-document-selector>
+```
+
+The parent supplies `startWithPolicy` as a function returning a Promise of a `DocgenAsyncController.StartResult`-compatible object. If its Apex adapter returns JSON text, parse that text before returning it to the component.
+
+- For a template, the callback receives `templateId`, `templateName`, `recordId`, `outputFormat`, `readOnlyWord`, `additionalPdfContentVersionIds`, and `previewMode` when enabled.
+- For a composite, it receives `compositeDocumentId`, `recordIds` as a JSON string, `outputFormat`, `previewMode`, `readOnlyWord`, and `additionalPdfContentVersionIds`.
+- Honor the requested preview mode. Return the actual `generatedDocumentId`, `status`, `isTerminal`, and the remaining start-result fields from Apex.
+- A supplied handler replaces the package's default start call; rejection produces the normal error event without falling back to another generation path. Composite delegation uses the queued path even when preview is disabled.
+- Polling and preview actions remain in the package. Listen for `docgensave` to invoke any host-owned post-save business action.
+
+Omitting the handler preserves standalone behavior. Business rules and provider routing belong in the host service; the reusable components do not contain application-specific document mappings. See [Salesforce Async Integration](api.md#salesforce-async-integration) for operation-keyed Apex calls.
 
 ---
 

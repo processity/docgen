@@ -202,7 +202,7 @@ paths:
 
         **Flow:**
         1. Validate AAD JWT (client credentials from Salesforce Named Credential)
-        2. Check idempotency via RequestHash (if provided)
+        2. Accept the Apex-built envelope and optional tracking identifiers
         3. Fetch template from Salesforce Files (by ContentVersionId)
         4. Merge the DOCX, PPTX, or XLSX template with Salesforce data
         5. Convert DOCX→PDF via LibreOffice (if outputFormat=PDF)
@@ -215,11 +215,12 @@ paths:
         - Apex is responsible for building the JSON envelope
         - All display values (currency, date, number) are **preformatted** by Apex with `__formatted` suffix
         - Field paths follow **Salesforce API naming** (e.g., `Account.Name`, `Opportunity.TotalAmount__formatted`)
-        - RequestHash is computed by Apex: `sha256(templateId | outputFormat | sha256(canonical_json(data)))`
+        - RequestHash is computed by Apex using the selected content-cache or user-scoped operation-key strategy
 
         **Idempotency:**
-        If a RequestHash is provided and a prior request with the same hash succeeded, the existing
-        ContentVersionId is returned immediately without reprocessing.
+        Duplicate detection belongs to Apex and the unique Generated_Document__c.RequestHash__c field.
+        This Node endpoint does not perform a cache lookup or deduplicate repeated HTTP submissions.
+        See docs/idempotency.md for the Apex content-cache and operation-key behaviors.
 
         **Concurrency:**
         Each container instance supports up to 8 concurrent LibreOffice conversions. Additional requests

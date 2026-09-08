@@ -79,7 +79,25 @@ public with sharing class DocgenAsyncController {
         Boolean readOnlyWord,
         List<Id> additionalPdfContentVersionIds
     ) {
+        return startGeneration(templateId, templateName, recordId, outputFormat, previewMode, readOnlyWord, additionalPdfContentVersionIds, null);
+    }
+
+    public static StartResult startGeneration(
+        Id templateId,
+        String templateName,
+        Id recordId,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds,
+        String requestKey
+    ) {
         try {
+            String operationHash = String.isBlank(requestKey) ? null : requestHashForKey(requestKey);
+            if (operationHash != null) {
+                Generated_Document__c previous = findExistingDocument(operationHash);
+                if (previous != null) return toStartResult(previous);
+            }
             if (recordId == null) {
                 throw new IllegalArgumentException('Record ID is required');
             }
@@ -102,11 +120,13 @@ public with sharing class DocgenAsyncController {
                 additionalPdfContentVersionIds
             );
 
-            if (isPreviewMode) {
+            if (operationHash != null) {
+                envelope.requestHash = operationHash;
+            } else if (isPreviewMode) {
                 envelope.requestHash = buildPreviewRequestHash(envelope.requestHash, correlationId);
             }
 
-            Generated_Document__c existingDoc = isPreviewMode ? null : findExistingDocument(envelope.requestHash);
+            Generated_Document__c existingDoc = operationHash != null || isPreviewMode ? null : findExistingDocument(envelope.requestHash);
             if (existingDoc != null) {
                 if (existingDoc.Status__c == 'FAILED' || existingDoc.Status__c == 'CANCELED') {
                     requeueDocument(existingDoc.Id, template.Id, recordId, envelope, correlationId);
@@ -186,7 +206,24 @@ public with sharing class DocgenAsyncController {
         Boolean readOnlyWord,
         List<Id> additionalPdfContentVersionIds
     ) {
+        return startCompositeGeneration(compositeDocumentId, recordIds, outputFormat, previewMode, readOnlyWord, additionalPdfContentVersionIds, null);
+    }
+
+    public static StartResult startCompositeGeneration(
+        Id compositeDocumentId,
+        String recordIds,
+        String outputFormat,
+        Boolean previewMode,
+        Boolean readOnlyWord,
+        List<Id> additionalPdfContentVersionIds,
+        String requestKey
+    ) {
         try {
+            String operationHash = String.isBlank(requestKey) ? null : requestHashForKey(requestKey);
+            if (operationHash != null) {
+                Generated_Document__c previous = findExistingDocument(operationHash);
+                if (previous != null) return toStartResult(previous);
+            }
             if (compositeDocumentId == null) {
                 throw new IllegalArgumentException('Composite Document ID is required');
             }
@@ -205,11 +242,13 @@ public with sharing class DocgenAsyncController {
                 additionalPdfContentVersionIds
             );
 
-            if (isPreviewMode) {
+            if (operationHash != null) {
+                envelope.requestHash = operationHash;
+            } else if (isPreviewMode) {
                 envelope.requestHash = buildPreviewRequestHash(envelope.requestHash, correlationId);
             }
 
-            Generated_Document__c existingDoc = isPreviewMode ? null : findExistingDocument(envelope.requestHash);
+            Generated_Document__c existingDoc = operationHash != null || isPreviewMode ? null : findExistingDocument(envelope.requestHash);
             if (existingDoc != null) {
                 if (existingDoc.Status__c == 'FAILED' || existingDoc.Status__c == 'CANCELED') {
                     requeueCompositeDocument(
@@ -479,7 +518,16 @@ public with sharing class DocgenAsyncController {
             }
 
             deleteGeneratedFiles(doc);
-            delete doc;
+            if (doc.RequestHash__c != null && doc.RequestHash__c.startsWith('request:')) {
+                DocgenGeneratedDocumentWriter.updateTrackingRecord(new Generated_Document__c(
+                    Id = doc.Id, Status__c = 'CANCELED', PendingPreview__c = false,
+                    OutputFileId__c = null, MergedDocxFileId__c = null,
+                    Preview_Page_File_Ids__c = null, Preview_Page_Count__c = null,
+                    Error__c = null
+                ));
+            } else {
+                delete doc;
+            }
         } catch (Exception e) {
             throwAuraException(e.getMessage());
         }
@@ -502,6 +550,16 @@ public with sharing class DocgenAsyncController {
         return template;
     }
 
+    /** Stable user-owned operation identity; legacy content-cache hashes remain unchanged. */
+    public static String requestHashForKey(String requestKey) {
+        if (String.isBlank(requestKey) || requestKey.length() > 128) {
+            throw new IllegalArgumentException('A request key of at most 128 characters is required.');
+        }
+        return 'request:' + EncodingUtil.convertToHex(Crypto.generateDigest(
+            'SHA-256', Blob.valueOf(UserInfo.getUserId() + ':' + requestKey)
+        ));
+    }
+
     private static Generated_Document__c findExistingDocument(String requestHash) {
         List<Generated_Document__c> existing = [
             SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
@@ -516,7 +574,7 @@ public with sharing class DocgenAsyncController {
 
     private static Generated_Document__c queryGeneratedDocument(Id generatedDocumentId) {
         return [
-            SELECT Id, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
+            SELECT Id, RequestHash__c, Status__c, OutputFileId__c, MergedDocxFileId__c, Error__c,
                    CorrelationId__c, OutputFormat__c, PendingPreview__c, RequestedBy__c,
                    Attachment_Warnings__c, Preview_Page_File_Ids__c, Preview_Page_Count__c
             FROM Generated_Document__c

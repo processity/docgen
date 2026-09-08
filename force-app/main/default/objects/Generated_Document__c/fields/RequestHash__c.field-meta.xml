@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>RequestHash__c</fullName>
     <caseSensitive>false</caseSensitive>
-    <description>Idempotency key computed as sha256(templateId|outputFormat|checksum(data)). External ID and unique constraint prevent duplicate work.</description>
+    <description>Unique generation identity: content hash for legacy requests, or user-scoped operation hash when a client request key is supplied. Replaying an operation returns its existing record.</description>
     <externalId>true</externalId>
     <label>Request Hash</label>
     <length>80</length>

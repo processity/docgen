@@ -1,10 +1,11 @@
 # API Reference
 
-This document provides a reference for the Docgen REST API. For the complete OpenAPI specification, see [openapi.yaml](../openapi.yaml).
+This document covers the Docgen Azure REST API and the package's Apex integration entrypoints. For the Azure HTTP contract, see [openapi.yaml](../openapi.yaml). Organization-specific Salesforce REST adapters are documented in their consuming application repository; they are not endpoints on the Docgen Azure service.
 
 ## Table of Contents
 
 - [Authentication](#authentication)
+- [Salesforce Async Integration](#salesforce-async-integration)
 - [Health & Readiness Endpoints](#health--readiness-endpoints)
 - [Document Generation](#document-generation)
   - [Single-Template Generation](#post-generate)
@@ -17,7 +18,7 @@ This document provides a reference for the Docgen REST API. For the complete Ope
 
 ## Authentication
 
-All API endpoints (except health checks) require Azure AD OAuth 2.0 authentication.
+All Azure HTTP endpoints (except health checks) require Azure AD OAuth 2.0 authentication. Apex methods execute in the Salesforce caller's context.
 
 ### Authentication Method
 
@@ -59,6 +60,34 @@ HTTPResponse res = http.send(req);
 ```
 
 See [Named Credential Setup](./named-credential-setup.md) for configuration details.
+
+---
+
+## Salesforce Async Integration
+
+`DocgenAsyncController` creates and tracks queued work in `Generated_Document__c`. Integrations can use the existing Apex overloads with an additional final `String requestKey` argument:
+
+```apex
+DocgenAsyncController.StartResult result = DocgenAsyncController.startGeneration(
+    templateId, null, recordId, 'PDF', previewMode, false,
+    (List<Id>) null, requestKey
+);
+
+DocgenAsyncController.StartResult compositeResult = DocgenAsyncController.startCompositeGeneration(
+    compositeDocumentId, recordIdsJson, 'PDF', previewMode, false,
+    additionalPdfContentVersionIds, requestKey
+);
+```
+
+These keyed overloads are for Apex integration code. The existing `@AuraEnabled` signatures remain unchanged. The host application owns record authorization, business validation, input-conflict checks and any post-save actions.
+
+- Use a nonblank, stable key of at most 128 characters for one operation. `requestHashForKey(requestKey)` computes its user-scoped identity in the existing unique `RequestHash__c` field.
+- Reusing the key returns the same Generated Document, including FAILED or CANCELED results. Use a new key for an intentional new generation. See [Idempotency Strategy](idempotency.md#operation-keyed-async-generation).
+- Call `wakePoller()` in a separate Salesforce transaction after enqueueing; it is best-effort and cannot be combined with the enqueue DML transaction.
+- Poll `getGenerationStatus(generatedDocumentId)`. A successful, saved result supplies the exact `contentVersionId` and `contentDocumentId`.
+- With `previewMode=true`, call `saveGeneratedDocument()` to link the preview output, or `cancelGeneratedDocument()` to discard it. Cancellation of an operation-keyed preview retains the Generated Document as CANCELED and clears its generated files. Legacy unkeyed preview cancellation still deletes the tracking record.
+
+Parent LWCs can delegate their start through the optional [startGenerationHandler](lwc-document-selector-guide.md#delegating-start-to-a-shared-apex-service) while retaining the package's polling and preview UI.
 
 ---
 
@@ -213,7 +242,7 @@ Generate a PDF, DOCX, PPTX, or XLSX document from a Salesforce template.
 | `options.watermarkStyle` | string | No | Optional key/value style lines: Font, Width, Height, Rotation, Color code |
 | `parents` | object | No | Parent record IDs for ContentDocumentLink creation |
 | `data` | object | Yes | Template merge data (Salesforce field paths) |
-| `requestHash` | string | No | Idempotency key (auto-computed if not provided) |
+| `requestHash` | string | No | Apex-computed content or operation hash; duplicate checks belong to Apex, not this HTTP endpoint |
 | `generatedDocumentId` | string | No | Generated_Document__c ID for status tracking |
 
 **Data Structure**:

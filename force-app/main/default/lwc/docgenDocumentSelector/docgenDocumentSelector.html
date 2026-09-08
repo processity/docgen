@@ -183,6 +183,7 @@
   </div>
   <template if:true={showDocgenProgress}>
     <c-docgen-progress-button
+      start-generation-handler={startGenerationHandler}
       record-id={recordId}
       template-id={templateId}
       output-format={outputFormat}
@@ -197,6 +198,7 @@
   </template>
   <template if:true={showCompositeProgress}>
     <c-composite-docgen-button
+      start-generation-handler={startGenerationHandler}
       record-id={recordId}
       record-id-field={recordIdField}
       composite-document-id={compositeDocumentId}

@@ -36,6 +36,8 @@ This component is designed for admin configuration via the Lightning App Builder
 
 ### Custom Quick Action Wrapper
 
+For a shared UI/API business service, use the optional programmatic `startGenerationHandler` property. It delegates the queued start while retaining the package's polling and preview controls. See [Delegating start to a shared Apex service](lwc-document-selector-guide.md#delegating-start-to-a-shared-apex-service) for the callback contract; this property is not an App Builder setting.
+
 A parent LWC can hide the packaged button and start generation imperatively:
 
 ```html

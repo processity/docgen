@@ -87,6 +87,7 @@ export default class DocgenDocumentSelector extends LightningElement {
    * hideFilePicker so the user cannot change the preset attachments.
    */
   @api additionalPdfContentVersionIds = [];
+  @api startGenerationHandler;
 
   @api
   get previewBeforeSave() {

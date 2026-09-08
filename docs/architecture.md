@@ -279,8 +279,8 @@ export async function uploadAndLinkFiles(
 ```
 
 **Idempotency Strategy**:
-- **Apex**: Computes `RequestHash = sha256(templateId | outputFormat | sha256(data))`
-- **Apex**: Checks for existing `SUCCEEDED` document within 24 hours before callout
+- **Apex**: Computes a content hash for standard generation, or a user-scoped operation hash when an explicit client request key is supplied
+- **Apex**: The synchronous controller checks its success-cache window; keyed async calls return the original Generated Document, including failed/canceled states, without requeueing
 - **Salesforce**: Enforces unique constraint on `RequestHash__c` (External ID)
 - **Node**: Relies on Apex for idempotency (no duplicate check in Node layer)
 
