@@ -1,4 +1,4 @@
-import { formatDocumentData } from '../templates/locale-format';
+import { formatAndStoreRequest } from '../sf/formatted-request';
 import pino from 'pino';
 import { loadConfig } from '../config';
 import { getSalesforceAuth } from '../sf/auth';
@@ -429,8 +429,6 @@ export class PollerService {
     let sfApi: SalesforceApi | undefined;
 
     try {
-      formatDocumentData(request.data, request.locale, request.timezone);
-
       // Initialize Salesforce API and template service
       const sfAuth = getSalesforceAuth();
       if (!sfAuth) {
@@ -439,6 +437,7 @@ export class PollerService {
         });
       }
       sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+      await formatAndStoreRequest(request, doc.Id, sfApi, { correlationId: doc.CorrelationId__c });
       const templateService = new TemplateService(sfApi);
 
       // Detect composite vs single-template document

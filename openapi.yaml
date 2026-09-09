@@ -214,6 +214,7 @@ paths:
         **Data Contract:**
         - Apex is responsible for building the JSON envelope
         - Apex supplies raw values and per-record `__docgenFormats` descriptors; the backend localizes `__formatted` values using ICU. Legacy display strings without descriptors are preserved.
+        - When a Generated Document ID is available, the localized envelope is saved to its segmented Request JSON fields before merging; the request hash is preserved.
         - Field paths follow **Salesforce API naming** (e.g., `Account.Name`, `Opportunity.TotalAmount__formatted`)
         - RequestHash is computed by Apex using the selected content-cache or user-scoped operation-key strategy
 

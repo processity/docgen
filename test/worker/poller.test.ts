@@ -306,6 +306,16 @@ describeTests('PollerService', () => {
       };
 
       nock(baseUrl)
+        .patch(`/services/data/v59.0/sobjects/Generated_Document__c/${mockDoc.Id}`, (body) => {
+          const stored = JSON.parse(body.RequestJSON__c);
+          expect(stored.data.Quote.Amount__formatted).toBe('€1,234.50');
+          expect(stored.data.Quote.Amount).toBe(1234.5);
+          expect(body.RequestJSON10__c).toBeNull();
+          return true;
+        })
+        .reply(204);
+
+      nock(baseUrl)
         .get('/services/data/v59.0/sobjects/ContentVersion/068000000000991AAA/VersionData')
         .reply(200, templateBuffer);
       nock(baseUrl)

@@ -18,10 +18,18 @@ export function formatDocumentData(data: DataMap, locale: string, timezone: stri
     ) {
       throw new Error(`Unsupported document locale: ${locale}`);
     }
-    const date = new Intl.DateTimeFormat(canonical, { dateStyle: 'medium', timeZone: 'UTC' });
+    const date = new Intl.DateTimeFormat(canonical, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'UTC',
+    });
     const datetime = new Intl.DateTimeFormat(canonical, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
       timeZone: timezone || 'UTC',
     });
     const numbers = new Map<string, Intl.NumberFormat>();

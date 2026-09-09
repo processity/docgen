@@ -45,9 +45,12 @@ describe('document locale formatting', () => {
         new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(data.Amount!)
       );
       expect(data.CloseDate__formatted).toBe(
-        new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(
-          new Date('2026-09-09T00:00:00Z')
-        )
+        new Intl.DateTimeFormat(locale, {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          timeZone: 'UTC',
+        }).format(new Date('2026-09-09T00:00:00Z'))
       );
       expect(data.Probability__formatted).toBe(
         new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(0.125)
@@ -73,6 +76,28 @@ describe('document locale formatting', () => {
     expect(france.Amount__formatted).toBe('1\u202f234\u202f567,89\u00a0€');
   });
 
+  it.each([
+    ['fr-FR', '31/12/2026'],
+    ['en-US', '12/31/2026'],
+  ])('uses numeric dates for %s', (locale, expected) => {
+    const data = record('EUR');
+    data.CloseDate = '2026-12-31';
+    formatDocumentData(data, locale, 'UTC');
+    expect(data.CloseDate__formatted).toBe(expected);
+  });
+
+  it.each([
+    [-1835252.06, '-₹18,35,252.06'],
+    [467236458.59, '₹46,72,36,458.59'],
+  ])('replaces legacy dollar display for INR amount %p', (amount, expected) => {
+    const data = record('INR');
+    data.Amount = amount;
+    data.Amount__formatted = '$' + amount;
+    formatDocumentData(data, 'hi-IN', 'UTC');
+    expect(data.Amount__formatted).toBe(expected);
+    expect(data.Amount).toBe(amount);
+  });
+
   it('uses currency-specific decimal precision', () => {
     const yen = record('JPY');
     const dinar = record('KWD');
@@ -85,8 +110,8 @@ describe('document locale formatting', () => {
   it('shifts DateTime but never shifts Date-only fields', () => {
     const data = record();
     formatDocumentData(data, 'en-US', 'America/Los_Angeles');
-    expect(data.CloseDate__formatted).toBe('Sep 9, 2026');
-    expect(data.CreatedDate__formatted).toContain('Sep 8, 2026');
+    expect(data.CloseDate__formatted).toBe('09/09/2026');
+    expect(data.CreatedDate__formatted).toContain('09/08/2026');
   });
 
   it('walks composite sections and nested rows, preserves untyped custom display strings', () => {

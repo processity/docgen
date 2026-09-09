@@ -63,11 +63,25 @@ The resolved locale is written into the request. Apex sends raw values and Sales
 ### Formatting behavior
 
 - Locale support follows the backend's ICU data. Invalid or unsupported locale identifiers fail with a clear formatting error instead of silently falling back. Node runtimes must include full ICU; official Node distributions do. This supports international grouping, separators, localized month names, symbol placement, and numbering/calendar conventions.
-- Dates use the locale's medium date style. DateTime adds the locale's short time style. This changes US output to forms such as `Sep 9, 2026` and German output to `09.09.2026`. Date-only values are never shifted by timezone.
+- Dates use numeric day/month/year components in locale order: French `31/12/2026`, US `12/31/2026`, and German `31.12.2026`. DateTime adds localized hours and minutes. Date-only values are never shifted by timezone.
 - Currency amounts are supplied by Salesforce and **never converted**. In multi-currency orgs, include `CurrencyIsoCode` in the SOQL for each record whose currency fields are displayed, including related records and child rows. Do not assume a child inherits a parent's currency. When the currency code is missing, null, or blank, DocGen defaults to USD. An explicitly supplied valid currency code takes precedence; malformed codes still fail. In single-currency orgs, the org currency is supplied automatically; omit `CurrencyIsoCode` from SOQL when that field does not exist.
 - Currency formatting uses the ISO currency's decimal precision (e.g., JPY zero decimals and KWD three), localized separators, and symbol placement. A USD amount stays USD in a German or British locale. This is display rounding only; the raw amount is unchanged.
 - Salesforce describe types determine currency, percentage, date, DateTime, and number fields, including formula result types. Ordinary numeric display respects the field's decimal scale; percentages remain percentage points (`75` displays as `75%`, with locale spacing).
 - Raw fields remain unchanged. Use `Amount__formatted` and `CloseDate__formatted` for localized template text. XLSX raw numeric cells retain native Excel formatting behavior.
+
+### Reviewing Request JSON
+
+The backend saves the localized envelope to `RequestJSON__c` and its overflow fields
+before merging, for both interactive requests with a tracking record and queued jobs.
+The stored `__formatted` companions then match the data passed to the renderer,
+including nested composite/custom-provider rows. Raw amounts, currency descriptors,
+and the request hash remain unchanged. Unused overflow fields are cleared.
+
+A newly queued record still contains the initial Apex envelope until processing starts.
+A successful formatting/save step replaces its legacy display strings. Older completed
+records are not automatically rewritten. Review a newly processed document after the
+backend update; template changes are not required to inspect the normalized request.
+Formatting/save errors stop rendering rather than silently leaving a misleading request.
 
 ### Custom providers and rollout
 
@@ -1050,7 +1064,7 @@ Same inputs within 24 hours = cached result (no duplicate generation)
 
 #### Q: Can I preview composite data before generating?
 
-**A:** Yes! Check the Generated_Document__c.RequestJSON__c field. It contains the full envelope with all namespace data that was sent to the backend.
+**A:** Yes! Check the Generated_Document__c.RequestJSON__c field. It and the RequestJSON02__c–RequestJSON10__c overflow fields contain the envelope. Once the backend has localized and saved it, its display companions match the values used for rendering.
 
 ---
 

@@ -1,4 +1,4 @@
-import { formatDocumentData } from '../templates/locale-format';
+import { formatAndStoreRequest } from '../sf/formatted-request';
 import { FastifyPluginAsync, FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastify';
 import type { DocgenRequest, DocgenResponse, FileUploadResult, TemplateSection } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
@@ -199,14 +199,13 @@ async function generateHandler(
   }
 
   try {
-    formatDocumentData(request.body.data, request.body.locale, request.body.timezone);
-
     // Initialize services
     const sfAuth = getSalesforceAuth();
     if (!sfAuth) {
       throw new MissingConfigurationError('Salesforce authentication', { correlationId });
     }
     const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+    await formatAndStoreRequest(request.body, request.body.generatedDocumentId, sfApi, { correlationId });
     const templateService = new TemplateService(sfApi);
 
     // Detect composite vs single-template request
@@ -602,6 +601,7 @@ async function generateHandler(
         const sfAuth = getSalesforceAuth();
         if (sfAuth) {
           const sfApi = new SalesforceApi(sfAuth, sfAuth.getInstanceUrl());
+    await formatAndStoreRequest(request.body, request.body.generatedDocumentId, sfApi, { correlationId });
 
           await sfApi.patch(
             `/services/data/v59.0/sobjects/Generated_Document__c/${request.body.generatedDocumentId}`,
