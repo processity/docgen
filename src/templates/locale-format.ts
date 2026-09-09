@@ -56,13 +56,17 @@ export function formatDocumentData(data: DataMap, locale: string, timezone: stri
       }
       const options: Intl.NumberFormatOptions = {};
       if (format.type === 'currency') {
-        if (typeof format.currency !== 'string' || !/^[A-Z]{3}$/.test(format.currency)) {
+        const currency =
+          typeof format.currency === 'string'
+            ? format.currency.trim() || 'USD'
+            : (format.currency ?? 'USD');
+        if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) {
           throw new Error(
-            `Missing currency at ${path}. Include CurrencyIsoCode in the source SOQL for this record.`
+            `Invalid currency at ${path}: expected a three-letter ISO currency code.`
           );
         }
         options.style = 'currency';
-        options.currency = format.currency;
+        options.currency = currency;
       } else {
         options.style = format.type === 'percent' ? 'percent' : 'decimal';
         options.maximumFractionDigits = typeof format.scale === 'number' ? format.scale : 2;

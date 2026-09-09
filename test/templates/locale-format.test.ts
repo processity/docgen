@@ -2,7 +2,7 @@ import { formatDocumentData } from '../../src/templates/locale-format';
 
 type TestRecord = Record<string, unknown> & {
   Amount: number | null;
-  __docgenFormats: Record<string, { type: string; currency?: string; scale?: number }>;
+  __docgenFormats: Record<string, { type: string; currency?: string | null; scale?: number }>;
 };
 
 function record(currency = 'USD'): TestRecord {
@@ -103,10 +103,20 @@ describe('document locale formatting', () => {
     expect(() => formatDocumentData(record(), locale, 'UTC')).toThrow('Unable to format document');
   });
 
-  it('requires record currency instead of guessing from locale', () => {
+  it.each([undefined, null, '', '   '])('defaults missing/blank currency %p to USD', (currency) => {
     const data = record();
-    delete data.__docgenFormats.Amount.currency;
-    expect(() => formatDocumentData(data, 'en-GB', 'UTC')).toThrow('Include CurrencyIsoCode');
+    data.__docgenFormats.Amount.currency = currency;
+    const composite = { Quote: { rows: [data] } };
+    formatDocumentData(composite, 'en-GB', 'UTC');
+    expect(data.Amount).toBe(1234567.89);
+    expect(data.Amount__formatted).toBe(
+      new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'USD' }).format(1234567.89)
+    );
+  });
+
+  it('still rejects an explicitly invalid currency code', () => {
+    const data = record('DOLLARS');
+    expect(() => formatDocumentData(data, 'en-US', 'UTC')).toThrow('Invalid currency');
   });
 
   it('keeps null currency blank without requiring a code', () => {
