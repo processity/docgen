@@ -511,8 +511,8 @@ private class DocgenControllerTest {
             acc.Id,
             template,
             'PDF',
-            'en-GB',
-            'Europe/London'
+            'en-US',
+            'UTC'
         );
 
         Generated_Document__c oldDoc = new Generated_Document__c(

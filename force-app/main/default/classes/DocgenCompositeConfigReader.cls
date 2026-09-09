@@ -41,7 +41,7 @@ public without sharing class DocgenCompositeConfigReader {
         List<Composite_Document__c> composites = [
             SELECT Id, Name, Template_Strategy__c, TemplateContentVersionId__c,
                    StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   Default_Output_Format__c, Output_File_Name_Field__c, Watermark_Text__c,
+                   Default_Output_Format__c, Output_File_Name_Field__c, Locale_Field__c, Watermark_Text__c,
                    Watermark_Condition_Field__c, Watermark_Style__c
             FROM Composite_Document__c
             WHERE Id = :compositeDocumentId

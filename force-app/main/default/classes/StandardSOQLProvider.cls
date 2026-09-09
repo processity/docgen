@@ -501,6 +501,27 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             }
         }
 
+        // Describe types survive JSON serialization via explicit formatting metadata.
+        Map<String, Object> formats = new Map<String, Object>();
+        for (String fieldName : out.keySet()) {
+            if (!fieldMap.containsKey(fieldName)) continue;
+            Schema.DescribeFieldResult field = fieldMap.get(fieldName).getDescribe();
+            Schema.DisplayType fieldType = field.getType();
+            String kind;
+            if (fieldType == Schema.DisplayType.Currency) kind = 'currency';
+            else if (fieldType == Schema.DisplayType.Percent) kind = 'percent';
+            else if (fieldType == Schema.DisplayType.Date) kind = 'date';
+            else if (fieldType == Schema.DisplayType.DateTime) kind = 'datetime';
+            else if (fieldType == Schema.DisplayType.Double || fieldType == Schema.DisplayType.Integer) kind = 'number';
+            if (kind == null) continue;
+            Map<String, Object> format = new Map<String, Object>{'type' => kind, 'scale' => field.getScale()};
+            if (kind == 'currency') {
+                format.put('currency', UserInfo.isMultiCurrencyOrganization()
+                    ? populated.get('CurrencyIsoCode') : UserInfo.getDefaultCurrency());
+            }
+            formats.put(fieldName, format);
+        }
+        if (!formats.isEmpty()) out.put('__docgenFormats', formats);
         return out;
     }
 
@@ -526,7 +547,7 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
      * Format field value based on type (adds currency/percent/date/datetime formatting)
      */
     @TestVisible
-    private String formatFieldValue(Object value, String fieldName, String locale, String timezone) {
+    private static String formatFieldValue(Object value, String fieldName, String locale, String timezone) {
         if (value == null) {
             return '';
         }
@@ -547,6 +568,28 @@ public with sharing class StandardSOQLProvider implements DocgenDataProvider {
             return formatDatetime((Datetime) value, locale, timezone);
         }
         return null; // No formatting for other types
+    }
+
+    /**
+     * Refresh existing display companions after resolving a locale from returned data.
+     * Keeps raw values and avoids querying providers a second time.
+     */
+    public static void refreshFormattedValues(Object data, String locale, String timezone) {
+        if (data instanceof Map<String, Object>) {
+            Map<String, Object> values = (Map<String, Object>) data;
+            for (String key : new List<String>(values.keySet())) {
+                Object value = values.get(key);
+                if (values.containsKey(key + '__formatted')) {
+                    String formatted = formatFieldValue(value, key, locale, timezone);
+                    if (formatted != null) values.put(key + '__formatted', formatted);
+                }
+                refreshFormattedValues(value, locale, timezone);
+            }
+        } else if (data instanceof List<Object>) {
+            for (Object value : (List<Object>) data) {
+                refreshFormattedValues(value, locale, timezone);
+            }
+        }
     }
 
     /**

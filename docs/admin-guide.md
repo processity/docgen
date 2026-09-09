@@ -42,6 +42,52 @@ The system comes pre-configured for these objects:
 
 ---
 
+## Document locale and timezone
+
+**Locale Field** (`Locale_Field__c`) is available on Docgen Template and Composite Document, immediately below **Default Output Format**. The Docgen User permission set grants read/edit access, matching the other template configuration fields.
+
+Enter a data field path, as with Output File Name Field; do not enter a literal locale in this setting. Include that field in the template's SOQL SELECT list. For example:
+
+```sql
+SELECT Id, Quote_Offer_Locale__c, CurrencyIsoCode FROM SBQQ__Quote__c WHERE Id = :recordId
+```
+
+- Standalone template: set Locale Field to `Quote_Offer_Locale__c` or `SBQQ__Quote__c.Quote_Offer_Locale__c`.
+- Composite document: if the quote section's namespace is `Quote`, use `Quote.Quote_Offer_Locale__c`. The composite setting controls every included section, including concatenated templates; child template Locale Field settings do not override it. The source section must be included.
+- The returned field should contain a locale such as `en-US`, `en-GB`, `de-DE`, or `fr-FR`. Surrounding whitespace is trimmed and Salesforce-style underscores are normalized (`en_US` becomes `en-US`).
+- Interactive and batch generation default to **en-US** when the setting is absent or the returned value is blank/unresolved. Use an explicit namespace path for composites to avoid ambiguous matches. No extra query is issued to fetch a missing locale field.
+- Generation uses **UTC**. Timezone is not exposed as a configuration field. This controls DateTime display and the calendar date used by `Today` and `GeneratedDate`; Date-only fields are not shifted.
+
+The resolved locale is written into the request. Apex sends raw values and Salesforce describe metadata in a reserved `__docgenFormats` map on each record. The rendering service uses ICU-backed JavaScript `Intl` to populate the same `__formatted` placeholders before any single/composite or DOCX/PDF/PPTX/XLSX branching. `Today` and `GeneratedDate` also use this formatter. Existing Apex callers that explicitly supply locale/timezone retain those values unless Locale Field overrides the locale.
+
+### Formatting behavior
+
+- Locale support follows the backend's ICU data. Invalid or unsupported locale identifiers fail with a clear formatting error instead of silently falling back. Node runtimes must include full ICU; official Node distributions do. This supports international grouping, separators, localized month names, symbol placement, and numbering/calendar conventions.
+- Dates use the locale's medium date style. DateTime adds the locale's short time style. This changes US output to forms such as `Sep 9, 2026` and German output to `09.09.2026`. Date-only values are never shifted by timezone.
+- Currency amounts are supplied by Salesforce and **never converted**. In multi-currency orgs, include `CurrencyIsoCode` in the SOQL for each record whose currency fields are displayed, including related records and child rows. Do not assume a child inherits a parent's currency. A nonblank amount without its currency code fails with an actionable error. In single-currency orgs, the org currency is supplied automatically; omit `CurrencyIsoCode` from SOQL when that field does not exist.
+- Currency formatting uses the ISO currency's decimal precision (e.g., JPY zero decimals and KWD three), localized separators, and symbol placement. A USD amount stays USD in a German or British locale. This is display rounding only; the raw amount is unchanged.
+- Salesforce describe types determine currency, percentage, date, DateTime, and number fields, including formula result types. Ordinary numeric display respects the field's decimal scale; percentages remain percentage points (`75` displays as `75%`, with locale spacing).
+- Raw fields remain unchanged. Use `Amount__formatted` and `CloseDate__formatted` for localized template text. XLSX raw numeric cells retain native Excel formatting behavior.
+
+### Custom providers and rollout
+
+Custom providers can opt into the same formatter by returning typed descriptors next to raw fields:
+
+```json
+{
+  "Amount": 1234.5,
+  "CloseDate": "2026-09-09",
+  "__docgenFormats": {
+    "Amount": { "type": "currency", "currency": "USD" },
+    "CloseDate": { "type": "date" }
+  }
+}
+```
+
+Supported descriptor types are `currency`, `number`, `percent`, `date`, and `datetime`; numeric/percent descriptors can specify `scale`. DateTime values must contain an explicit UTC marker or offset. Descriptors also work inside nested maps and arrays. Existing custom/legacy payloads without descriptors keep their supplied display strings. Reserve `__docgenFormats` for this metadata.
+
+Deploy the backend formatter before upgrading the Salesforce metadata. Older backends ignore the descriptors and continue using Apex's limited legacy display strings. Both sides must be updated for full locale formatting. Locale and timezone participate in the content hash to prevent reuse of a document formatted for another locale.
+
 ## Prerequisites
 
 ### Required Permissions

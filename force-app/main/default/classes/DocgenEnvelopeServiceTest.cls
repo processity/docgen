@@ -6,6 +6,80 @@
 private class DocgenEnvelopeServiceTest {
 
     @isTest
+    static void testLocaleFromQueriedFieldUpdatesDisplayValues() {
+        Account acc = DocgenTestDataFactory.createAccount('Locale Account');
+        acc.Description = ' de_DE ';
+        acc.AnnualRevenue = 1234.50;
+        update acc;
+        Docgen_Template__c template = DocgenTestDataFactory.createTemplateWithConfig(
+            'Locale Template', 'Account', 'SOQL',
+            'SELECT Id, Description, AnnualRevenue, CreatedDate FROM Account WHERE Id = :recordId',
+            null, '068000000000001AAA', false, true, false
+        );
+        template.Locale_Field__c = 'Description';
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.build(acc.Id, template, 'PDF', null, null);
+        Map<String, Object> record = (Map<String, Object>) env.data.get('Account');
+        Assert.areEqual('de-DE', env.locale);
+        Assert.areEqual('UTC', env.timezone);
+        Assert.areEqual('€1.234,50', record.get('AnnualRevenue__formatted'));
+        Assert.areEqual(1234.50, record.get('AnnualRevenue'));
+        Map<String, Object> formats = (Map<String, Object>) record.get('__docgenFormats');
+        Assert.areEqual('currency', ((Map<String, Object>) formats.get('AnnualRevenue')).get('type'));
+        Assert.areEqual('datetime', ((Map<String, Object>) formats.get('CreatedDate')).get('type'));
+        Assert.areEqual('date', ((Map<String, Object>) ((Map<String, Object>) env.data.get('__docgenFormats')).get('Today')).get('type'));
+        Assert.areEqual(((Datetime) record.get('CreatedDate')).format('yyyy-MM-dd HH:mm', 'UTC'),
+            record.get('CreatedDate__formatted'));
+        Assert.areEqual(String.valueOf((Date) env.data.get('GeneratedDate')), env.data.get('GeneratedDate__formatted'));
+    }
+
+    @isTest
+    static void testCompositeLocaleAppliesAcrossSections() {
+        DocgenTestDataFactory.CompositeScenario scenario =
+            DocgenTestDataFactory.createCompositeScenario('Account', 2, 'Own Template');
+        update new Account(Id = scenario.testRecordId, Description = 'de-DE', AnnualRevenue = 1234.50);
+        for (Docgen_Template__c template : scenario.templates) {
+            template.SOQL__c = 'SELECT Id, Description, AnnualRevenue FROM Account WHERE Id = :recordId';
+            template.Locale_Field__c = 'Name'; // Composite configuration takes precedence.
+        }
+        update scenario.templates;
+        scenario.compositeDoc.Locale_Field__c = scenario.junctions[1].Namespace__c + '.Description';
+        update scenario.compositeDoc;
+        DocgenEnvelopeService.Envelope env = DocgenEnvelopeService.buildForComposite(
+            scenario.compositeDoc.Id, new Map<String, Id>{'accountId' => scenario.testRecordId}, 'PDF', null, null
+        );
+        Assert.areEqual('de-DE', env.locale);
+        Assert.areEqual('UTC', env.timezone);
+        for (Composite_Document_Template__c junction : scenario.junctions) {
+            Map<String, Object> section = (Map<String, Object>) env.data.get(junction.Namespace__c);
+            Assert.areEqual('€1.234,50', section.get('AnnualRevenue__formatted'));
+            Assert.areEqual('€1.234,50', ((Map<String, Object>) section.get('Account')).get('AnnualRevenue__formatted'));
+        }
+    }
+
+    @isTest
+    static void testLocaleFallbackAndNestedDisplayValues() {
+        for (String path : new List<String>{null, 'Missing', 'Blank'}) {
+            DocgenEnvelopeService.Envelope env = new DocgenEnvelopeService.Envelope();
+            env.locale = 'en-US';
+            env.timezone = 'UTC';
+            env.data = new Map<String, Object>{'Blank' => ' '};
+            DocgenEnvelopeService.applyConfiguredLocale(env, new Docgen_Template__c(Locale_Field__c = path), null);
+            Assert.areEqual('en-US', env.locale);
+        }
+        Map<String, Object> child = new Map<String, Object>{
+            'Amount' => Decimal.valueOf('1234.50'), 'Amount__formatted' => '$1,234.50',
+            'CloseDate' => Date.newInstance(2026, 9, 9), 'CloseDate__formatted' => '09/09/2026'
+        };
+        DocgenEnvelopeService.Envelope env = new DocgenEnvelopeService.Envelope();
+        env.locale = 'en-US';
+        env.timezone = 'UTC';
+        env.data = new Map<String, Object>{'Locale' => 'en-GB', 'records' => new List<Object>{child}};
+        DocgenEnvelopeService.applyConfiguredLocale(env, new Composite_Document__c(Locale_Field__c = 'Locale'), null);
+        Assert.areEqual('£1,234.50', child.get('Amount__formatted'));
+        Assert.areEqual('09 Sep 2026', child.get('CloseDate__formatted'));
+    }
+
+    @isTest
     static void testComputeHashIsDeterministic() {
         // Given: Same inputs for hash computation
         String templateId = '068000000000001AAA';

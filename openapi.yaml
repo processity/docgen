@@ -213,7 +213,7 @@ paths:
 
         **Data Contract:**
         - Apex is responsible for building the JSON envelope
-        - All display values (currency, date, number) are **preformatted** by Apex with `__formatted` suffix
+        - Apex supplies raw values and per-record `__docgenFormats` descriptors; the backend localizes `__formatted` values using ICU. Legacy display strings without descriptors are preserved.
         - Field paths follow **Salesforce API naming** (e.g., `Account.Name`, `Opportunity.TotalAmount__formatted`)
         - RequestHash is computed by Apex using the selected content-cache or user-scoped operation-key strategy
 
@@ -797,13 +797,13 @@ components:
         locale:
           type: string
           description: |
-            Locale for formatting (used by Apex to preformat values). Examples: `en-GB`, `en-US`, `de-DE`.
-          example: en-GB
+            Locale resolved by Salesforce from the template/composite Locale Field in returned data, defaulting to `en-US`. The backend localizes typed display values before merging. Examples: `en-US`, `en-GB`, `de-DE`.
+          example: en-US
         timezone:
           type: string
           description: |
-            Timezone for date/time formatting (used by Apex). Examples: `Europe/London`, `America/New_York`.
-          example: Europe/London
+            Timezone used by Apex for DateTime display and generation dates. Salesforce generation sends `UTC`; no timezone configuration field is exposed.
+          example: UTC
         options:
           type: object
           required:
@@ -841,11 +841,11 @@ components:
           additionalProperties: true
           description: |
             Template data object with Salesforce field paths. Structure is flexible but should match
-            template placeholders. Use `__formatted` suffix for display values (precomputed by Apex).
+            template placeholders. Use `__formatted` suffix for display values. Per-record `__docgenFormats` descriptors identify currency/number/percent/date/datetime fields for backend ICU formatting; currency descriptors require the record currency code. Raw amounts are never converted.
 
             **Examples:**
             - `Account.Name` → raw field
-            - `Account.AnnualRevenue__formatted` → currency formatted by Apex
+            - `Account.AnnualRevenue__formatted` → currency localized by the backend when a descriptor is supplied
             - `Opportunity.LineItems` → array for loops
 
             **Field Path Convention:** Salesforce API naming (no underscores except for `__formatted`).

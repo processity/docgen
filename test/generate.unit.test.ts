@@ -450,6 +450,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Offer');
       worksheet.getCell('A1').value = '{{Quote.Name}}';
+      worksheet.getCell('B1').value = '{{Quote.Amount__formatted}}';
       worksheet.getCell('A2').value = '{{TABLE:Quote.LineItems.Name}}';
       const templateBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
       let uploadedVersionData = '';
@@ -491,6 +492,8 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
         data: {
           Quote: {
             Name: 'Q-1001',
+              Amount: 1234.5,
+              __docgenFormats: { Amount: { type: 'currency', currency: 'EUR' } },
             LineItems: [{ Name: 'Alpha' }, { Name: 'Beta' }],
           },
         },
@@ -514,6 +517,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
         generatedBytes as unknown as Parameters<typeof generatedWorkbook.xlsx.load>[0]
       );
       const generatedSheet = generatedWorkbook.getWorksheet('Offer')!;
+      expect(generatedSheet.getCell('B1').value).toBe('€1,234.50');
       expect(generatedSheet.getCell('A1').value).toBe('Q-1001');
       expect(generatedSheet.getCell('A2').value).toBe('Alpha');
       expect(generatedSheet.getCell('A3').value).toBe('Beta');

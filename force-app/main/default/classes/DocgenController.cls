@@ -456,7 +456,7 @@ public with sharing class DocgenController {
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c, Locale_Field__c,
                    Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
                    Default_Output_Format__c
             FROM Docgen_Template__c
@@ -484,9 +484,9 @@ public with sharing class DocgenController {
         Boolean readOnlyWord,
         List<Id> additionalPdfContentVersionIds
     ) {
-        // Use en-GB locale and Europe/London timezone per spec
-        String locale = 'en-GB';
-        String timezone = 'Europe/London';
+        // Locale can be resolved from data by the envelope service; timezone stays UTC.
+        String locale = 'en-US';
+        String timezone = 'UTC';
 
         DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.build(
             recordId,
@@ -568,9 +568,9 @@ public with sharing class DocgenController {
         Boolean readOnlyWord,
         List<Id> additionalPdfContentVersionIds
     ) {
-        // Use en-GB locale and Europe/London timezone per spec
-        String locale = 'en-GB';
-        String timezone = 'Europe/London';
+        // Locale can be resolved from data by the envelope service; timezone stays UTC.
+        String locale = 'en-US';
+        String timezone = 'UTC';
 
         DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.buildForComposite(
             compositeDocId,

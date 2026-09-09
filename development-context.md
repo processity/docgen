@@ -77,7 +77,7 @@ Salesforce Files offers versioning, sharing, and governance. Returning a URL (no
 
 ## 3) Data Contract (Apex → Node)
 
-Node receives a **single JSON envelope**. Apex is responsible for collecting and **preformatting** display values (currency/date/number), calculating the **idempotency hash**, and optionally embedding images (base64 preferred).
+Node receives a **single JSON envelope**. Apex collects raw values and Salesforce type/currency descriptors (`__docgenFormats`); the backend localizes display values with ICU before template merging. Apex is responsible for calculating the **idempotency hash**, and optionally embedding images (base64 preferred).
 
 ### Envelope shape (canonical)
 
@@ -163,7 +163,7 @@ Node receives a **single JSON envelope**. Apex is responsible for collecting and
 ### Apex Services
 
 * **`DocgenDataProvider`** (interface) with default **SOQL** provider reading `tmpl.SOQL__c`. Custom providers can be plugged via `ClassName__c`.
-* **`DocgenEnvelopeService`**: composes the envelope, **preformats** display values, computes **`RequestHash`**.
+* **`DocgenEnvelopeService`**: composes the envelope with type descriptors and legacy display companions, computes **`RequestHash`**.
 * **Interactive Controller (@AuraEnabled)**: inserts `Generated_Document__c` (sets `PROCESSING`), calls Node via Named Credential, handles success/failure and returns the **download URL**.
 * **Batch/Queueable**: inserts many `Generated_Document__c` rows with `QUEUED`; **Node poller** does the heavy work.
 
@@ -272,7 +272,7 @@ Node receives a **single JSON envelope**. Apex is responsible for collecting and
 ## 7) Template Authoring (docx-templates) — Ground Rules
 
 * **Tags reflect Salesforce API paths**: `{{Account.Name}}`, `{{Opportunity.Owner.Name}}`.
-* **Display values**: Use Apex-provided fields with `__formatted` suffix (e.g., `TotalAmount__formatted`) to keep locale/timezone rules centralized.
+* **Display values**: Use `__formatted` companions (e.g., `TotalAmount__formatted`). The shared backend ICU formatter populates typed fields using the request locale/timezone; raw currency amounts are never converted. See `docs/admin-guide.md` for the descriptor contract and rollout order.
 * **Tables**:
 
   ```

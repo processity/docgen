@@ -48,6 +48,11 @@ public with sharing class DocgenEnvelopeService {
         data.put('Today__formatted', formattedGenerationDate);
         data.put('GeneratedDate', generationDate);
         data.put('GeneratedDate__formatted', formattedGenerationDate);
+        Map<String, Object> formats = data.get('__docgenFormats') instanceof Map<String, Object>
+            ? (Map<String, Object>) data.get('__docgenFormats') : new Map<String, Object>();
+        formats.put('Today', new Map<String, Object>{'type' => 'date'});
+        formats.put('GeneratedDate', new Map<String, Object>{'type' => 'date'});
+        data.put('__docgenFormats', formats);
     }
 
     @TestVisible
@@ -168,8 +173,8 @@ public with sharing class DocgenEnvelopeService {
         // Set basic fields
         env.templateId = template.TemplateContentVersionId__c;
         env.outputFormat = effectiveOutputFormat;
-        env.locale = locale;
-        env.timezone = timezone;
+        env.locale = String.isBlank(locale) ? 'en-US' : locale;
+        env.timezone = String.isBlank(timezone) ? 'UTC' : timezone;
         env.additionalPdfContentVersionIds = toStringIds(attachmentValidation.contentVersionIds);
         env.attachmentWarnings = attachmentValidation.warnings;
 
@@ -181,8 +186,9 @@ public with sharing class DocgenEnvelopeService {
 
         // Get data from appropriate provider
         DocgenDataProvider provider = getProvider(template);
-        env.data = provider.buildData(recordId, template, locale, timezone);
-        addGenerationDateFields(env.data, locale, timezone);
+        env.data = provider.buildData(recordId, template, env.locale, env.timezone);
+        applyConfiguredLocale(env, template, recordId.getSObjectType().getDescribe().getName());
+        addGenerationDateFields(env.data, env.locale, env.timezone);
         env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String objectType = recordId.getSObjectType().getDescribe().getName();
         String watermarkText = resolveWatermarkText(template, env.data, objectType);
@@ -202,7 +208,7 @@ public with sharing class DocgenEnvelopeService {
 
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
-        String optionsJson = JSON.serialize(env.options);
+        String optionsJson = JSON.serialize(env.options) + '|' + env.locale + '|' + env.timezone;
         if (!env.additionalPdfContentVersionIds.isEmpty()) {
             optionsJson += '|' + JSON.serialize(env.additionalPdfContentVersionIds);
         }
@@ -555,8 +561,8 @@ public with sharing class DocgenEnvelopeService {
         // Set basic fields
         env.compositeDocumentId = compositeDocId;
         env.outputFormat = effectiveOutputFormat;
-        env.locale = locale;
-        env.timezone = timezone;
+        env.locale = String.isBlank(locale) ? 'en-US' : locale;
+        env.timezone = String.isBlank(timezone) ? 'UTC' : timezone;
         env.templateStrategy = composite.Template_Strategy__c;
         if (effectiveOutputFormat == 'XLSX' && composite.Template_Strategy__c == 'Concatenate Templates') {
             throw new IllegalArgumentException(
@@ -577,11 +583,12 @@ public with sharing class DocgenEnvelopeService {
             CompositeDocgenDataProvider.buildCompositeDataWithSelection(
                 compositeDocId,
                 recordIds,
-                locale,
-                timezone
+                env.locale,
+                env.timezone
             );
         env.data = compositeBuildResult.data;
-        addGenerationDateFields(env.data, locale, timezone);
+        applyConfiguredLocale(env, composite, null);
+        addGenerationDateFields(env.data, env.locale, env.timezone);
         env.options.put('readOnlyWord', resolveReadOnlyWordOption(effectiveOutputFormat, readOnlyWord));
         String watermarkText = resolveWatermarkText(composite, env.data, null);
         if (String.isNotBlank(watermarkText)) {
@@ -620,7 +627,7 @@ public with sharing class DocgenEnvelopeService {
         // Compute request hash for idempotency
         String dataJson = JSON.serialize(env.data);
         String recordIdsJson = JSON.serialize(recordIds);
-        String optionsJson = JSON.serialize(env.options);
+        String optionsJson = JSON.serialize(env.options) + '|' + env.locale + '|' + env.timezone;
         if (!env.additionalPdfContentVersionIds.isEmpty()) {
             optionsJson += '|' + JSON.serialize(env.additionalPdfContentVersionIds);
         }
@@ -856,6 +863,21 @@ public with sharing class DocgenEnvelopeService {
             return outputFileName;
         }
         return null;
+    }
+
+    @TestVisible
+    private static void applyConfiguredLocale(Envelope env, SObject config, String primaryObjectName) {
+        String path = getOptionalString(config, 'Locale_Field__c');
+        Object value = resolveSimpleFieldPath(env.data, path, primaryObjectName);
+        String resolvedLocale = value instanceof String ? ((String) value).trim().replace('_', '-') : null;
+        // A configured field with no value uses the product default.
+        if (String.isBlank(resolvedLocale)) {
+            resolvedLocale = String.isBlank(path) ? env.locale : 'en-US';
+        }
+        if (resolvedLocale != env.locale) {
+            StandardSOQLProvider.refreshFormattedValues(env.data, resolvedLocale, env.timezone);
+        }
+        env.locale = resolvedLocale;
     }
 
     @TestVisible

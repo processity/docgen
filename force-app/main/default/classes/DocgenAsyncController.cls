@@ -114,8 +114,8 @@ public with sharing class DocgenAsyncController {
                 recordId,
                 template,
                 normalizedOutputFormat,
-                'en-GB',
-                'Europe/London',
+                'en-US',
+                'UTC',
                 readOnlyWord,
                 additionalPdfContentVersionIds
             );
@@ -236,8 +236,8 @@ public with sharing class DocgenAsyncController {
                 compositeDocumentId,
                 recordIdsMap,
                 outputFormat,
-                'en-GB',
-                'Europe/London',
+                'en-US',
+                'UTC',
                 readOnlyWord,
                 additionalPdfContentVersionIds
             );

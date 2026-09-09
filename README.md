@@ -337,7 +337,7 @@ docgen/
 - **DocgenController**: Interactive generation controller for LWC (including composite generation)
 - **DocgenInvocable**: Invocable action for queued document generation from Flow
 - **DocgenEnvelopeService**: Request envelope builder with SHA-256 hashing (single and composite)
-- **StandardSOQLProvider**: Data collection with locale-aware formatting
+- **StandardSOQLProvider**: Data collection with Salesforce type/currency descriptors for shared backend ICU formatting (see [locale configuration](docs/admin-guide.md#document-locale-and-timezone))
 - **CompositeDocgenDataProvider**: Orchestrates multiple data providers with namespace isolation
 - **BatchDocgenEnqueue**: Batch processing for mass generation (single and composite)
 

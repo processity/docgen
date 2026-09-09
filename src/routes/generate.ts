@@ -1,3 +1,4 @@
+import { formatDocumentData } from '../templates/locale-format';
 import { FastifyPluginAsync, FastifyRequest, FastifyReply, preHandlerHookHandler } from 'fastify';
 import type { DocgenRequest, DocgenResponse, FileUploadResult, TemplateSection } from '../types';
 import { getCorrelationId, setCorrelationId } from '../utils/correlation-id';
@@ -198,6 +199,8 @@ async function generateHandler(
   }
 
   try {
+    formatDocumentData(request.body.data, request.body.locale, request.body.timezone);
+
     // Initialize services
     const sfAuth = getSalesforceAuth();
     if (!sfAuth) {

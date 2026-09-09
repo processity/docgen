@@ -111,7 +111,7 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
         List<Docgen_Template__c> templates = [
             SELECT Id, Name, TemplateContentVersionId__c, DataSource__c, SOQL__c,
                    ClassName__c, StoreMergedDocx__c, ReturnDocxToBrowser__c, PrimaryParent__c,
-                   ReturnMultipleRecords__c, Output_File_Name_Field__c,
+                   ReturnMultipleRecords__c, Output_File_Name_Field__c, Locale_Field__c,
                    Watermark_Text__c, Watermark_Condition_Field__c, Watermark_Style__c,
                    Default_Output_Format__c
             FROM Docgen_Template__c
@@ -315,8 +315,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                         this.compositeDocId,
                         recordIdsMap,
                         this.outputFormat,
-                        'en-GB', // Default locale (could be parameterized in future)
-                        'Europe/London', // Default timezone (could be parameterized in future)
+                        'en-US', // Fallback when no locale is resolved from data
+                        'UTC', // Fixed generation timezone
                         false,
                         this.attachmentValidation
                     );
@@ -326,8 +326,8 @@ public with sharing class BatchDocgenEnqueue implements Database.Batchable<Id>, 
                         recordId,
                         this.template,
                         this.outputFormat,
-                        'en-GB', // Default locale (could be parameterized in future)
-                        'Europe/London', // Default timezone (could be parameterized in future)
+                        'en-US', // Fallback when no locale is resolved from data
+                        'UTC', // Fixed generation timezone
                         false,
                         this.attachmentValidation
                     );
