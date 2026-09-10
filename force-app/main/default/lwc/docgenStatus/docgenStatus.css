@@ -1,154 +1,426 @@
-/* Status Card Styling */
-.status-card {
-    height: 100%;
-    min-height: 200px;
-}
-
-.status-icon {
+:host {
     display: block;
-    margin: 0 auto;
+    color: #182b42;
 }
-
-/* Metric Cards */
-.metric-card {
-    background: #f3f3f3;
-    border-radius: 0.25rem;
-    padding: 1rem;
-    text-align: center;
-    border: 1px solid #dddbda;
+.dashboard {
+    background: #fff;
+    border: 1px solid #e1e7ee;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
 }
-
-.metric-value {
+.dashboard-header,
+.heading-group,
+.header-actions,
+.panel-heading,
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.heading-group {
+    justify-content: flex-start;
+}
+h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+}
+h2,
+h3 {
+    font-size: 1rem;
+    font-weight: 600;
+}
+.muted,
+.scope-note {
+    color: #5c6c7f;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+.summary-card {
+    border: 1px solid #e1e7ee;
+    border-top: 3px solid #0176d3;
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(145deg, #f5faff, #fff 65%);
+}
+.summary-card h2 {
+    font-size: 0.8rem;
+    color: #526479;
+}
+.summary-value {
     font-size: 2rem;
     font-weight: 700;
-    line-height: 1.25;
-    color: #080707;
+    letter-spacing: -0.03em;
+    margin: 0.35rem 0;
+    font-variant-numeric: tabular-nums;
 }
-
-.metric-label {
-    font-size: 0.875rem;
-    color: #706e6b;
-    margin-top: 0.25rem;
+.two-column {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
 }
-
-/* Status-specific metric cards */
-.success-metric {
-    background: #d0f0d5;
-    border-color: #4bca81;
+.tab-content {
+    margin-top: 0.75rem;
 }
-
-.success-metric .metric-value {
-    color: #027e46;
+.panel {
+    min-width: 0;
+    border: 1px solid #e1e7ee;
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    background: #fff;
 }
-
-.error-metric {
-    background: #fed0c9;
-    border-color: #ea001e;
+.panel-heading {
+    margin-bottom: 0.75rem;
 }
-
-.error-metric .metric-value {
-    color: #c23934;
+.scope-label {
+    color: #245783;
+    background: #edf5fc;
+    border-radius: 1rem;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.7rem;
+    font-weight: 600;
 }
-
-.warning-metric {
-    background: #fef0cc;
-    border-color: #fe9339;
+.scope-note {
+    margin: 1rem 0;
 }
-
-.warning-metric .metric-value {
-    color: #826102;
+.insight {
+    background: #f4f7fb;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin-top: 1rem;
+    font-size: 0.8rem;
 }
-
-/* Badge Styling */
-.success-badge {
-    background-color: #027e46;
-    color: white;
+.ranked-list {
+    margin: 1rem 0;
+    display: grid;
+    gap: 0.9rem;
 }
-
-.error-badge {
-    background-color: #c23934;
-    color: white;
+.ranked-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.3rem;
 }
-
-.warning-badge {
-    background-color: #fe9339;
-    color: white;
-}
-
-/* Definition List Spacing */
-.slds-list_horizontal dt {
-    margin-top: 0.5rem;
-}
-
-.slds-list_horizontal dd {
-    margin-top: 0.5rem;
-    margin-left: 0.5rem;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .metric-value {
-        font-size: 1.5rem;
-    }
-
-    .metric-label {
-        font-size: 0.75rem;
-    }
-
-    .status-card {
-        min-height: 150px;
-    }
-}
-
-/* Horizontal bars for volume, utilization and stage timings */
-.metric-bar {
-    background: #ecebea;
-    border-radius: 0.125rem;
-    height: 0.75rem;
-    overflow: hidden;
-    width: 100%;
-}
-
-.metric-bar_inline {
-    display: inline-block;
-    height: 0.5rem;
-    margin-right: 0.5rem;
-    vertical-align: middle;
-    width: 4rem;
-}
-
-.metric-bar__fill {
-    background: #0176d3;
-    display: block;
-    height: 100%;
-}
-
-/* Compact tables for the metric panels */
-.metric-table td,
-.metric-table th {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-}
-
-.metric-table .bar-label {
-    color: #706e6b;
+.ranked-label span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    width: 8rem;
 }
-
-.metric-table .bar-count {
+.ranked-label strong {
     font-variant-numeric: tabular-nums;
-    text-align: right;
-    white-space: nowrap;
-    width: 4rem;
 }
-
-.resource-card {
+.metric-bar {
+    width: 100%;
+    height: 0.5rem;
+    border-radius: 0.25rem;
+    background: #edf1f6;
+    overflow: hidden;
+}
+.metric-bar__fill {
+    display: block;
     height: 100%;
+    background: #0176d3;
+    border-radius: inherit;
 }
-
-.resource-card .metric-value {
+.outcome-succeeded {
+    background: #079b87;
+}
+.outcome-failed {
+    background: #c23934;
+}
+.outcome-queued {
+    background: #8a5ed6;
+}
+.outcome-processing {
+    background: #e49b26;
+}
+.outcome-canceled {
+    background: #8895a7;
+}
+.check-list {
+    margin: 1rem 0;
+}
+.check-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.8rem 0;
+    border-bottom: 1px solid #edf1f6;
+    font-size: 0.8rem;
+}
+.check-list lightning-icon {
+    margin-right: 0.3rem;
+}
+.queue-summary,
+.activity-totals {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.queue-summary strong,
+.activity-totals strong {
+    display: block;
     font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.queue-summary span,
+.activity-totals span {
+    color: #5c6c7f;
+    font-size: 0.75rem;
+}
+.activity-totals {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    background: #f6f9fc;
+    padding: 1rem 1.25rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+.document-toolbar {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) 180px 130px;
+    gap: 1rem;
+    align-items: end;
+    margin: 1rem 0;
+}
+.documents-table {
+    max-height: 480px;
+    overflow: auto;
+    border: 1px solid #e1e7ee;
+}
+.pagination {
+    margin-top: 1rem;
+}
+.pagination lightning-button + lightning-button {
+    margin-left: 0.5rem;
+}
+.empty-state {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #5c6c7f;
+}
+.error-message {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    color: #a61a14;
+    background: #fef1ee;
+    border-radius: 0.375rem;
+}
+.loading-region {
+    position: relative;
+    height: 3rem;
+}
+.success-badge {
+    background: #def5ed;
+    color: #14664d;
+}
+.error-badge {
+    background: #fce7e4;
+    color: #a61a14;
+}
+.volume-chart {
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
+    height: 195px;
+    margin-top: 2rem;
+    border-bottom: 1px solid #dce5ee;
+    background: repeating-linear-gradient(to top, transparent 0, transparent 47px, #edf1f6 48px, transparent 49px);
+}
+.chart-column {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+}
+.chart-bar-target {
+    display: flex;
+    align-items: flex-end;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+.chart-bar {
+    display: block;
+    width: 100%;
+    background: #2086d7;
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+}
+.chart-bar-target:hover .chart-bar,
+.chart-bar-target:focus .chart-bar {
+    background: #0b4f8c;
+}
+.chart-bar-target:focus-visible {
+    outline: 2px solid #0176d3;
+    outline-offset: 3px;
+}
+.chart-tooltip {
+    display: none;
+    position: absolute;
+    z-index: 2;
+    bottom: 105%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 180px;
+    padding: 0.5rem;
+    border-radius: 0.3rem;
+    background: #182b42;
+    color: #fff;
+    font-size: 0.7rem;
+}
+.chart-column:first-child .chart-tooltip {
+    left: 0;
+    transform: none;
+}
+.chart-column:last-child .chart-tooltip {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+.chart-bar-target:hover .chart-tooltip,
+.chart-bar-target:focus .chart-tooltip {
+    display: block;
+}
+.chart-axis {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.65rem;
+    color: #5c6c7f;
+    white-space: nowrap;
+}
+.chart-caption {
+    margin-top: 2rem;
+}
+.charts-row {
+    margin-top: 1rem;
+}
+.format-chart {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+    padding: 1rem 0;
+}
+.donut {
+    width: 165px;
+    height: 165px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.donut-center {
+    width: 117px;
+    height: 117px;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+.donut-center strong {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+.donut-center span {
+    font-size: 0.75rem;
+    color: #5c6c7f;
+}
+.chart-legend {
+    flex: 1;
+    min-width: 160px;
+}
+.chart-legend li {
+    display: grid;
+    grid-template-columns: 10px 1fr auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.45rem 0;
+    font-size: 0.8rem;
+}
+.legend-swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+.metric-card {
+    border: 1px solid #e1e7ee;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background: #f6f9fc;
+}
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+.metric-label {
+    color: #5c6c7f;
+    font-size: 0.8rem;
+}
+.metric-table {
+    display: block;
+    overflow-x: auto;
+}
+.metric-table td,
+.metric-table th {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+}
+.metric-bar_inline {
+    display: inline-block;
+    width: 4rem;
+    margin-right: 0.5rem;
+}
+.resource-card {
+    margin-bottom: 1rem;
+    border-radius: 0.5rem;
+}
+.slds-list_horizontal dt,
+.slds-list_horizontal dd {
+    margin-top: 0.5rem;
+}
+@media (max-width: 900px) {
+    .summary-grid,
+    .activity-totals {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .two-column {
+        grid-template-columns: 1fr;
+    }
+    .dashboard {
+        padding: 1rem;
+    }
+}
+@media (max-width: 600px) {
+    .document-toolbar {
+        grid-template-columns: 1fr;
+    }
+    .header-actions {
+        width: 100%;
+    }
+    .summary-value {
+        font-size: 1.6rem;
+    }
+    .volume-chart {
+        gap: 0.15rem;
+    }
+    .chart-axis {
+        font-size: 0.55rem;
+    }
 }

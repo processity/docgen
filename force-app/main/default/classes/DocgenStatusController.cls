@@ -112,7 +112,7 @@ public with sharing class DocgenStatusController {
      * Get queue metrics from Salesforce (last 24 hours)
      * @return Map containing counts by status, success rate, and trends
      */
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static Map<String, Object> getQueueMetrics() {
         try {
             Datetime last24Hours = Datetime.now().addHours(-HOURS_FOR_METRICS);
@@ -145,10 +145,19 @@ public with sharing class DocgenStatusController {
             Integer succeeded = countsByStatus.get('SUCCEEDED');
             Integer failed = countsByStatus.get('FAILED');
             Integer completed = succeeded + failed;
-            Decimal successRate = completed > 0 ? (Decimal.valueOf(succeeded) / Decimal.valueOf(completed) * 100).setScale(1) : 0;
+            Decimal successRate = completed > 0 ? (Decimal.valueOf(succeeded) / Decimal.valueOf(completed) * 100).setScale(1) : null;
 
-            // Get current queue depth (QUEUED + PROCESSING)
-            Integer queueDepth = countsByStatus.get('QUEUED') + countsByStatus.get('PROCESSING');
+            // Current backlog includes documents created before the reporting window.
+            Map<String, Integer> backlog = new Map<String, Integer>{'QUEUED' => 0, 'PROCESSING' => 0};
+            for (AggregateResult ar : [
+                SELECT Status__c status, COUNT(Id) cnt
+                FROM Generated_Document__c
+                WHERE Status__c IN ('QUEUED', 'PROCESSING')
+                GROUP BY Status__c
+            ]) {
+                backlog.put((String) ar.get('status'), (Integer) ar.get('cnt'));
+            }
+            Integer queueDepth = backlog.get('QUEUED') + backlog.get('PROCESSING');
 
             // Get retry count
             Integer retryCount = [
@@ -167,6 +176,8 @@ public with sharing class DocgenStatusController {
                 'canceled' => countsByStatus.get('CANCELED'),
                 'successRate' => successRate,
                 'queueDepth' => queueDepth,
+                'currentQueued' => backlog.get('QUEUED'),
+                'currentProcessing' => backlog.get('PROCESSING'),
                 'retries' => retryCount
             };
         } catch (Exception e) {
@@ -178,7 +189,7 @@ public with sharing class DocgenStatusController {
      * Get recent Generated_Document__c records
      * @return List of recent documents with key fields
      */
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static List<GeneratedDocumentInfo> getRecentDocuments() {
         try {
             List<GeneratedDocumentInfo> results = new List<GeneratedDocumentInfo>();
@@ -188,7 +199,7 @@ public with sharing class DocgenStatusController {
                        CreatedDate, Error__c, OutputFormat__c,
                        Attempts__c, RequestedBy__r.Name
                 FROM Generated_Document__c
-                ORDER BY CreatedDate DESC
+                ORDER BY CreatedDate DESC, Id DESC
                 LIMIT :RECENT_DOCUMENTS_LIMIT
             ];
 
@@ -273,8 +284,8 @@ public with sharing class DocgenStatusController {
     /**
      * Get org-wide document volume from Salesforce (complete across all replicas)
      *
-     * Hour buckets use convertTimezone() so they line up with the times the running
-     * user sees on records. Intentionally not cacheable: an imperative call to a
+     * Hour buckets use UTC keys and user-timezone labels, including partial edge hours.
+     * Intentionally not cacheable: an imperative call to a
      * cacheable method is served from the client cache, which would make Refresh a
      * no-op on a page whose whole purpose is live data.
      *
@@ -283,34 +294,34 @@ public with sharing class DocgenStatusController {
     @AuraEnabled
     public static Map<String, Object> getUsageMetrics() {
         try {
-            Datetime last24Hours = Datetime.now().addHours(-HOURS_FOR_METRICS);
+            Datetime nowTime = Datetime.now();
+            Datetime last24Hours = nowTime.addHours(-HOURS_FOR_METRICS);
 
-            // Hourly volume, keyed by local date + local hour
+            // UTC hour keys keep repeated daylight-saving hours distinct; labels use the user timezone.
             Map<String, Integer> countsByHour = new Map<String, Integer>();
             for (AggregateResult ar : [
-                SELECT DAY_ONLY(convertTimezone(CreatedDate)) localDay,
-                       HOUR_IN_DAY(convertTimezone(CreatedDate)) localHour,
+                SELECT DAY_ONLY(CreatedDate) utcDay,
+                       HOUR_IN_DAY(CreatedDate) utcHour,
                        COUNT(Id) cnt
                 FROM Generated_Document__c
                 WHERE CreatedDate >= :last24Hours
-                GROUP BY DAY_ONLY(convertTimezone(CreatedDate)),
-                         HOUR_IN_DAY(convertTimezone(CreatedDate))
+                GROUP BY DAY_ONLY(CreatedDate),
+                         HOUR_IN_DAY(CreatedDate)
             ]) {
-                String key = String.valueOf((Date) ar.get('localDay')) + '#' + String.valueOf(ar.get('localHour'));
+                String key = String.valueOf((Date) ar.get('utcDay')) + '#' + String.valueOf(ar.get('utcHour'));
                 countsByHour.put(key, (Integer) ar.get('cnt'));
             }
 
-            // Emit all 24 buckets so empty hours are visible rather than skipped
+            // A rolling 24-hour window intersects 25 clock hours, including both partial edges.
             List<Map<String, Object>> hourly = new List<Map<String, Object>>();
             Integer peakCount = 0;
             String peakLabel = null;
-            Datetime nowTime = Datetime.now();
-
-            for (Integer i = HOURS_FOR_METRICS - 1; i >= 0; i--) {
+            for (Integer i = HOURS_FOR_METRICS; i >= 0; i--) {
                 Datetime slot = nowTime.addHours(-i);
-                String key = slot.format('yyyy-MM-dd') + '#' + slot.format('H');
+                String key = slot.formatGmt('yyyy-MM-dd') + '#' + slot.formatGmt('H');
                 Integer count = countsByHour.containsKey(key) ? countsByHour.get(key) : 0;
-                String label = slot.format('EEE HH:00');
+                Datetime hourStart = Datetime.newInstanceGmt(slot.dateGmt(), Time.newInstance(slot.hourGmt(), 0, 0, 0));
+                String label = hourStart.format('EEE HH:mm z');
 
                 hourly.add(new Map<String, Object>{ 'label' => label, 'count' => count });
 

@@ -159,184 +159,193 @@ function createStatusPage() {
   return element;
 }
 
-function toggleSection(element, sections) {
-  const accordion = element.shadowRoot.querySelector('lightning-accordion');
-  accordion.dispatchEvent(
-    new CustomEvent('sectiontoggle', { detail: { openSections: sections } })
-  );
+function activateTab(element, name) {
+  const tab = [...element.shadowRoot.querySelectorAll('lightning-tab')].find(entry => entry.value === name);
+  tab.dispatchEvent(new CustomEvent('active'));
+}
+function textOf(element) { return element.shadowRoot.textContent; }
+function button(element, label) {
+  return [...element.shadowRoot.querySelectorAll('lightning-button')].find(entry => entry.label === label);
+}
+function table(element) { return element.shadowRoot.querySelector('lightning-datatable'); }
+function select(element, label, value) {
+  const input = [...element.shadowRoot.querySelectorAll('lightning-combobox')].find(entry => entry.label === label);
+  input.dispatchEvent(new CustomEvent('change', { detail: { value } }));
 }
 
-function textOf(element) {
-  return element.shadowRoot.textContent;
-}
-
-describe('c-docgen-status metrics panels', () => {
+describe('c-docgen-status dashboard', () => {
   beforeEach(() => {
-    getSystemStatus.mockResolvedValue({ ready: true, checks: {} });
-    getWorkerStatus.mockResolvedValue({ isRunning: true, currentQueueDepth: 0, lastPollTime: null });
-    getWorkerStats.mockResolvedValue({ uptimeSeconds: 100 });
-    getQueueMetrics.mockResolvedValue({ total: 0, succeeded: 0, failed: 0 });
-    getRecentDocuments.mockResolvedValue([]);
+    getSystemStatus.mockResolvedValue({ ready: true, checks: { salesforce: true } });
+    getQueueMetrics.mockResolvedValue({ total: 40, succeeded: 36, failed: 1, queued: 2, processing: 1,
+      canceled: 0, currentQueued: 3, currentProcessing: 1, queueDepth: 4, retries: 2, successRate: 97.3 });
+    getRecentDocuments.mockResolvedValue(Array.from({ length: 23 }, (_, i) => ({
+      id: `doc-${i}`, name: `GD-${i}`, templateName: 'Order Form', status: i < 3 ? 'FAILED' : 'SUCCEEDED',
+      attempts: i, createdDate: new Date(Date.UTC(2026, 8, 10, 0, i)).toISOString(), error: i < 3 ? 'Conversion error' : ''
+    })));
     getUsageMetrics.mockResolvedValue(USAGE);
     getPerformanceMetrics.mockResolvedValue(PERFORMANCE);
     getResourceMetrics.mockResolvedValue(RESOURCES);
   });
-
   afterEach(() => {
-    while (document.body.firstChild) {
-      document.body.removeChild(document.body.firstChild);
-    }
+    while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     jest.clearAllMocks();
   });
 
-  it('does not call the metrics endpoints until a panel is opened', async () => {
-    createStatusPage();
+  it('opens with overview and only loads diagnostic callouts when requested', async () => {
+    const element = createStatusPage();
     await flushPromises();
-
-    expect(getSystemStatus).toHaveBeenCalled();
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(element.shadowRoot.querySelector('lightning-tabset').activeTabValue).toBe('overview');
+    expect(getSystemStatus).toHaveBeenCalledTimes(1);
     expect(getUsageMetrics).not.toHaveBeenCalled();
-    expect(getResourceMetrics).not.toHaveBeenCalled();
-  });
-
-  it('loads performance metrics when the performance panel is opened', async () => {
-    const element = createStatusPage();
+    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(getWorkerStats).not.toHaveBeenCalled();
+    expect(getWorkerStatus).not.toHaveBeenCalled();
+    activateTab(element, 'performance');
     await flushPromises();
-
-    toggleSection(element, ['performance']);
-    await flushPromises();
-
     expect(getUsageMetrics).toHaveBeenCalledTimes(1);
-    expect(getPerformanceMetrics).toHaveBeenCalledTimes(1);
+    expect(getPerformanceMetrics).not.toHaveBeenCalled();
     expect(getResourceMetrics).not.toHaveBeenCalled();
-
-    const text = textOf(element);
-    // Org-wide volume
-    expect(text).toContain('40');
-    expect(text).toContain('Wed 14:00');
-    expect(text).toContain('Order Form');
-    // Formatted latency percentiles
-    expect(text).toContain('4.2 s');
-    expect(text).toContain('9.1 s');
-    // Stage ranking with a friendly label
-    expect(text).toContain('PDF conversion (LibreOffice)');
-    // Replica identity so the sample is attributable
-    expect(text).toContain('docgen--abc123');
   });
 
-  it('renders the interactive vs batch split from byMode, not the format split', async () => {
+  it('renders accessible volume and format charts from Salesforce totals', async () => {
     const element = createStatusPage();
     await flushPromises();
-
-    toggleSection(element, ['performance']);
+    activateTab(element, 'performance');
     await flushPromises();
-
-    const text = textOf(element);
-    expect(text).toContain('Batch (poller)');
-    expect(text).toContain('Interactive');
-    // byMode averages, not the byOutputFormat average of 5100
-    expect(text).toContain('5.4 s');
-    expect(text).toContain('3.6 s');
+    expect(element.shadowRoot.querySelectorAll('.chart-bar-target')).toHaveLength(2);
+    expect(element.shadowRoot.querySelector('.chart-bar-target').getAttribute('aria-label')).toBe('Wed 13:00: 4 documents');
+    const donut = element.shadowRoot.querySelector('.donut');
+    expect(donut.getAttribute('aria-label')).toContain('PDF: 36 requests (90.0%)');
+    expect(donut.getAttribute('style')).toContain('conic-gradient');
+    expect(textOf(element)).toContain('Order Form');
+    expect(textOf(element)).toContain('Fleet-wide processing times are not collected');
   });
 
-  it('does not re-fetch a panel that is already loaded', async () => {
+  it('paginates, sorts before paging, filters and resets the page', async () => {
     const element = createStatusPage();
     await flushPromises();
-
-    toggleSection(element, ['performance']);
+    activateTab(element, 'documents');
     await flushPromises();
-    toggleSection(element, ['performance', 'resources']);
+    expect(table(element).data).toHaveLength(10);
+    expect(table(element).data[0].name).toBe('GD-22');
+    expect(table(element).data[0].recordUrl).toBe('/lightning/r/Generated_Document__c/doc-22/view');
+    button(element, 'Next').click();
     await flushPromises();
+    expect(table(element).data[0].name).toBe('GD-12');
+    expect(table(element).rowNumberOffset).toBe(10);
+    button(element, 'Next').click();
+    await flushPromises();
+    expect(table(element).data).toHaveLength(3);
+    expect(button(element, 'Next').disabled).toBe(true);
+    table(element).dispatchEvent(new CustomEvent('sort', { detail: { fieldName: 'attempts', sortDirection: 'asc' } }));
+    await flushPromises();
+    expect(table(element).data[0].attempts).toBe(0);
+    expect(button(element, 'Previous').disabled).toBe(true);
+    select(element, 'Status', 'FAILED');
+    await flushPromises();
+    expect(table(element).data).toHaveLength(3);
+    expect(table(element).data.every(doc => doc.status === 'FAILED')).toBe(true);
+    select(element, 'Status', 'ALL');
+    select(element, 'Rows per page', '25');
+    await flushPromises();
+    expect(table(element).data).toHaveLength(23);
+    const search = element.shadowRoot.querySelector('lightning-input');
+    search.value = 'Conversion error';
+    search.dispatchEvent(new CustomEvent('change'));
+    await flushPromises();
+    expect(table(element).data).toHaveLength(3);
+    search.value = 'no match';
+    search.dispatchEvent(new CustomEvent('change'));
+    await flushPromises();
+    expect(table(element)).toBeNull();
+    expect(textOf(element)).toContain('0 documents');
+  });
 
+  it('keeps org metrics and records when health or diagnostics fail', async () => {
+    getSystemStatus.mockRejectedValue(new Error('Health unavailable'));
+    getPerformanceMetrics.mockRejectedValue(new Error('Timings unavailable'));
+    const element = createStatusPage();
+    await flushPromises();
+    expect(textOf(element)).toContain('Health unavailable');
+    expect(textOf(element)).toContain('Unavailable');
+    expect(table(element).data).toHaveLength(10);
+    activateTab(element, 'performance');
+    activateTab(element, 'diagnostics');
+    await flushPromises();
+    expect(textOf(element)).toContain('Timings unavailable');
+    expect(textOf(element)).toContain('40');
+    expect(textOf(element)).toContain('37.5%');
+  });
+
+  it('shows actual readiness failures and unavailable values without false zeroes', async () => {
+    getSystemStatus.mockResolvedValue({ ready: false, checks: { salesforce: false } });
+    getQueueMetrics.mockRejectedValue(new Error('Queue unavailable'));
+    const element = createStatusPage();
+    await flushPromises();
+    expect(textOf(element)).toContain('Needs attention');
+    expect(textOf(element)).toContain('Queue unavailable');
+    const values = [...element.shadowRoot.querySelectorAll('.summary-value')].map(entry => entry.textContent);
+    expect(values).toEqual(['—', '—', '—', '—']);
+  });
+
+  it('loads independent replica diagnostics and keeps their identity visible', async () => {
+    getResourceMetrics.mockResolvedValue({ ...RESOURCES, replicaId: 'different-replica' });
+    const element = createStatusPage();
+    await flushPromises();
+    activateTab(element, 'diagnostics');
+    await flushPromises();
+    expect(getUsageMetrics).not.toHaveBeenCalled();
+    const text = textOf(element);
+    for (const label of ['docgen--abc123', 'different-replica', '4.2 s', '9.1 s',
+      'PDF conversion (LibreOffice)', 'Batch (poller)', 'Interactive', '5.4 s', '3.6 s',
+      '1024 MB of 4096 MB', '1 conversion(s) waiting for a slot', '90 hits, 10 misses']) {
+      expect(text).toContain(label);
+    }
+    activateTab(element, 'overview');
+    activateTab(element, 'diagnostics');
+    await flushPromises();
     expect(getPerformanceMetrics).toHaveBeenCalledTimes(1);
-    expect(getResourceMetrics).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an empty state instead of zeroed timings when a replica has no samples', async () => {
-    getPerformanceMetrics.mockResolvedValue({
-      ...PERFORMANCE,
-      documents: {
-        count: 0,
-        succeeded: 0,
-        failed: 0,
-        successRatePercent: null,
-        perMinute: 0,
-        perHour: 0,
-        latency: null,
-        byOutputFormat: [],
-        byMode: []
-      },
-      stages: [],
-      slowestStageByTotalTime: null
-    });
-
+  it('shows no-sample state and keeps empty charts honest', async () => {
+    getPerformanceMetrics.mockResolvedValue({ ...PERFORMANCE, documents: { count: 0, latency: null }, stages: [] });
+    getUsageMetrics.mockResolvedValue({ ...USAGE, last24Hours: 0, hourly: [], byFormat: [], topTemplates: [] });
     const element = createStatusPage();
     await flushPromises();
-    toggleSection(element, ['performance']);
+    activateTab(element, 'performance');
+    activateTab(element, 'diagnostics');
     await flushPromises();
-
-    const text = textOf(element);
-    expect(text).toContain('No documents completed on this replica');
-    expect(text).not.toContain('Median (p50)');
+    expect(textOf(element)).toContain('No documents completed on this replica');
+    expect(textOf(element)).toContain('No document requests in the last 24 hours');
+    expect(textOf(element)).not.toContain('Median (p50)');
+    expect(element.shadowRoot.querySelector('.donut')).toBeNull();
   });
 
-  it('renders resource utilization when the resources panel is opened', async () => {
+  it('refreshes visited tabs, retries errors, and clamps the document page after records disappear', async () => {
+    getUsageMetrics.mockRejectedValueOnce(new Error('Usage unavailable'));
     const element = createStatusPage();
     await flushPromises();
-
-    toggleSection(element, ['resources']);
+    activateTab(element, 'performance');
     await flushPromises();
-
-    expect(getResourceMetrics).toHaveBeenCalledTimes(1);
-
-    const text = textOf(element);
-    expect(text).toContain('37.5%');
-    expect(text).toContain('1024 MB of 4096 MB');
-    expect(text).toContain('2 of 8 slots converting');
-    expect(text).toContain('1 conversion(s) waiting for a slot');
-    expect(text).toContain('90 hits, 10 misses');
-    expect(text).toContain('12.5 / 500 MB');
-    expect(text).toContain('Container total (includes LibreOffice)');
+    expect(textOf(element)).toContain('Usage unavailable');
+    button(element, 'Next').click();
+    await flushPromises();
+    getRecentDocuments.mockResolvedValue([]);
+    button(element, 'Refresh').click();
+    await flushPromises();
+    expect(getUsageMetrics).toHaveBeenCalledTimes(2);
+    expect(textOf(element)).not.toContain('Usage unavailable');
+    expect(button(element, 'Previous').disabled).toBe(true);
+    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(getResourceMetrics).not.toHaveBeenCalled();
   });
 
-  it('warns when CPU and memory only cover the Node process', async () => {
-    getResourceMetrics.mockResolvedValue({
-      ...RESOURCES,
-      cpu: { ...RESOURCES.cpu, source: 'process' },
-      memory: { ...RESOURCES.memory, source: 'process' }
-    });
-
+  it('labels process-only resource readings', async () => {
+    getResourceMetrics.mockResolvedValue({ ...RESOURCES, cpu: { ...RESOURCES.cpu, source: 'process' } });
     const element = createStatusPage();
     await flushPromises();
-    toggleSection(element, ['resources']);
+    activateTab(element, 'diagnostics');
     await flushPromises();
-
     expect(textOf(element)).toContain('Node process only (LibreOffice not counted)');
-  });
-
-  it('surfaces a panel error without breaking the rest of the page', async () => {
-    getPerformanceMetrics.mockRejectedValue({ body: { message: 'Backend unreachable' } });
-
-    const element = createStatusPage();
-    await flushPromises();
-    toggleSection(element, ['performance']);
-    await flushPromises();
-
-    expect(textOf(element)).toContain('Backend unreachable');
-  });
-
-  it('reloads an open panel on refresh', async () => {
-    const element = createStatusPage();
-    await flushPromises();
-    toggleSection(element, ['performance']);
-    await flushPromises();
-
-    const refresh = element.shadowRoot.querySelector('lightning-button');
-    refresh.dispatchEvent(new CustomEvent('click'));
-    await flushPromises();
-
-    expect(getPerformanceMetrics).toHaveBeenCalledTimes(2);
-    // A panel that was never opened stays unloaded
-    expect(getResourceMetrics).not.toHaveBeenCalled();
   });
 });

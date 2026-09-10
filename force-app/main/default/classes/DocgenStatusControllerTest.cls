@@ -310,7 +310,7 @@ private class DocgenStatusControllerTest {
         System.assertEquals(16, result.get('last7Days'), 'Should count all documents from the last 7 days');
 
         List<Object> hourly = (List<Object>) result.get('hourly');
-        System.assertEquals(24, hourly.size(), 'Should emit a bucket for every hour, including empty ones');
+        System.assertEquals(25, hourly.size(), 'Rolling 24 hours includes both partial clock-hour edges');
 
         Integer bucketTotal = 0;
         for (Object bucket : hourly) {
@@ -342,7 +342,54 @@ private class DocgenStatusControllerTest {
         System.assertEquals(0, result.get('last24Hours'), 'Volume should be zero with no documents');
         System.assertEquals(0, result.get('peakHourCount'), 'Peak count should be zero with no documents');
         System.assertEquals(null, result.get('peakHourLabel'), 'Peak hour should be null with no documents');
-        System.assertEquals(24, ((List<Object>) result.get('hourly')).size(), 'Buckets should still cover 24 hours');
+        System.assertEquals(25, ((List<Object>) result.get('hourly')).size(), 'Buckets should include partial edge hours');
         System.assertEquals(0, ((List<Object>) result.get('byFormat')).size(), 'Format breakdown should be empty');
+    }
+
+    @isTest
+    static void testCurrentBacklogIncludesOlderRequests() {
+        List<Generated_Document__c> backlog = [
+            SELECT Id FROM Generated_Document__c WHERE Status__c IN ('QUEUED', 'PROCESSING')
+        ];
+        for (Generated_Document__c doc : backlog) {
+            Test.setCreatedDate(doc.Id, Datetime.now().addDays(-3));
+        }
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getQueueMetrics();
+        Test.stopTest();
+        System.assertEquals(13, result.get('total'), 'Window excludes old requests');
+        System.assertEquals(0, result.get('queued'), 'Windowed queued count stays separate');
+        System.assertEquals(3, result.get('queueDepth'), 'Live backlog includes old requests');
+        System.assertEquals(2, result.get('currentQueued'));
+        System.assertEquals(1, result.get('currentProcessing'));
+    }
+
+    @isTest
+    static void testSuccessRateUnavailableWithoutCompletedDocuments() {
+        delete [SELECT Id FROM Generated_Document__c WHERE Status__c IN ('SUCCEEDED', 'FAILED')];
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getQueueMetrics();
+        Test.stopTest();
+        System.assertEquals(null, result.get('successRate'), 'No completed documents is not a zero success rate');
+    }
+
+    @isTest
+    static void testUsageIncludesOldestPartialHour() {
+        Generated_Document__c doc = [SELECT Id FROM Generated_Document__c LIMIT 1];
+        Test.setCreatedDate(doc.Id, Datetime.now().addHours(-24).addMinutes(1));
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getUsageMetrics();
+        Test.stopTest();
+        System.assertEquals(16, result.get('last24Hours'), 'Include the oldest partial hour');
+        Integer bucketTotal = 0;
+        for (Object bucket : (List<Object>) result.get('hourly')) {
+            bucketTotal += (Integer) ((Map<String, Object>) bucket).get('count');
+        }
+        System.assertEquals(16, bucketTotal, 'Chart accounts for the whole window');
+        Integer formatTotal = 0;
+        for (Object entry : (List<Object>) result.get('byFormat')) {
+            formatTotal += (Integer) ((Map<String, Object>) entry).get('count');
+        }
+        System.assertEquals(bucketTotal, formatTotal, 'Volume and format charts agree');
     }
 }

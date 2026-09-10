@@ -1,336 +1,161 @@
 <template>
-    <div class="slds-card slds-p-around_medium">
-        <!-- Header -->
-        <div class="slds-grid slds-gutters slds-m-bottom_medium">
-            <div class="slds-col slds-size_1-of-2">
-                <h1 class="slds-text-heading_large">System Status</h1>
-                <p class="slds-text-body_small slds-text-color_weak">
-                    Last updated: {lastUpdated}
-                </p>
+    <div class="dashboard">
+        <header class="dashboard-header">
+            <div class="heading-group">
+                <lightning-icon icon-name="standard:dashboard" size="medium" alternative-text=""></lightning-icon>
+                <div>
+                    <h1>DocGen dashboard</h1>
+                    <p class="muted">Document activity, service health, and performance</p>
+                </div>
             </div>
-            <div class="slds-col slds-size_1-of-2 slds-text-align_right">
-                <lightning-button
-                    label="Refresh"
-                    icon-name="utility:refresh"
-                    variant="neutral"
-                    onclick={handleRefresh}
-                    disabled={isLoading}>
-                </lightning-button>
+            <div class="header-actions">
+                <span class="muted" aria-live="polite">{updatedLabel}</span>
+                <lightning-button label="Refresh" icon-name="utility:refresh" onclick={handleRefresh} disabled={isRefreshing}></lightning-button>
             </div>
-        </div>
-
-        <!-- Loading Spinner -->
+        </header>
         <template if:true={isLoading}>
-            <lightning-spinner alternative-text="Loading" size="medium"></lightning-spinner>
+            <div class="loading-region"><lightning-spinner alternative-text="Refreshing dashboard" size="small"></lightning-spinner></div>
         </template>
-
-        <!-- Error Message -->
-        <template if:true={error}>
-            <div class="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_medium" role="alert">
-                <span class="slds-assistive-text">Error</span>
-                <h2>{error}</h2>
-            </div>
-        </template>
-
-        <!-- Section 1: System Health -->
-        <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_medium slds-m-bottom_small">System Health</h2>
-            <div class="slds-grid slds-wrap slds-gutters">
-                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
-                    <article class="slds-card status-card">
-                        <div class="slds-card__header slds-grid">
-                            <header class="slds-media slds-media_center">
-                                <div class="slds-media__body">
-                                    <h3 class="slds-card__header-title">
-                                        <span>Backend Readiness</span>
-                                    </h3>
-                                </div>
-                            </header>
-                        </div>
-                        <div class="slds-card__body slds-card__body_inner">
-                            <div class="slds-text-align_center">
-                                <lightning-icon
-                                    icon-name={readinessIcon}
-                                    alternative-text={readinessStatus}
-                                    variant={readinessVariant}
-                                    size="large"
-                                    class="status-icon">
-                                </lightning-icon>
-                                <div class="slds-m-top_x-small">
-                                    <lightning-badge label={readinessStatus} class={readinessBadgeClass}></lightning-badge>
-                                </div>
-                                <template if:true={systemStatus.ready}>
-                                    <div class="slds-m-top_small slds-text-body_small">
-                                        <div>JWKS: <lightning-icon icon-name={jwksIcon} size="xx-small"></lightning-icon></div>
-                                        <div>Salesforce: <lightning-icon icon-name={salesforceIcon} size="xx-small"></lightning-icon></div>
-                                        <div>Key Vault: <lightning-icon icon-name={keyVaultIcon} size="xx-small"></lightning-icon></div>
+        <template if:true={queueError}><p class="error-message" role="alert">{queueError}</p></template>
+        <div class="summary-grid">
+            <template for:each={summaryCards} for:item="card">
+                <article key={card.key} class="summary-card">
+                    <h2>{card.label}</h2><div class="summary-value">{card.value}</div><p class="muted">{card.detail}</p>
+                </article>
+            </template>
+        </div>
+        <lightning-tabset active-tab-value={activeTab}>
+            <lightning-tab label="Overview" value="overview" onactive={handleTabActive}>
+                <div class="two-column tab-content">
+                    <section class="panel">
+                        <div class="panel-heading"><h2>Document outcomes</h2><span class="scope-label">Last 24 hours</span></div>
+                        <p class="muted">Current status of documents requested in this window.</p>
+                        <template if:true={queueMetrics}>
+                            <div class="ranked-list">
+                                <template for:each={outcomes} for:item="entry">
+                                    <div key={entry.key} class="ranked-row">
+                                        <div class="ranked-label"><span>{entry.label}</span><strong>{entry.count}</strong></div>
+                                        <div class="metric-bar"><span class={entry.className} style={entry.barStyle}></span></div>
                                     </div>
                                 </template>
                             </div>
-                        </div>
-                    </article>
-                </div>
-
-                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
-                    <article class="slds-card status-card">
-                        <div class="slds-card__header slds-grid">
-                            <header class="slds-media slds-media_center">
-                                <div class="slds-media__body">
-                                    <h3 class="slds-card__header-title">
-                                        <span>Health Check</span>
-                                    </h3>
-                                </div>
-                            </header>
-                        </div>
-                        <div class="slds-card__body slds-card__body_inner">
-                            <div class="slds-text-align_center">
-                                <lightning-icon
-                                    icon-name="utility:success"
-                                    alternative-text="Healthy"
-                                    variant="success"
-                                    size="large"
-                                    class="status-icon">
-                                </lightning-icon>
-                                <div class="slds-m-top_x-small">
-                                    <lightning-badge label="Service Running" class="success-badge"></lightning-badge>
-                                </div>
+                        </template>
+                        <p class="insight">{attentionText}</p>
+                    </section>
+                    <section class="panel">
+                        <div class="panel-heading"><h2>Service readiness</h2><lightning-badge label={readinessStatus} class={readinessBadgeClass}></lightning-badge></div>
+                        <p class="muted">Live check from the responding backend replica.</p>
+                        <template if:true={healthError}><p class="error-message" role="alert">{healthError}</p></template>
+                        <ul class="check-list">
+                            <template for:each={serviceChecks} for:item="check">
+                                <li key={check.key}><span>{check.label}</span><span><lightning-icon icon-name={check.icon} size="xx-small" alternative-text=""></lightning-icon> {check.status}</span></li>
+                            </template>
+                        </ul>
+                        <template if:true={queueMetrics}>
+                            <div class="queue-summary">
+                                <div><strong>{queueMetrics.currentQueued}</strong><span>Queued now</span></div>
+                                <div><strong>{queueMetrics.currentProcessing}</strong><span>Processing now</span></div>
+                                <div><strong>{queueMetrics.retries}</strong><span>Requests retried · 24h</span></div>
                             </div>
-                        </div>
-                    </article>
+                        </template>
+                    </section>
                 </div>
-
-                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3">
-                    <article class="slds-card status-card">
-                        <div class="slds-card__header slds-grid">
-                            <header class="slds-media slds-media_center">
-                                <div class="slds-media__body">
-                                    <h3 class="slds-card__header-title">
-                                        <span>Queue Depth</span>
-                                    </h3>
-                                </div>
-                            </header>
-                        </div>
-                        <div class="slds-card__body slds-card__body_inner">
-                            <div class="slds-text-align_center">
-                                <div class="metric-value">{queueMetrics.queueDepth}</div>
-                                <div class="metric-label">Documents in Queue</div>
-                            </div>
-                        </div>
-                    </article>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section 2: Poller Status -->
-        <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_medium slds-m-bottom_small">Poller Status</h2>
-            <article class="slds-card">
-                <div class="slds-card__body slds-card__body_inner">
-                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
-                        <div class="slds-media slds-media_center">
-                            <div class="slds-media__figure">
-                                <lightning-icon icon-name="utility:info" size="x-small" alternative-text="Information"></lightning-icon>
-                            </div>
-                            <div class="slds-media__body">
-                                <p class="slds-text-body_small">
-                                    The poller runs automatically on all backend replicas. The Salesforce lock mechanism prevents duplicate work.
-                                    Status and statistics shown are from a single replica and may vary between requests.
-                                </p>
-                            </div>
-                        </div>
+                <p class="scope-note">Document metrics include Salesforce records you can access, across all replicas. Canceled and unfinished requests are excluded from the success rate.</p>
+            </lightning-tab>
+            <lightning-tab label="Documents" value="documents" onactive={handleTabActive}>
+                <section class="panel tab-content">
+                    <div class="panel-heading"><div><h2>Recent documents</h2><p class="muted">Search and filter the latest 50 records you can access.</p></div>
+                        <a href="/lightning/o/Generated_Document__c/list">View all documents</a>
                     </div>
-                    <dl class="slds-list_horizontal slds-wrap">
-                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Status">Status:</dt>
-                        <dd class="slds-item_detail slds-truncate">
-                            <lightning-badge label={workerStatusLabel} class={workerStatusBadgeClass}></lightning-badge>
-                        </dd>
-                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Last Poll Time">Last Poll Time:</dt>
-                        <dd class="slds-item_detail slds-truncate">{lastPollTime}</dd>
-                        <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Current Queue Depth">Current Queue Depth:</dt>
-                        <dd class="slds-item_detail slds-truncate">{workerStatus.currentQueueDepth}</dd>
-                    </dl>
-                </div>
-            </article>
-        </div>
-
-        <!-- Section 3: Queue Metrics (Last 24h) -->
-        <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_medium slds-m-bottom_small">Queue Metrics - Last 24 Hours</h2>
-            <div class="slds-grid slds-wrap slds-gutters">
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card">
-                        <div class="metric-value">{queueMetrics.total}</div>
-                        <div class="metric-label">Total Processed</div>
+                    <div class="document-toolbar">
+                        <lightning-input type="search" label="Search documents" placeholder="Document, template, requester, or error" value={searchTerm} onchange={handleSearch}></lightning-input>
+                        <lightning-combobox label="Status" value={statusFilter} options={statusOptions} onchange={handleStatusFilter}></lightning-combobox>
+                        <lightning-combobox label="Rows per page" value={pageSize} options={pageSizeOptions} onchange={handlePageSize}></lightning-combobox>
                     </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card success-metric">
-                        <div class="metric-value">{queueMetrics.succeeded}</div>
-                        <div class="metric-label">Succeeded</div>
-                    </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card error-metric">
-                        <div class="metric-value">{queueMetrics.failed}</div>
-                        <div class="metric-label">Failed</div>
-                    </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card">
-                        <div class="metric-value">{queueMetrics.successRate}%</div>
-                        <div class="metric-label">Success Rate</div>
-                    </div>
-                </div>
-            </div>
-            <div class="slds-grid slds-wrap slds-gutters slds-m-top_small">
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card">
-                        <div class="metric-value">{queueMetrics.retries}</div>
-                        <div class="metric-label">Retries</div>
-                    </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card">
-                        <div class="metric-value">{workerStats.uptimeSeconds}</div>
-                        <div class="metric-label">Uptime (seconds)</div>
-                    </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card warning-metric">
-                        <div class="metric-value">{queueMetrics.processing}</div>
-                        <div class="metric-label">Processing</div>
-                    </div>
-                </div>
-                <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-4">
-                    <div class="metric-card warning-metric">
-                        <div class="metric-value">{queueMetrics.queued}</div>
-                        <div class="metric-label">Queued</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section 4: Recent Documents -->
-        <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_medium slds-m-bottom_small">Recent Documents</h2>
-            <lightning-datatable
-                key-field="id"
-                data={recentDocuments}
-                columns={documentColumns}
-                hide-checkbox-column
-                show-row-number-column>
-            </lightning-datatable>
-        </div>
-
-        <!-- Section 5: Performance and resource panels (load on first expand) -->
-        <lightning-accordion allow-multiple-sections-open active-section-name="" onsectiontoggle={handleSectionToggle}>
-            <lightning-accordion-section name="performance" label="Performance Metrics">
-                <template if:true={performanceLoading}>
-                    <div class="slds-p-vertical_large slds-text-align_center">
-                        <lightning-spinner alternative-text="Loading performance metrics" size="small"></lightning-spinner>
-                    </div>
-                </template>
-
-                <template if:true={performanceError}>
-                    <div class="slds-notify slds-notify_alert slds-alert_error" role="alert">
-                        <h2>{performanceError}</h2>
-                    </div>
-                </template>
-
-                <template if:true={performance}>
-                    <!-- Org-wide volume: complete across all replicas -->
-                    <h3 class="slds-text-title_caps slds-m-bottom_x-small">Document Volume (all replicas, from Salesforce)</h3>
-                    <div class="slds-grid slds-wrap slds-gutters">
-                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                            <div class="metric-card">
-                                <div class="metric-value">{performance.usage.lastHour}</div>
-                                <div class="metric-label">Last hour</div>
-                            </div>
-                        </div>
-                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                            <div class="metric-card">
-                                <div class="metric-value">{performance.usage.last24Hours}</div>
-                                <div class="metric-label">Last 24 hours</div>
-                            </div>
-                        </div>
-                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                            <div class="metric-card">
-                                <div class="metric-value">{performance.usage.last7Days}</div>
-                                <div class="metric-label">Last 7 days</div>
-                            </div>
-                        </div>
-                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                            <div class="metric-card">
-                                <div class="metric-value">{performance.usage.perHourAverage}</div>
-                                <div class="metric-label">Average per hour</div>
-                            </div>
-                        </div>
-                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                            <div class="metric-card">
-                                <div class="metric-value">{performance.usage.peakHourCount}</div>
-                                <div class="metric-label">Peak hour ({performance.usage.peakHourLabel})</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <template if:true={performance.usage.hasVolume}>
-                        <div class="slds-grid slds-wrap slds-gutters slds-m-top_medium">
-                            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Documents Per Hour (your time zone)</h3>
-                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table">
-                                    <tbody>
-                                        <template for:each={performance.usage.hourly} for:item="bucket">
-                                            <tr key={bucket.key}>
-                                                <td class="bar-label">{bucket.label}</td>
-                                                <td>
-                                                    <div class="metric-bar">
-                                                        <span class="metric-bar__fill" style={bucket.barStyle}></span>
-                                                    </div>
-                                                </td>
-                                                <td class="bar-count">{bucket.count}</td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">By Output Format</h3>
-                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table slds-m-bottom_medium">
-                                    <tbody>
-                                        <template for:each={performance.usage.byFormat} for:item="entry">
-                                            <tr key={entry.key}>
-                                                <td class="bar-label">{entry.label}</td>
-                                                <td>
-                                                    <div class="metric-bar">
-                                                        <span class="metric-bar__fill" style={entry.barStyle}></span>
-                                                    </div>
-                                                </td>
-                                                <td class="bar-count">{entry.count}</td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Busiest Templates</h3>
-                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table">
-                                    <tbody>
-                                        <template for:each={performance.usage.topTemplates} for:item="entry">
-                                            <tr key={entry.key}>
-                                                <td class="bar-label" title={entry.label}>{entry.label}</td>
-                                                <td>
-                                                    <div class="metric-bar">
-                                                        <span class="metric-bar__fill" style={entry.barStyle}></span>
-                                                    </div>
-                                                </td>
-                                                <td class="bar-count">{entry.count}</td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </div>
+                    <template if:true={documentsError}><p class="error-message" role="alert">{documentsError}</p></template>
+                    <template if:true={hasDocuments}>
+                        <div class="documents-table">
+                            <lightning-datatable key-field="id" data={pagedDocuments} columns={documentColumns}
+                                hide-checkbox-column show-row-number-column row-number-offset={rowOffset}
+                                sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}>
+                            </lightning-datatable>
                         </div>
                     </template>
-
+                    <template if:false={hasDocuments}><p class="empty-state">No recent documents match these filters.</p></template>
+                    <div class="pagination">
+                        <span class="muted" aria-live="polite">{paginationLabel}</span>
+                        <div><lightning-button label="Previous" onclick={handlePrevious} disabled={previousDisabled}></lightning-button>
+                            <lightning-button label="Next" onclick={handleNext} disabled={nextDisabled}></lightning-button></div>
+                    </div>
+                </section>
+            </lightning-tab>
+            <lightning-tab label="Performance" value="performance" onactive={handleTabActive}>
+                <div class="tab-content">
+                    <div class="panel-heading"><h2>Document activity</h2><span class="scope-label">Salesforce · all replicas</span></div>
+                    <template if:true={usageLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading document activity" size="small"></lightning-spinner></div></template>
+                    <template if:true={usageError}><p class="error-message" role="alert">{usageError}</p></template>
+                    <template if:true={usage}>
+                        <div class="activity-totals">
+                            <div><strong>{usage.lastHour}</strong><span>Requested in the last hour</span></div>
+                            <div><strong>{usage.last24Hours}</strong><span>Requested in the last 24 hours</span></div>
+                            <div><strong>{usage.last7Days}</strong><span>Requested in the last 7 days</span></div>
+                            <div><strong>{usage.perHourAverage}</strong><span>Average per hour · 24h</span></div>
+                        </div>
+                        <section class="panel">
+                            <div class="panel-heading"><h3>Requests over time</h3><span class="muted">Peak: {usage.peakHourCount} · {usage.peakHourLabel}</span></div>
+                            <div class="volume-chart" role="group" aria-label="Document requests by hour over the last 24 hours">
+                                <template for:each={usage.hourly} for:item="bucket">
+                                    <div key={bucket.key} class="chart-column">
+                                        <button class="chart-bar-target" aria-label={bucket.title}>
+                                            <span class="chart-bar" style={bucket.barStyle}></span>
+                                            <span class="chart-tooltip">{bucket.title}</span>
+                                        </button>
+                                        <span class="chart-axis">{bucket.axisLabel}</span>
+                                    </div>
+                                </template>
+                            </div>
+                            <p class="muted chart-caption">Hourly buckets in your time zone. First and last hours are partial. Hover or focus a bar for its count.</p>
+                            <template if:false={usage.hasVolume}><p class="empty-state">No document requests in the last 24 hours.</p></template>
+                        </section>
+                        <div class="two-column charts-row">
+                            <section class="panel">
+                                <div class="panel-heading"><h3>Output formats</h3><span class="muted">Last 24 hours</span></div>
+                                <template if:true={usage.hasVolume}>
+                                    <div class="format-chart">
+                                        <div class="donut" style={usage.donutStyle} role="img" aria-label={usage.formatDescription}>
+                                            <div class="donut-center"><strong>{usage.last24Hours}</strong><span>requests</span></div>
+                                        </div>
+                                        <ul class="chart-legend">
+                                            <template for:each={usage.byFormat} for:item="entry">
+                                                <li key={entry.key}><span class="legend-swatch" style={entry.colorStyle}></span><span>{entry.label}</span><strong>{entry.count}</strong><span class="muted">{entry.percent}%</span></li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
+                                <template if:false={usage.hasVolume}><p class="empty-state">No format data in this window.</p></template>
+                            </section>
+                            <section class="panel">
+                                <div class="panel-heading"><h3>Most requested templates</h3><span class="muted">Top 5 · 24 hours</span></div>
+                                <div class="ranked-list">
+                                    <template for:each={usage.topTemplates} for:item="entry">
+                                        <div key={entry.key} class="ranked-row"><div class="ranked-label"><span title={entry.label}>{entry.label}</span><strong>{entry.count}</strong></div>
+                                            <div class="metric-bar"><span class="metric-bar__fill" style={entry.barStyle}></span></div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <p class="muted">Requests with a linked template. Bars show share of all requests.</p>
+                            </section>
+                        </div>
+                    </template>
+                    <p class="scope-note">Volume covers records you can access across replicas. Fleet-wide processing times are not collected by the current service; Diagnostics provides a single-replica timing sample.</p>
+                </div>
+            </lightning-tab>
+            <lightning-tab label="Diagnostics" value="diagnostics" onactive={handleTabActive}>
+                <div class="tab-content">
+                    <p class="scope-note">For troubleshooting: each endpoint samples one replica independently. Timing and resource readings can come from different replicas and reset on restart.</p>
+                    <template if:true={performanceLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading processing timings" size="small"></lightning-spinner></div></template>
+                    <template if:true={performanceError}><p class="error-message" role="alert">{performanceError}</p></template>
+                    <template if:true={performance}>
                     <!-- Per-replica processing time -->
                     <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing Time</h3>
                     <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
@@ -338,7 +163,7 @@
                             Measured in memory on a single backend replica
                             (<strong>{performance.replica.replicaId}</strong>, up {performance.replica.uptimeLabel}) over the
                             last {performance.replica.windowMinutes} minutes. Each refresh may reach a different replica,
-                            so these timings are a sample rather than a fleet total. Volume above is org-wide.
+                            so these timings are a sample rather than a fleet total. These samples reset when the replica restarts.
                         </p>
                     </div>
 
@@ -347,7 +172,7 @@
                             <p class="slds-text-body_small slds-text-color_weak">
                                 No documents completed on this replica in the last
                                 {performance.replica.windowMinutes} minutes (observed {performance.replica.observedLabel}).
-                                Generate a document, then refresh - or refresh again to sample another replica.
+                                This does not mean the service has no activity. Use Performance for document volume across replicas.
                             </p>
                         </div>
                     </template>
@@ -361,7 +186,7 @@
                                 </div>
                             </div>
                             <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                                <div class="metric-card warning-metric">
+                                <div class="metric-card ">
                                     <div class="metric-value">{performance.latency.p95}</div>
                                     <div class="metric-label">p95</div>
                                 </div>
@@ -379,7 +204,7 @@
                                 </div>
                             </div>
                             <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
-                                <div class="metric-card error-metric">
+                                <div class="metric-card ">
                                     <div class="metric-value">{performance.latency.max}</div>
                                     <div class="metric-label">Slowest</div>
                                 </div>
@@ -467,10 +292,8 @@
                             </table>
                         </template>
                     </template>
-                </template>
-            </lightning-accordion-section>
-
-            <lightning-accordion-section name="resources" label="System Resources">
+                    </template>
+                    <h2 class="slds-text-heading_small slds-m-vertical_medium">Resource snapshot</h2>
                 <template if:true={resourcesLoading}>
                     <div class="slds-p-vertical_large slds-text-align_center">
                         <lightning-spinner alternative-text="Loading resource metrics" size="small"></lightning-spinner>
@@ -626,7 +449,8 @@
                         </template>
                     </div>
                 </template>
-            </lightning-accordion-section>
-        </lightning-accordion>
+                </div>
+            </lightning-tab>
+        </lightning-tabset>
     </div>
 </template>
