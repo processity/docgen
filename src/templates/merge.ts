@@ -5,6 +5,7 @@ import { createLogger } from '../utils/logger';
 import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
 import { preprocessDocxTemplate, postProcessMergedDocx } from './docx-postprocess';
 import { DOCGEN_LITERAL_XML_DELIMITER } from './rich-text';
+import { createExecHelpers } from './exec-helpers';
 
 const logger = createLogger('templates:merge');
 
@@ -67,12 +68,8 @@ export async function mergeTemplate(
       cmdDelimiter: ['{{', '}}'], // Handlebars-style delimiters
       literalXmlDelimiter: DOCGEN_LITERAL_XML_DELIMITER,
 
-      // Image resolver function
-      // Handles both base64 and external URLs
-      additionalJsContext: {
-        // Add any helper functions if needed
-        // For now, keep it simple - Apex should preformat everything
-      },
+      // Calculated EXEC values use the same formatter as supplied field companions.
+      additionalJsContext: createExecHelpers(loopSafeData, options.locale),
 
       // Process images: validate URLs against allowlist
       processLineBreaks: true,

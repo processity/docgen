@@ -69,6 +69,15 @@ The resolved locale is written into the request. Apex sends raw values and Sales
 - Salesforce describe types determine currency, percentage, date, DateTime, and number fields, including formula result types. Ordinary numeric display respects the field's decimal scale; percentages remain percentage points (`75` displays as `75%`, with locale spacing).
 - Raw fields remain unchanged. Use `Amount__formatted` and `CloseDate__formatted` for localized template text. XLSX raw numeric cells retain native Excel formatting behavior.
 
+### Formatting EXEC-calculated totals
+
+DOCX templates can call `docgenFormatCurrency(total)` to apply the generation locale
+and current section currency to a raw calculated total. Pass a second argument when
+needed, such as `docgenFormatCurrency(total, 'INR')`. This uses the same formatter as
+field display companions. See the [DocGen Built-in Functions reference](template-authoring.md#docgen-built-in-functions)
+for available helpers and the [`docgenFormatCurrency` documentation](template-authoring.md#docgenformatcurrency)
+for parameters, currency resolution, mixed-currency sections, and examples.
+
 ### Reviewing Request JSON
 
 The backend saves the localized envelope to `RequestJSON__c` and its overflow fields

@@ -11,12 +11,13 @@ This guide explains how to create DOCX templates for the Salesforce PDF Generati
 5. [Loops and Arrays](#loops-and-arrays)
 6. [Conditional Logic](#conditional-logic)
 7. [JavaScript Expressions](#javascript-expressions)
-8. [Formatted Values](#formatted-values)
-9. [Images](#images)
-10. [Composite Documents](#composite-documents)
-11. [Best Practices](#best-practices)
-12. [Examples](#examples)
-13. [Troubleshooting](#troubleshooting)
+8. [DocGen Built-in Functions](#docgen-built-in-functions)
+9. [Formatted Values](#formatted-values)
+10. [Images](#images)
+11. [Composite Documents](#composite-documents)
+12. [Best Practices](#best-practices)
+13. [Examples](#examples)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -414,9 +415,89 @@ const percentage = total > 0 ? ((withEmail / total) * 100).toFixed(1) : 0;
 
 ---
 
+## DocGen Built-in Functions
+
+This is the reference for functions DocGen makes available to templates. New built-in
+functions will be documented here as they are added, with their signature, parameters,
+return value, defaults, and examples.
+
+Functions are available directly in DOCX `EXEC` blocks and insertion expressions
+(`{{= ... }}`), including composite sections and PDF output generated from DOCX.
+No import or custom function definition is required. XLSX and PPTX scalar templates
+do not execute DOCX `EXEC` blocks. Deploy the backend version containing a helper
+before using it in a template; `docgenFormatCurrency` requires no new Salesforce package.
+
+| Function | Purpose |
+|---|---|
+| [`docgenFormatCurrency(value, currencyCode?)`](#docgenformatcurrency) | Format a calculated amount using the generation locale and a supplied or section currency. |
+
+### docgenFormatCurrency
+
+Formats a subtotal or other calculated number using the generation request's locale
+and the same ICU currency formatter as the supplied `__formatted` fields.
+
+**Signature:** `docgenFormatCurrency(value, currencyCode?) → string`
+
+| Parameter | Required | Description |
+|---|---|---|
+| `value` | Yes | Raw numeric amount to display. Sum raw fields before passing the result. |
+| `currencyCode` | No | ISO currency code such as `EUR` or `INR`. Defaults to the current section's currency, or USD when none is supplied. |
+
+**Returns:** A localized currency string. Null, undefined, or empty values return an empty string.
+
+**EXEC example:**
+
+```javascript
+{{EXEC
+  utoSum = elaLines.reduce((total, line) => total + (line.SBQQ__PackageTotal__c || 0), 0);
+  utoSum__formatted = docgenFormatCurrency(utoSum);
+}}
+{{utoSum__formatted}}
+```
+
+If the template already defines `sumField`, replace the custom `fmtCcy` call with:
+
+```javascript
+utoSum__formatted = docgenFormatCurrency(sumField(elaLines, 'SBQQ__PackageTotal__c'));
+```
+
+Currency comes from the current section's `CurrencyIsoCode`, a custom provider's
+`quoteCurrency`, or its currency descriptors. Standard Salesforce object wrappers
+and composite namespaces are supported. With no currency provided, it defaults to
+USD. The locale never selects or converts the currency. Child-row arrays are not
+used to guess a subtotal's currency.
+
+Pass an explicit currency for mixed-currency data or totals in a row loop:
+
+```javascript
+{{EXEC totalDisplay = docgenFormatCurrency(total, quote.CurrencyIsoCode); }}
+{{totalDisplay}}
+
+{{= docgenFormatCurrency(total, 'INR') }}
+```
+
+If multiple record currencies are available and no explicit code is supplied, the
+helper reports an error asking for the currency argument. Sum raw numeric fields,
+not their formatted strings. Null/undefined/empty values return an empty string;
+zero is formatted as a currency value. Negative amounts use the standard locale
+minus-sign convention, not custom accounting parentheses. Currency precision is
+shared with the field formatter (JPY has no decimal places, for example).
+
+Computed EXEC variables are created after the request has been formatted and stored;
+they appear in the document but are not added to Salesforce Request JSON. Existing
+custom `fmtCcy` functions are unchanged until the template author replaces their calls.
+
+---
+
 ## Formatted Values
 
 The system provides pre-formatted values for currency, dates, numbers, and percentages. Use the `__formatted` suffix to access these values.
+
+### Calculated currency totals in EXEC
+
+Use [`docgenFormatCurrency`](#docgenformatcurrency) from the
+[DocGen Built-in Functions](#docgen-built-in-functions) reference for totals calculated
+in the template. Continue using `__formatted` fields for values already supplied by the engine.
 
 ### Currency
 

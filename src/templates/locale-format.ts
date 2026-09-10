@@ -7,87 +7,100 @@ function isMap(value: unknown): value is DataMap {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** Build a scalar formatter shared by supplied fields and template EXEC helpers. */
+function createValueFormatter(locale: string, timezone: string) {
+  const canonical = Intl.getCanonicalLocales((locale || 'en-US').trim().replace(/_/g, '-'))[0];
+  if (
+    !canonical ||
+    Intl.NumberFormat.supportedLocalesOf([canonical]).length === 0 ||
+    Intl.DateTimeFormat.supportedLocalesOf([canonical]).length === 0
+  ) {
+    throw new Error(`Unsupported document locale: ${locale}`);
+  }
+  const date = new Intl.DateTimeFormat(canonical, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'UTC',
+  });
+  const datetime = new Intl.DateTimeFormat(canonical, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone || 'UTC',
+  });
+  const numbers = new Map<string, Intl.NumberFormat>();
+
+  const display = (value: unknown, format: DataMap, path: string): string => {
+    if (value === null || value === undefined || value === '') return '';
+    if (format.type === 'date' || format.type === 'datetime') {
+      if (typeof value !== 'string') throw new Error(`Expected a date string at ${path}`);
+      // Date-only values represent calendar dates, never timezone-shifted instants.
+      const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+      if (format.type === 'date' && !dateOnly) throw new Error(`Invalid date at ${path}`);
+      if (format.type === 'datetime' && !/(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+        throw new Error(`DateTime must include a timezone at ${path}`);
+      }
+      const parsed = new Date(dateOnly ? `${value}T00:00:00Z` : value);
+      if (
+        !Number.isFinite(parsed.getTime()) ||
+        (dateOnly && parsed.toISOString().slice(0, 10) !== value)
+      ) {
+        throw new Error(`Invalid date at ${path}`);
+      }
+      return (format.type === 'date' ? date : datetime).format(parsed);
+    }
+    if (!['number', 'currency', 'percent'].includes(String(format.type))) {
+      throw new Error(`Unknown formatting type at ${path}`);
+    }
+    if (
+      (typeof value !== 'number' && typeof value !== 'string') ||
+      !Number.isFinite(Number(value))
+    ) {
+      throw new Error(`Invalid number at ${path}`);
+    }
+    const options: Intl.NumberFormatOptions = {};
+    if (format.type === 'currency') {
+      const currency =
+        typeof format.currency === 'string'
+          ? format.currency.trim() || 'USD'
+          : (format.currency ?? 'USD');
+      if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) {
+        throw new Error(`Invalid currency at ${path}: expected a three-letter ISO currency code.`);
+      }
+      options.style = 'currency';
+      options.currency = currency;
+    } else {
+      options.style = format.type === 'percent' ? 'percent' : 'decimal';
+      options.maximumFractionDigits = typeof format.scale === 'number' ? format.scale : 2;
+    }
+    const key = JSON.stringify(options);
+    let formatter = numbers.get(key);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(canonical, options);
+      numbers.set(key, formatter);
+    }
+    // Salesforce percentages are percentage points (75 means 75%, not 7500%).
+    return formatter.format(format.type === 'percent' ? Number(value) / 100 : Number(value));
+  };
+
+  return display;
+}
+
+/** Format EXEC-calculated amounts with the same currency rules as __formatted fields. */
+export function createCurrencyFormatter(
+  locale: string
+): (value: unknown, currency?: unknown) => string {
+  const display = createValueFormatter(locale, 'UTC');
+  return (value, currency) => display(value, { type: 'currency', currency }, 'EXEC currency');
+}
+
 /** Localize typed Salesforce values once, before any output-format or composite branching. */
 export function formatDocumentData(data: DataMap, locale: string, timezone: string): void {
   try {
-    const canonical = Intl.getCanonicalLocales((locale || 'en-US').trim().replace(/_/g, '-'))[0];
-    if (
-      !canonical ||
-      Intl.NumberFormat.supportedLocalesOf([canonical]).length === 0 ||
-      Intl.DateTimeFormat.supportedLocalesOf([canonical]).length === 0
-    ) {
-      throw new Error(`Unsupported document locale: ${locale}`);
-    }
-    const date = new Intl.DateTimeFormat(canonical, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: 'UTC',
-    });
-    const datetime = new Intl.DateTimeFormat(canonical, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: timezone || 'UTC',
-    });
-    const numbers = new Map<string, Intl.NumberFormat>();
-
-    const display = (value: unknown, format: DataMap, path: string): string => {
-      if (value === null || value === undefined || value === '') return '';
-      if (format.type === 'date' || format.type === 'datetime') {
-        if (typeof value !== 'string') throw new Error(`Expected a date string at ${path}`);
-        // Date-only values represent calendar dates, never timezone-shifted instants.
-        const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
-        if (format.type === 'date' && !dateOnly) throw new Error(`Invalid date at ${path}`);
-        if (format.type === 'datetime' && !/(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
-          throw new Error(`DateTime must include a timezone at ${path}`);
-        }
-        const parsed = new Date(dateOnly ? `${value}T00:00:00Z` : value);
-        if (
-          !Number.isFinite(parsed.getTime()) ||
-          (dateOnly && parsed.toISOString().slice(0, 10) !== value)
-        ) {
-          throw new Error(`Invalid date at ${path}`);
-        }
-        return (format.type === 'date' ? date : datetime).format(parsed);
-      }
-      if (!['number', 'currency', 'percent'].includes(String(format.type))) {
-        throw new Error(`Unknown formatting type at ${path}`);
-      }
-      if (
-        (typeof value !== 'number' && typeof value !== 'string') ||
-        !Number.isFinite(Number(value))
-      ) {
-        throw new Error(`Invalid number at ${path}`);
-      }
-      const options: Intl.NumberFormatOptions = {};
-      if (format.type === 'currency') {
-        const currency =
-          typeof format.currency === 'string'
-            ? format.currency.trim() || 'USD'
-            : (format.currency ?? 'USD');
-        if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) {
-          throw new Error(
-            `Invalid currency at ${path}: expected a three-letter ISO currency code.`
-          );
-        }
-        options.style = 'currency';
-        options.currency = currency;
-      } else {
-        options.style = format.type === 'percent' ? 'percent' : 'decimal';
-        options.maximumFractionDigits = typeof format.scale === 'number' ? format.scale : 2;
-      }
-      const key = JSON.stringify(options);
-      let formatter = numbers.get(key);
-      if (!formatter) {
-        formatter = new Intl.NumberFormat(canonical, options);
-        numbers.set(key, formatter);
-      }
-      // Salesforce percentages are percentage points (75 means 75%, not 7500%).
-      return formatter.format(format.type === 'percent' ? Number(value) / 100 : Number(value));
-    };
+    const display = createValueFormatter(locale, timezone);
 
     const visit = (value: unknown, path: string): void => {
       if (Array.isArray(value)) {
