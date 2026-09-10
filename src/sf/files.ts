@@ -11,6 +11,7 @@
  */
 
 import type { SalesforceApi } from './api';
+import { timeStage } from '../obs';
 import type {
   ContentVersionCreateRequest,
   ContentVersionCreateResponse,
@@ -34,6 +35,15 @@ import { SalesforceUploadError, DocgenError, buildSalesforceError } from '../err
  * @throws Error if upload fails or ContentDocumentId cannot be retrieved
  */
 export async function uploadContentVersion(
+  buffer: Buffer,
+  fileName: string,
+  api: SalesforceApi,
+  options?: CorrelationOptions
+): Promise<{ contentVersionId: string; contentDocumentId: string }> {
+  return timeStage('sfUpload', () => uploadContentVersionInternal(buffer, fileName, api, options));
+}
+
+async function uploadContentVersionInternal(
   buffer: Buffer,
   fileName: string,
   api: SalesforceApi,

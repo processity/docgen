@@ -4,7 +4,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { ConversionOptions, ConversionPoolStats } from '../types';
 import { createLogger } from '../utils/logger';
-import { trackDependency } from '../obs';
+import { trackDependency, recordStage } from '../obs';
 import { ConversionTimeoutError, ConversionFailedError } from '../errors';
 
 const logger = createLogger('convert:soffice');
@@ -110,6 +110,7 @@ export class LibreOfficeConverter {
       });
 
       this.stats.completedJobs++;
+      recordStage('pdfConvert', duration, true);
       logger.info(
         {
           correlationId,
@@ -135,6 +136,7 @@ export class LibreOfficeConverter {
       });
 
       this.stats.failedJobs++;
+      recordStage('pdfConvert', duration, false);
       logger.error(
         {
           correlationId,
@@ -403,6 +405,29 @@ export class LibreOfficeConverter {
    */
   getStats(): ConversionPoolStats {
     return { ...this.stats };
+  }
+
+  /**
+   * Maximum concurrent conversions this pool allows.
+   * Read from the instance, not config: getLibreOfficeConverter() constructs the
+   * singleton with DEFAULT_MAX_CONCURRENT regardless of conversionMaxConcurrent.
+   */
+  getMaxConcurrent(): number {
+    return this.maxConcurrent;
+  }
+
+  /**
+   * Number of conversions currently holding a pool slot
+   */
+  getActiveJobs(): number {
+    return this.activeJobs;
+  }
+
+  /**
+   * Number of conversions waiting for a slot
+   */
+  getQueuedJobs(): number {
+    return this.queue.length;
   }
 
   /**

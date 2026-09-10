@@ -205,6 +205,13 @@ export class TemplateCache {
   }
 
   /**
+   * Maximum cache size in bytes (for utilization reporting)
+   */
+  getMaxSizeBytes(): number {
+    return MAX_CACHE_SIZE_BYTES;
+  }
+
+  /**
    * Get current cache size in bytes
    */
   getSizeBytes(): number {

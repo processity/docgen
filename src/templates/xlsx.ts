@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import type { Cell, CellFormulaValue, CellRichTextValue, CellValue, Row, Worksheet } from 'exceljs';
 import { TemplateInvalidFormatError, TemplateMergeError } from '../errors';
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 
 const logger = createLogger('templates:xlsx');
 const TABLE_PLACEHOLDER =
@@ -35,6 +36,13 @@ interface FormulaSnapshot {
  * {{TABLE:Quote.LineItems.Name}} is repeated once per collection item.
  */
 export async function mergeXlsxTemplate(
+  template: Buffer,
+  data: Record<string, unknown>
+): Promise<Buffer> {
+  return timeStage('merge', () => mergeXlsxTemplateInternal(template, data));
+}
+
+async function mergeXlsxTemplateInternal(
   template: Buffer,
   data: Record<string, unknown>
 ): Promise<Buffer> {

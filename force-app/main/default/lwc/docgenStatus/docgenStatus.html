@@ -222,21 +222,410 @@
             </lightning-datatable>
         </div>
 
-        <!-- Section 5: Future Expansion Placeholders (collapsed) -->
-        <lightning-accordion allow-multiple-sections-open active-section-name="">
-            <lightning-accordion-section name="performance" label="Performance Metrics (Coming Soon)">
-                <div class="slds-text-align_center slds-p-vertical_large">
-                    <p class="slds-text-color_weak">
-                        Performance metrics including processing times, throughput rates, and bottleneck identification will be available here.
-                    </p>
-                </div>
+        <!-- Section 5: Performance and resource panels (load on first expand) -->
+        <lightning-accordion allow-multiple-sections-open active-section-name="" onsectiontoggle={handleSectionToggle}>
+            <lightning-accordion-section name="performance" label="Performance Metrics">
+                <template if:true={performanceLoading}>
+                    <div class="slds-p-vertical_large slds-text-align_center">
+                        <lightning-spinner alternative-text="Loading performance metrics" size="small"></lightning-spinner>
+                    </div>
+                </template>
+
+                <template if:true={performanceError}>
+                    <div class="slds-notify slds-notify_alert slds-alert_error" role="alert">
+                        <h2>{performanceError}</h2>
+                    </div>
+                </template>
+
+                <template if:true={performance}>
+                    <!-- Org-wide volume: complete across all replicas -->
+                    <h3 class="slds-text-title_caps slds-m-bottom_x-small">Document Volume (all replicas, from Salesforce)</h3>
+                    <div class="slds-grid slds-wrap slds-gutters">
+                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                            <div class="metric-card">
+                                <div class="metric-value">{performance.usage.lastHour}</div>
+                                <div class="metric-label">Last hour</div>
+                            </div>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                            <div class="metric-card">
+                                <div class="metric-value">{performance.usage.last24Hours}</div>
+                                <div class="metric-label">Last 24 hours</div>
+                            </div>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                            <div class="metric-card">
+                                <div class="metric-value">{performance.usage.last7Days}</div>
+                                <div class="metric-label">Last 7 days</div>
+                            </div>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                            <div class="metric-card">
+                                <div class="metric-value">{performance.usage.perHourAverage}</div>
+                                <div class="metric-label">Average per hour</div>
+                            </div>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                            <div class="metric-card">
+                                <div class="metric-value">{performance.usage.peakHourCount}</div>
+                                <div class="metric-label">Peak hour ({performance.usage.peakHourLabel})</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <template if:true={performance.usage.hasVolume}>
+                        <div class="slds-grid slds-wrap slds-gutters slds-m-top_medium">
+                            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Documents Per Hour (your time zone)</h3>
+                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table">
+                                    <tbody>
+                                        <template for:each={performance.usage.hourly} for:item="bucket">
+                                            <tr key={bucket.key}>
+                                                <td class="bar-label">{bucket.label}</td>
+                                                <td>
+                                                    <div class="metric-bar">
+                                                        <span class="metric-bar__fill" style={bucket.barStyle}></span>
+                                                    </div>
+                                                </td>
+                                                <td class="bar-count">{bucket.count}</td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-2">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">By Output Format</h3>
+                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table slds-m-bottom_medium">
+                                    <tbody>
+                                        <template for:each={performance.usage.byFormat} for:item="entry">
+                                            <tr key={entry.key}>
+                                                <td class="bar-label">{entry.label}</td>
+                                                <td>
+                                                    <div class="metric-bar">
+                                                        <span class="metric-bar__fill" style={entry.barStyle}></span>
+                                                    </div>
+                                                </td>
+                                                <td class="bar-count">{entry.count}</td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Busiest Templates</h3>
+                                <table class="slds-table slds-table_bordered slds-table_fixed-layout metric-table">
+                                    <tbody>
+                                        <template for:each={performance.usage.topTemplates} for:item="entry">
+                                            <tr key={entry.key}>
+                                                <td class="bar-label" title={entry.label}>{entry.label}</td>
+                                                <td>
+                                                    <div class="metric-bar">
+                                                        <span class="metric-bar__fill" style={entry.barStyle}></span>
+                                                    </div>
+                                                </td>
+                                                <td class="bar-count">{entry.count}</td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Per-replica processing time -->
+                    <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing Time</h3>
+                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
+                        <p class="slds-text-body_small">
+                            Measured in memory on a single backend replica
+                            (<strong>{performance.replica.replicaId}</strong>, up {performance.replica.uptimeLabel}) over the
+                            last {performance.replica.windowMinutes} minutes. Each refresh may reach a different replica,
+                            so these timings are a sample rather than a fleet total. Volume above is org-wide.
+                        </p>
+                    </div>
+
+                    <template if:false={performance.hasSamples}>
+                        <div class="slds-box slds-box_small slds-m-bottom_small">
+                            <p class="slds-text-body_small slds-text-color_weak">
+                                No documents completed on this replica in the last
+                                {performance.replica.windowMinutes} minutes (observed {performance.replica.observedLabel}).
+                                Generate a document, then refresh - or refresh again to sample another replica.
+                            </p>
+                        </div>
+                    </template>
+
+                    <template if:true={performance.hasSamples}>
+                        <div class="slds-grid slds-wrap slds-gutters">
+                            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                                <div class="metric-card">
+                                    <div class="metric-value">{performance.latency.p50}</div>
+                                    <div class="metric-label">Median (p50)</div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                                <div class="metric-card warning-metric">
+                                    <div class="metric-value">{performance.latency.p95}</div>
+                                    <div class="metric-label">p95</div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                                <div class="metric-card">
+                                    <div class="metric-value">{performance.latency.p99}</div>
+                                    <div class="metric-label">p99</div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                                <div class="metric-card">
+                                    <div class="metric-value">{performance.latency.avg}</div>
+                                    <div class="metric-label">Average</div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
+                                <div class="metric-card error-metric">
+                                    <div class="metric-value">{performance.latency.max}</div>
+                                    <div class="metric-label">Slowest</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <dl class="slds-list_horizontal slds-wrap slds-m-top_small">
+                            <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Throughput">Throughput:</dt>
+                            <dd class="slds-item_detail slds-truncate">
+                                {performance.perMinute} /min &middot; {performance.perHour} /hour
+                            </dd>
+                            <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Sample">Sample:</dt>
+                            <dd class="slds-item_detail slds-truncate">
+                                {performance.sampleCount} documents ({performance.succeeded} succeeded,
+                                {performance.failed} failed, {performance.successRate} success)
+                            </dd>
+                        </dl>
+
+                        <h3 class="slds-text-title_caps slds-m-top_medium slds-m-bottom_x-small">
+                            How Documents Were Requested
+                        </h3>
+                        <table class="slds-table slds-table_bordered metric-table">
+                            <thead>
+                                <tr class="slds-line-height_reset">
+                                    <th scope="col">Source</th>
+                                    <th scope="col">Documents</th>
+                                    <th scope="col">Average</th>
+                                    <th scope="col">p95</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template for:each={performance.byMode} for:item="entry">
+                                    <tr key={entry.key}>
+                                        <td>{entry.label}</td>
+                                        <td>{entry.count}</td>
+                                        <td>{entry.avg}</td>
+                                        <td>{entry.p95}</td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+
+                        <template if:true={performance.hasStages}>
+                            <h3 class="slds-text-title_caps slds-m-top_medium slds-m-bottom_x-small">
+                                Where The Time Goes
+                            </h3>
+                            <div class="slds-box slds-box_small slds-theme_shade slds-m-bottom_small">
+                                <p class="slds-text-body_small">
+                                    Slowest stage by accumulated time: <strong>{performance.slowestStage}</strong>.
+                                    Stages are measured independently and a document may run one stage many times
+                                    (for example one PDF conversion per composite section), so stage totals do not
+                                    add up to the processing times above.
+                                </p>
+                            </div>
+                            <table class="slds-table slds-table_bordered metric-table">
+                                <thead>
+                                    <tr class="slds-line-height_reset">
+                                        <th scope="col">Stage</th>
+                                        <th scope="col">Runs</th>
+                                        <th scope="col">Errors</th>
+                                        <th scope="col">Median</th>
+                                        <th scope="col">p95</th>
+                                        <th scope="col">Slowest</th>
+                                        <th scope="col">Total time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template for:each={performance.stages} for:item="stage">
+                                        <tr key={stage.key}>
+                                            <td>{stage.label}</td>
+                                            <td>{stage.count}</td>
+                                            <td>{stage.errorCount}</td>
+                                            <td>{stage.p50}</td>
+                                            <td>{stage.p95}</td>
+                                            <td>{stage.max}</td>
+                                            <td>
+                                                <div class="metric-bar metric-bar_inline">
+                                                    <span class="metric-bar__fill" style={stage.barStyle}></span>
+                                                </div>
+                                                <span class="bar-count">{stage.total}</span>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </template>
+                    </template>
+                </template>
             </lightning-accordion-section>
-            <lightning-accordion-section name="resources" label="System Resources (Coming Soon)">
-                <div class="slds-text-align_center slds-p-vertical_large">
-                    <p class="slds-text-color_weak">
-                        System resource metrics including CPU/memory usage, LibreOffice pool utilization, and cache hit rates will be available here.
-                    </p>
-                </div>
+
+            <lightning-accordion-section name="resources" label="System Resources">
+                <template if:true={resourcesLoading}>
+                    <div class="slds-p-vertical_large slds-text-align_center">
+                        <lightning-spinner alternative-text="Loading resource metrics" size="small"></lightning-spinner>
+                    </div>
+                </template>
+
+                <template if:true={resourcesError}>
+                    <div class="slds-notify slds-notify_alert slds-alert_error" role="alert">
+                        <h2>{resourcesError}</h2>
+                    </div>
+                </template>
+
+                <template if:true={resources}>
+                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
+                        <p class="slds-text-body_small">
+                            CPU, memory, pool slots and cache contents belong to one container instance:
+                            replica <strong>{resources.replicaId}</strong>, up {resources.uptimeLabel}.
+                            Refreshing may sample a different replica.
+                        </p>
+                    </div>
+
+                    <div class="slds-grid slds-wrap slds-gutters">
+                        <!-- CPU -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">CPU</h3>
+                                <template if:true={resources.cpu.hasReading}>
+                                    <div class="metric-value">{resources.cpu.percent}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.cpu.barStyle}></span>
+                                    </div>
+                                </template>
+                                <template if:false={resources.cpu.hasReading}>
+                                    <div class="metric-value">&ndash;</div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Cores:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.cores}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Window:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.sampleLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.source}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- Memory -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Memory</h3>
+                                <template if:true={resources.memory.hasLimit}>
+                                    <div class="metric-value">{resources.memory.percentOfLimit}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.memory.barStyle}></span>
+                                    </div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        {resources.memory.usedMb} MB of {resources.memory.limitMb} MB
+                                    </div>
+                                </template>
+                                <template if:false={resources.memory.hasLimit}>
+                                    <div class="metric-value">{resources.memory.usedMb} MB</div>
+                                    <div class="metric-label slds-m-bottom_x-small">No container limit reported</div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Node RSS:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.nodeRssMb} MB</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Heap:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.nodeHeapLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.source}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- LibreOffice pool -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">LibreOffice Pool</h3>
+                                <div class="metric-value">{resources.pool.utilizationPercent}%</div>
+                                <div class="metric-bar slds-m-vertical_x-small">
+                                    <span class="metric-bar__fill" style={resources.pool.barStyle}></span>
+                                </div>
+                                <div class="metric-label slds-m-bottom_x-small">
+                                    {resources.pool.activeJobs} of {resources.pool.maxConcurrent} slots converting
+                                </div>
+                                <template if:true={resources.pool.isSaturated}>
+                                    <div class="slds-text-color_error slds-text-body_small slds-m-bottom_x-small">
+                                        {resources.pool.queuedJobs} conversion(s) waiting for a slot
+                                    </div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Completed:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.completedJobs}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Failed:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.failedJobs}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Total:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.totalConversions}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- Template cache -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Template Cache</h3>
+                                <template if:true={resources.cache.hasLookups}>
+                                    <div class="metric-value">{resources.cache.hitRatePercent}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.cache.hitBarStyle}></span>
+                                    </div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        Hit rate &middot; {resources.cache.hits} hits, {resources.cache.misses} misses
+                                    </div>
+                                </template>
+                                <template if:false={resources.cache.hasLookups}>
+                                    <div class="metric-value">&ndash;</div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        No template lookups on this replica yet
+                                    </div>
+                                </template>
+                                <div class="metric-bar slds-m-bottom_x-small">
+                                    <span class="metric-bar__fill" style={resources.cache.sizeBarStyle}></span>
+                                </div>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Size:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.sizeLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Templates:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.entryCount}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Evictions:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.evictions}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- Event loop -->
+                        <template if:true={resources.eventLoop}>
+                            <div class="slds-col slds-size_1-of-1">
+                                <article class="slds-card slds-p-around_small">
+                                    <h3 class="slds-text-title_caps slds-m-bottom_x-small">Event Loop Delay</h3>
+                                    <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                        <dt class="slds-item_label slds-text-color_weak">Median:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.p50}</dd>
+                                        <dt class="slds-item_label slds-text-color_weak">p99:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.p99}</dd>
+                                        <dt class="slds-item_label slds-text-color_weak">Worst:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.max}</dd>
+                                    </dl>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        High values mean the Node process is blocked and slow to answer requests.
+                                    </p>
+                                </article>
+                            </div>
+                        </template>
+                    </div>
+                </template>
             </lightning-accordion-section>
         </lightning-accordion>
     </div>

@@ -6,6 +6,7 @@ import type {
 import type { SalesforceApi } from '../sf/api';
 import { SalesforceApiError, ValidationError } from '../errors';
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 
 const logger = createLogger('pdf:attachments');
 
@@ -44,6 +45,17 @@ export function normalizeAdditionalPdfContentVersionIds(
 }
 
 export async function appendAdditionalPdfPages(
+  generatedPdf: Buffer,
+  requestedIds: string[] | undefined,
+  sfApi: SalesforceApi,
+  correlationId: string
+): Promise<AppendPdfAttachmentsResult> {
+  return timeStage('pdfAttachments', () =>
+    appendAdditionalPdfPagesInternal(generatedPdf, requestedIds, sfApi, correlationId)
+  );
+}
+
+async function appendAdditionalPdfPagesInternal(
   generatedPdf: Buffer,
   requestedIds: string[] | undefined,
   sfApi: SalesforceApi,

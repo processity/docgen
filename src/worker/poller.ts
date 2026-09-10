@@ -13,7 +13,7 @@ import { convertCompositeSectionsToPdf, hasPdfAppendixSections } from '../pdf/co
 import { deleteContentDocuments, uploadContentVersion, updateGeneratedDocument } from '../sf/files';
 import { PdfPageRenderer } from '../preview/pdf-page-renderer';
 import { PdfPreviewArtifacts, uploadPdfPreviewArtifacts } from '../preview/artifacts';
-import { trackMetric, trackGauge } from '../obs';
+import { trackMetric, trackGauge, recordDocument } from '../obs';
 import {
   DocgenError,
   wrapError,
@@ -712,6 +712,12 @@ export class PollerService {
         successMetrics.templateStrategy = request.templateStrategy;
       }
       trackMetric('docgen_duration_ms', duration, successMetrics);
+      recordDocument({
+        durationMs: duration,
+        success: true,
+        outputFormat: request.outputFormat,
+        mode: 'batch',
+      });
 
       log.info(
         { contentVersionId: uploadResult.contentVersionId },
@@ -766,6 +772,18 @@ export class PollerService {
         mode: 'batch',
         correlationId: doc.CorrelationId__c,
       });
+      // Only count a document once it is finished. A retryable failure is
+      // rescheduled, so recording it here would inflate volume and make the
+      // panel's success rate disagree with the record-level rate on the same page.
+      const willRetry = docgenError.retryable && doc.Attempts__c < getConfig().poller.maxAttempts;
+      if (!willRetry) {
+        recordDocument({
+          durationMs: Date.now() - startTime,
+          success: false,
+          outputFormat: request.outputFormat,
+          mode: 'batch',
+        });
+      }
 
       // Handle failure using DocgenError properties
       await this.handleFailure(doc.Id, doc.Attempts__c, docgenError, doc.CorrelationId__c);
@@ -775,7 +793,7 @@ export class PollerService {
         documentId: doc.Id,
         error: docgenError.message,
         retryable: docgenError.retryable,
-        retried: docgenError.retryable && doc.Attempts__c < getConfig().poller.maxAttempts,
+        retried: willRetry,
       };
     }
   }

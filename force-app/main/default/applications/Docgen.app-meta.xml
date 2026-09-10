@@ -14,7 +14,6 @@
     <isOmniPinnedViewEnabled>false</isOmniPinnedViewEnabled>
     <label>Docgen</label>
     <navType>Standard</navType>
-    <tabs>standard-home</tabs>
     <tabs>Docgen_Status</tabs>
     <tabs>Docgen_Template__c</tabs>
     <tabs>Composite_Document__c</tabs>

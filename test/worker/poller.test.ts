@@ -11,6 +11,7 @@ import {
   TemplateNotFoundError,
   ConversionTimeoutError,
 } from '../../src/errors';
+import { getPerformanceSnapshot, resetPerfMetrics } from '../../src/obs/perf';
 import type { QueuedDocument, PollerStats } from '../../src/types';
 
 jest.mock('../../src/convert/soffice', () => {
@@ -638,6 +639,83 @@ describeTests('PollerService', () => {
       expect(result.error).toContain('Template not found');
       expect(result.retryable).toBe(false); // 404 errors are non-retryable
     }, 15000); // Increased timeout for retry logic with backoff
+
+    it('should not record a document sample for a failure that will be retried', async () => {
+      // A retryable failure is rescheduled, so counting it here would inflate
+      // volume and make the status page's two success rates disagree.
+      resetPerfMetrics();
+
+      const mockDoc: QueuedDocument = {
+        Id: 'a00000000000001AAA',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          templateId: '068000000000098AAA',
+          outputFileName: 'test.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: { Account: { Name: 'Test Account' } },
+          parents: { AccountId: null, OpportunityId: null, CaseId: null },
+          requestHash: 'sha256:test-hash',
+          generatedDocumentId: 'a00000000000001AAA',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'test-corr-id',
+        Template__c: 'a01000000000001AAA',
+        CreatedDate: new Date().toISOString(),
+      };
+
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000098AAA/VersionData')
+        .times(5)
+        .reply(500, [{ message: 'Server error', errorCode: 'SERVER_ERROR' }]);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.success).toBe(false);
+      expect(result.retried).toBe(true);
+      expect(getPerformanceSnapshot().documents.count).toBe(0);
+    }, 30000);
+
+    it('should record a document sample once a failure is permanent', async () => {
+      resetPerfMetrics();
+
+      const mockDoc: QueuedDocument = {
+        Id: 'a00000000000001AAA',
+        Status__c: 'PROCESSING',
+        RequestJSON__c: JSON.stringify({
+          templateId: '068000000000097AAA',
+          outputFileName: 'test.pdf',
+          outputFormat: 'PDF',
+          locale: 'en-GB',
+          timezone: 'Europe/London',
+          options: { storeMergedDocx: false, returnDocxToBrowser: false },
+          data: { Account: { Name: 'Test Account' } },
+          parents: { AccountId: null, OpportunityId: null, CaseId: null },
+          requestHash: 'sha256:test-hash',
+          generatedDocumentId: 'a00000000000001AAA',
+        }),
+        Attempts__c: 0,
+        CorrelationId__c: 'test-corr-id',
+        Template__c: 'a01000000000001AAA',
+        CreatedDate: new Date().toISOString(),
+      };
+
+      // 404 is non-retryable, so the document is finished on this attempt
+      nock(baseUrl)
+        .get('/services/data/v59.0/sobjects/ContentVersion/068000000000097AAA/VersionData')
+        .reply(404, [{ message: 'The requested resource does not exist', errorCode: 'NOT_FOUND' }]);
+
+      const result = await poller.processDocument(mockDoc);
+
+      expect(result.retried).toBe(false);
+
+      const documents = getPerformanceSnapshot().documents;
+      expect(documents.count).toBe(1);
+      expect(documents.failed).toBe(1);
+      expect(documents.byMode[0].key).toBe('batch');
+    }, 15000);
 
     it('should handle invalid template and return non-retryable error', async () => {
       const mockDoc: QueuedDocument = {

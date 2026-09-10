@@ -25,8 +25,44 @@ private class DocgenStatusControllerTest {
                 res.setBody('{"isRunning":true,"currentQueueDepth":5,"lastPollTime":"2025-01-17T10:30:00Z"}');
             } else if (endpoint.endsWith('/worker/stats')) {
                 res.setBody('{"totalProcessed":100,"totalSucceeded":95,"totalFailed":5,"totalRetries":3,"uptimeSeconds":3600}');
+            } else if (endpoint.endsWith('/metrics/performance')) {
+                res.setBody(
+                    '{"replicaId":"replica-1","windowSeconds":3600,"observedSeconds":1800,' +
+                    '"processUptimeSeconds":7200,"documents":{"count":12,"succeeded":11,"failed":1,' +
+                    '"successRatePercent":91.7,"perMinute":0.4,"perHour":24,' +
+                    '"latency":{"p50Ms":4200,"p95Ms":9100,"p99Ms":12000,"avgMs":5100,"maxMs":12000},' +
+                    '"byOutputFormat":[{"key":"PDF","count":12,"avgMs":5100,"p95Ms":9100}],' +
+                    '"byMode":[{"key":"batch","count":12,"avgMs":5100,"p95Ms":9100}]},' +
+                    '"stages":[{"stage":"pdfConvert","count":12,"errorCount":0,"totalMs":36000,' +
+                    '"avgMs":3000,"p50Ms":2900,"p95Ms":4100,"maxMs":4300}],' +
+                    '"slowestStageByTotalTime":"pdfConvert"}'
+                );
+            } else if (endpoint.endsWith('/metrics/resources')) {
+                res.setBody(
+                    '{"replicaId":"replica-1","pid":42,"processUptimeSeconds":7200,' +
+                    '"cpu":{"percent":37.5,"cores":2,"source":"cgroup-v2","sampleSeconds":60},' +
+                    '"memory":{"source":"cgroup-v2","usedMb":1024,"limitMb":4096,"percentOfLimit":25,' +
+                    '"node":{"rssMb":320,"heapUsedMb":120,"heapTotalMb":180,"externalMb":12}},' +
+                    '"eventLoopDelayMs":{"p50":1.2,"p99":18.4,"max":210},' +
+                    '"libreOfficePool":{"activeJobs":2,"queuedJobs":1,"maxConcurrent":8,' +
+                    '"utilizationPercent":25,"completedJobs":100,"failedJobs":2,"totalConversions":102},' +
+                    '"templateCache":{"hits":90,"misses":10,"hitRatePercent":90,"lookups":100,' +
+                    '"entryCount":4,"evictions":0,"sizeMb":12.5,"maxSizeMb":500,"utilizationPercent":2.5}}'
+                );
             }
 
+            return res;
+        }
+    }
+
+    /**
+     * Mock class returning a server error for every endpoint
+     */
+    private class ErrorMock implements HttpCalloutMock {
+        public HTTPResponse respond(HTTPRequest req) {
+            HTTPResponse res = new HTTPResponse();
+            res.setStatusCode(500);
+            res.setBody('{"error":"boom"}');
             return res;
         }
     }
@@ -186,5 +222,127 @@ private class DocgenStatusControllerTest {
         System.assertNotEquals(null, failedDoc, 'Should find a failed document');
         System.assertNotEquals(null, failedDoc.error, 'Failed document should have error message');
         System.assertEquals(3, failedDoc.attempts, 'Failed document should have 3 attempts');
+    }
+
+    @isTest
+    static void testGetPerformanceMetrics() {
+        Test.setMock(HttpCalloutMock.class, new SuccessMock('/metrics/performance'));
+
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getPerformanceMetrics();
+        Test.stopTest();
+
+        System.assertEquals('replica-1', result.get('replicaId'), 'Replica must be identified');
+        System.assertEquals('pdfConvert', result.get('slowestStageByTotalTime'), 'Slowest stage should pass through');
+
+        Map<String, Object> documents = (Map<String, Object>) result.get('documents');
+        System.assertEquals(12, documents.get('count'), 'Sample count should pass through');
+
+        Map<String, Object> latency = (Map<String, Object>) documents.get('latency');
+        System.assertEquals(4200, latency.get('p50Ms'), 'Median latency should pass through');
+
+        List<Object> stages = (List<Object>) result.get('stages');
+        System.assertEquals(1, stages.size(), 'Stage list should pass through');
+    }
+
+    @isTest
+    static void testGetPerformanceMetrics_Error() {
+        Test.setMock(HttpCalloutMock.class, new ErrorMock());
+
+        Boolean threw = false;
+
+        Test.startTest();
+        try {
+            DocgenStatusController.getPerformanceMetrics();
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+
+        System.assert(threw, 'A non-200 backend response should surface as AuraHandledException');
+    }
+
+    @isTest
+    static void testGetResourceMetrics() {
+        Test.setMock(HttpCalloutMock.class, new SuccessMock('/metrics/resources'));
+
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getResourceMetrics();
+        Test.stopTest();
+
+        System.assertEquals('replica-1', result.get('replicaId'), 'Replica must be identified');
+
+        Map<String, Object> cpu = (Map<String, Object>) result.get('cpu');
+        System.assertEquals('cgroup-v2', cpu.get('source'), 'CPU source should pass through');
+
+        Map<String, Object> pool = (Map<String, Object>) result.get('libreOfficePool');
+        System.assertEquals(8, pool.get('maxConcurrent'), 'Pool capacity should pass through');
+
+        Map<String, Object> cache = (Map<String, Object>) result.get('templateCache');
+        System.assertEquals(90, cache.get('hitRatePercent'), 'Cache hit rate should pass through');
+    }
+
+    @isTest
+    static void testGetResourceMetrics_Error() {
+        Test.setMock(HttpCalloutMock.class, new ErrorMock());
+
+        Boolean threw = false;
+
+        Test.startTest();
+        try {
+            DocgenStatusController.getResourceMetrics();
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+
+        System.assert(threw, 'A non-200 backend response should surface as AuraHandledException');
+    }
+
+    @isTest
+    static void testGetUsageMetrics() {
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getUsageMetrics();
+        Test.stopTest();
+
+        // 16 documents are created in @testSetup, all within the last 24 hours
+        System.assertEquals(16, result.get('last24Hours'), 'Should count all documents from the last 24 hours');
+        System.assertEquals(16, result.get('last7Days'), 'Should count all documents from the last 7 days');
+
+        List<Object> hourly = (List<Object>) result.get('hourly');
+        System.assertEquals(24, hourly.size(), 'Should emit a bucket for every hour, including empty ones');
+
+        Integer bucketTotal = 0;
+        for (Object bucket : hourly) {
+            bucketTotal += (Integer) ((Map<String, Object>) bucket).get('count');
+        }
+        System.assertEquals(16, bucketTotal, 'Hourly buckets should account for every document');
+
+        System.assertNotEquals(null, result.get('peakHourLabel'), 'Peak hour should be identified');
+        System.assertEquals(16, result.get('peakHourCount'), 'All test documents land in the same hour');
+
+        List<Object> byFormat = (List<Object>) result.get('byFormat');
+        System.assertEquals(1, byFormat.size(), 'Test data uses a single output format');
+        System.assertEquals('PDF', ((Map<String, Object>) byFormat[0]).get('format'), 'Format should be PDF');
+        System.assertEquals(16, ((Map<String, Object>) byFormat[0]).get('count'), 'All 16 documents are PDFs');
+
+        List<Object> topTemplates = (List<Object>) result.get('topTemplates');
+        System.assertEquals(1, topTemplates.size(), 'Test data uses a single template');
+        System.assertEquals(16, ((Map<String, Object>) topTemplates[0]).get('count'), 'Template should account for all documents');
+    }
+
+    @isTest
+    static void testGetUsageMetrics_NoDocuments() {
+        delete [SELECT Id FROM Generated_Document__c];
+
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getUsageMetrics();
+        Test.stopTest();
+
+        System.assertEquals(0, result.get('last24Hours'), 'Volume should be zero with no documents');
+        System.assertEquals(0, result.get('peakHourCount'), 'Peak count should be zero with no documents');
+        System.assertEquals(null, result.get('peakHourLabel'), 'Peak hour should be null with no documents');
+        System.assertEquals(24, ((List<Object>) result.get('hourly')).size(), 'Buckets should still cover 24 hours');
+        System.assertEquals(0, ((List<Object>) result.get('byFormat')).size(), 'Format breakdown should be empty');
     }
 }

@@ -463,6 +463,143 @@ curl "https://docgen.azurecontainerapps.io/worker/stats" \
 
 ---
 
+## Metrics
+
+These two endpoints back the **Performance Metrics** and **System Resources**
+panels on the Salesforce "System Status" page.
+
+**Everything here is per-replica.** With 1-5 replicas behind the Named
+Credential, a callout reaches one of them, so both payloads carry `replicaId`
+and consecutive calls may sample different replicas. Use SOQL over
+`Generated_Document__c` for org-wide document volume.
+
+### GET /metrics/performance
+
+Processing times, throughput and per-stage timings over a rolling window.
+
+**Authentication**: Required (Azure AD Bearer token)
+
+**Response** (200 OK):
+```json
+{
+  "replicaId": "docgen--0000001-abcde",
+  "windowSeconds": 3600,
+  "observedSeconds": 3600,
+  "processUptimeSeconds": 18240,
+  "documents": {
+    "count": 42,
+    "succeeded": 41,
+    "failed": 1,
+    "successRatePercent": 97.6,
+    "perMinute": 0.7,
+    "perHour": 42,
+    "latency": { "p50Ms": 4200, "p95Ms": 9100, "p99Ms": 12400, "avgMs": 5100, "maxMs": 12400 },
+    "byOutputFormat": [{ "key": "PDF", "count": 40, "avgMs": 5200, "p95Ms": 9100 }],
+    "byMode": [{ "key": "batch", "count": 42, "avgMs": 5100, "p95Ms": 9100 }]
+  },
+  "stages": [
+    {
+      "stage": "pdfConvert",
+      "count": 42,
+      "errorCount": 0,
+      "totalMs": 126000,
+      "avgMs": 3000,
+      "p50Ms": 2900,
+      "p95Ms": 4100,
+      "maxMs": 4300
+    }
+  ],
+  "slowestStageByTotalTime": "pdfConvert",
+  "correlationId": "12345678-1234-4567-89ab-123456789012"
+}
+```
+
+**Fields**:
+- `windowSeconds` - Rolling window length, set by `METRICS_WINDOW_MINUTES` (default 60, clamped 1-1440)
+- `observedSeconds` - min(window, process uptime); the throughput denominator, so a freshly restarted replica is not reported as idle
+- `documents.latency` / `documents.successRatePercent` - `null` when no document completed in the window
+- `documents.perMinute` / `perHour` - Completions per unit time over `observedSeconds`
+- `stages` - One entry per timed stage, ordered by `totalMs` descending
+- `slowestStageByTotalTime` - Stage key with the highest accumulated time, or `null`
+
+**Stages**: `templateFetch`, `merge`, `concatenate`, `pdfConvert`,
+`pdfAttachments`, `previewRender`, `sfUpload`. They are timed at leaf call
+sites, so nested work is not double-counted, but one document can run a stage
+many times (one PDF conversion per composite section) and orchestration sits
+outside every stage. Stage totals rank work by cost; **they do not sum to
+end-to-end duration**, so treat them as a ranking, not a breakdown.
+
+**Example**:
+```bash
+curl "https://docgen.azurecontainerapps.io/metrics/performance" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### GET /metrics/resources
+
+CPU, memory, event loop delay, LibreOffice pool and template cache utilization.
+
+**Authentication**: Required (Azure AD Bearer token)
+
+**Response** (200 OK):
+```json
+{
+  "replicaId": "docgen--0000001-abcde",
+  "pid": 1,
+  "processUptimeSeconds": 18240,
+  "cpu": { "percent": 37.5, "cores": 2, "source": "cgroup-v2", "sampleSeconds": 60 },
+  "memory": {
+    "source": "cgroup-v2",
+    "usedMb": 1024,
+    "limitMb": 4096,
+    "percentOfLimit": 25,
+    "node": { "rssMb": 320, "heapUsedMb": 120, "heapTotalMb": 180, "externalMb": 12 }
+  },
+  "eventLoopDelayMs": { "p50": 1.2, "p99": 18.4, "max": 210 },
+  "libreOfficePool": {
+    "activeJobs": 2,
+    "queuedJobs": 0,
+    "maxConcurrent": 8,
+    "utilizationPercent": 25,
+    "completedJobs": 1180,
+    "failedJobs": 4,
+    "totalConversions": 1184
+  },
+  "templateCache": {
+    "hits": 1140,
+    "misses": 44,
+    "hitRatePercent": 96.3,
+    "lookups": 1184,
+    "entryCount": 12,
+    "evictions": 0,
+    "sizeMb": 38.4,
+    "maxSizeMb": 500,
+    "utilizationPercent": 7.7
+  },
+  "correlationId": "12345678-1234-4567-89ab-123456789012"
+}
+```
+
+**Fields**:
+- `cpu.source` / `memory.source` - `cgroup-v2`, `cgroup-v1` or `process`. **The cgroup reading is the meaningful one**: LibreOffice runs as a `soffice` child process, so a `process` reading excludes the service's dominant CPU and memory consumer.
+- `cpu.percent` - Percent of all cores available to the container, averaged over `cpu.sampleSeconds`. `null` until the background sampler has two data points (~5s after startup).
+- `cpu.cores` - Cores available, from the cgroup quota when set, otherwise the host core count.
+- `memory.limitMb` / `percentOfLimit` - `null` when the cgroup reports no limit.
+- `eventLoopDelayMs` - `null` on the very first read, while the histogram is enabled. High values mean the Node process is blocked and slow to answer requests.
+- `libreOfficePool.maxConcurrent` - Read from the live pool instance, which is constructed with the built-in default (8) rather than `CONVERSION_MAX_CONCURRENT`.
+- `libreOfficePool.queuedJobs` - Conversions waiting for a slot. Sustained non-zero values mean conversion is the bottleneck.
+- `templateCache.hitRatePercent` - `null` until a template lookup happens on this replica.
+
+**Example**:
+```bash
+curl "https://docgen.azurecontainerapps.io/metrics/resources" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
 ## Error Responses
 
 All errors follow the Fastify error response format:

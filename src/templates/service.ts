@@ -1,6 +1,7 @@
 import type { SalesforceApi } from '../sf/api';
 import { templateCache } from './cache';
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 import { TemplateNotFoundError, SalesforceApiError, DocgenError } from '../errors';
 
 const logger = createLogger('templates:service');
@@ -42,6 +43,10 @@ export class TemplateService {
    * @throws Error if download fails
    */
   async getTemplate(contentVersionId: string, correlationId?: string): Promise<Buffer> {
+    return timeStage('templateFetch', () => this.fetchTemplate(contentVersionId, correlationId));
+  }
+
+  private async fetchTemplate(contentVersionId: string, correlationId?: string): Promise<Buffer> {
     logger.debug({ contentVersionId, correlationId }, 'Getting template');
 
     // Check cache first

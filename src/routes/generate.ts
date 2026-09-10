@@ -16,7 +16,7 @@ import {
   hasPdfAppendixSections,
 } from '../pdf/composite';
 import { loadConfig } from '../config';
-import { trackMetric } from '../obs';
+import { trackMetric, recordDocument } from '../obs';
 import {
   DocgenError,
   wrapError,
@@ -494,6 +494,12 @@ async function generateHandler(
       mode: 'interactive',
       correlationId,
     });
+    recordDocument({
+      durationMs: duration,
+      success: true,
+      outputFormat: request.body.outputFormat,
+      mode: 'interactive',
+    });
 
     // Also log for debugging
     request.log.info(
@@ -563,6 +569,12 @@ async function generateHandler(
       outputFormat: request.body.outputFormat,
       mode: 'interactive',
       correlationId,
+    });
+    recordDocument({
+      durationMs: duration,
+      success: false,
+      outputFormat: request.body.outputFormat,
+      mode: 'interactive',
     });
 
     // Also log for debugging

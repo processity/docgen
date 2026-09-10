@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import type { MergeOptions } from '../types';
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 import { TemplateInvalidFormatError, TemplateMergeError } from '../errors';
 
 const logger = createLogger('templates:pptx');
@@ -13,6 +14,14 @@ const logger = createLogger('templates:pptx');
  * be added later once the authoring contract is known.
  */
 export async function mergePptxTemplate(
+  template: Buffer,
+  data: Record<string, any>,
+  options: MergeOptions
+): Promise<Buffer> {
+  return timeStage('merge', () => mergePptxTemplateInternal(template, data, options));
+}
+
+async function mergePptxTemplateInternal(
   template: Buffer,
   data: Record<string, any>,
   options: MergeOptions

@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { PDFDocument } from 'pdf-lib';
 import { MAX_PREVIEW_IMAGE_BYTES, PdfPageRenderResult } from './types';
+import { timeStage } from '../obs';
 
 const GHOSTSCRIPT_BINARY = 'gs';
 const GHOSTSCRIPT_TIMEOUT_MS = 20_000;
@@ -114,6 +115,13 @@ export class PdfPageRenderer {
   }
 
   async renderPages(
+    pdfData: Buffer,
+    maxPages: number
+  ): Promise<{ imagePages: Buffer[]; pageCount: number }> {
+    return timeStage('previewRender', () => this.renderPagesInternal(pdfData, maxPages));
+  }
+
+  private async renderPagesInternal(
     pdfData: Buffer,
     maxPages: number
   ): Promise<{ imagePages: Buffer[]; pageCount: number }> {

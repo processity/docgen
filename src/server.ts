@@ -5,12 +5,13 @@ import { generateRoutes } from './routes/generate';
 import { authTestRoutes } from './routes/auth-test';
 import { workerRoutes } from './routes/worker';
 import { previewRoutes } from './routes/preview';
+import { metricsRoutes } from './routes/metrics';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { createSalesforceAuth } from './sf/auth';
 import { createErrorHandler } from './errors';
 import { pollerService } from './worker';
-import { initializeAppInsights } from './obs';
+import { initializeAppInsights, startCpuSampler } from './obs';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -24,6 +25,9 @@ export async function build(): Promise<FastifyInstance> {
 
   // Initialize Azure Application Insights (T-15)
   initializeAppInsights();
+
+  // Begin CPU sampling so /metrics/resources has a warm window when first read
+  startCpuSampler();
 
   // Initialize Salesforce authentication if configured
   // Supports direct access token, JWT Bearer Flow, and SFDX Auth URL
@@ -68,6 +72,7 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(authTestRoutes);
   await app.register(workerRoutes, { prefix: '/worker' });
   await app.register(previewRoutes, { prefix: '/preview' });
+  await app.register(metricsRoutes, { prefix: '/metrics' });
 
   return app;
 }

@@ -40,6 +40,8 @@ tags:
     description: Worker poller control endpoints
   - name: preview
     description: Authorized image previews for pending generated PDFs
+  - name: metrics
+    description: Per-replica performance and resource metrics for the status page
 
 paths:
   /healthz:
@@ -645,6 +647,228 @@ paths:
                 totalRetries: 89
                 lastPollTime: '2025-11-10T10:30:45Z'
                 uptimeSeconds: 3600
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /metrics/performance:
+    get:
+      summary: Get document processing times, throughput and stage timings
+      description: |
+        Rolling-window performance metrics measured in memory on the replica that
+        answers the request.
+
+        Scope: per-replica. In multi-replica deployments the request lands on an
+        arbitrary replica, so `replicaId` identifies whose numbers these are and
+        consecutive calls may sample different replicas. Org-wide document volume
+        should come from SOQL over Generated_Document__c instead.
+
+        The window length is controlled by `METRICS_WINDOW_MINUTES` (default 60,
+        clamped to 1-1440) and applies to both document and stage samples.
+        `observedSeconds` is min(window, process uptime) and is the denominator
+        used for throughput, so a freshly restarted replica is not reported as idle.
+
+        Stages are timed at leaf call sites, so they do not double-count nested
+        work, but a document may run one stage several times (one PDF conversion
+        per composite section) and orchestration sits outside every stage. Stage
+        totals therefore rank work by cost; they do not sum to end-to-end duration.
+      tags:
+        - metrics
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Performance snapshot for this replica
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  replicaId:
+                    type: string
+                    description: CONTAINER_APP_REPLICA_NAME, or hostname as a fallback
+                  windowSeconds:
+                    type: number
+                    description: Configured rolling window length
+                  observedSeconds:
+                    type: number
+                    description: Throughput denominator - min(window, process uptime)
+                  processUptimeSeconds:
+                    type: number
+                  documents:
+                    type: object
+                    additionalProperties: true
+                    description: |
+                      Completed generations in the window. `latency` and
+                      `successRatePercent` are null when no documents completed.
+                  stages:
+                    type: array
+                    description: Per-stage timings, ordered by accumulated time descending
+                    items:
+                      type: object
+                      additionalProperties: true
+                  slowestStageByTotalTime:
+                    type: string
+                    nullable: true
+                  correlationId:
+                    type: string
+              example:
+                replicaId: docgen--0000001-abcde
+                windowSeconds: 3600
+                observedSeconds: 3600
+                processUptimeSeconds: 18240
+                documents:
+                  count: 42
+                  succeeded: 41
+                  failed: 1
+                  successRatePercent: 97.6
+                  perMinute: 0.7
+                  perHour: 42
+                  latency:
+                    p50Ms: 4200
+                    p95Ms: 9100
+                    p99Ms: 12400
+                    avgMs: 5100
+                    maxMs: 12400
+                  byOutputFormat:
+                    - key: PDF
+                      count: 40
+                      avgMs: 5200
+                      p95Ms: 9100
+                  byMode:
+                    - key: batch
+                      count: 42
+                      avgMs: 5100
+                      p95Ms: 9100
+                stages:
+                  - stage: pdfConvert
+                    count: 42
+                    errorCount: 0
+                    totalMs: 126000
+                    avgMs: 3000
+                    p50Ms: 2900
+                    p95Ms: 4100
+                    maxMs: 4300
+                  - stage: sfUpload
+                    count: 42
+                    errorCount: 0
+                    totalMs: 25200
+                    avgMs: 600
+                    p50Ms: 550
+                    p95Ms: 1200
+                    maxMs: 1500
+                slowestStageByTotalTime: pdfConvert
+                correlationId: '12345678-1234-4567-89ab-123456789012'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /metrics/resources:
+    get:
+      summary: Get CPU, memory, LibreOffice pool and template cache utilization
+      description: |
+        Resource utilization for the replica that answers the request.
+
+        CPU and memory are read from the container cgroup when available
+        (`cpu.source` / `memory.source` report `cgroup-v2`, `cgroup-v1` or
+        `process`). The cgroup reading is the meaningful one: LibreOffice runs as
+        a `soffice` child process, so a `process` reading excludes the service's
+        dominant CPU and memory consumer.
+
+        `cpu.percent` is a percentage of all cores available to the container
+        (`cpu.cores`, taken from the cgroup quota when set) averaged over
+        `cpu.sampleSeconds`. It is null until the background sampler has two data
+        points, roughly five seconds after startup.
+
+        `libreOfficePool.maxConcurrent` is read from the live pool instance, which
+        is constructed with the built-in default rather than
+        `CONVERSION_MAX_CONCURRENT`.
+      tags:
+        - metrics
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Resource snapshot for this replica
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  replicaId:
+                    type: string
+                  pid:
+                    type: number
+                  processUptimeSeconds:
+                    type: number
+                  cpu:
+                    type: object
+                    additionalProperties: true
+                    description: percent is null until the sampler has two data points
+                  memory:
+                    type: object
+                    additionalProperties: true
+                    description: limitMb and percentOfLimit are null when no limit is reported
+                  eventLoopDelayMs:
+                    type: object
+                    additionalProperties: true
+                    nullable: true
+                    description: Null on the first read, while the histogram is being enabled
+                  libreOfficePool:
+                    type: object
+                    additionalProperties: true
+                  templateCache:
+                    type: object
+                    additionalProperties: true
+                    description: hitRatePercent is null until a template lookup happens
+                  correlationId:
+                    type: string
+              example:
+                replicaId: docgen--0000001-abcde
+                pid: 1
+                processUptimeSeconds: 18240
+                cpu:
+                  percent: 37.5
+                  cores: 2
+                  source: cgroup-v2
+                  sampleSeconds: 60
+                memory:
+                  source: cgroup-v2
+                  usedMb: 1024
+                  limitMb: 4096
+                  percentOfLimit: 25
+                  node:
+                    rssMb: 320
+                    heapUsedMb: 120
+                    heapTotalMb: 180
+                    externalMb: 12
+                eventLoopDelayMs:
+                  p50: 1.2
+                  p99: 18.4
+                  max: 210
+                libreOfficePool:
+                  activeJobs: 2
+                  queuedJobs: 0
+                  maxConcurrent: 8
+                  utilizationPercent: 25
+                  completedJobs: 1180
+                  failedJobs: 4
+                  totalConversions: 1184
+                templateCache:
+                  hits: 1140
+                  misses: 44
+                  hitRatePercent: 96.3
+                  lookups: 1184
+                  entryCount: 12
+                  evictions: 0
+                  sizeMb: 38.4
+                  maxSizeMb: 500
+                  utilizationPercent: 7.7
                 correlationId: '12345678-1234-4567-89ab-123456789012'
         '401':
           $ref: '#/components/responses/Unauthorized'

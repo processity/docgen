@@ -7,6 +7,7 @@ public with sharing class DocgenStatusController {
     private static final Integer TIMEOUT_MS = 30000; // 30 seconds
     private static final Integer RECENT_DOCUMENTS_LIMIT = 50;
     private static final Integer HOURS_FOR_METRICS = 24;
+    private static final Integer TOP_TEMPLATES_LIMIT = 5;
 
     /**
      * Get Named Credential name from Custom Settings
@@ -208,6 +209,179 @@ public with sharing class DocgenStatusController {
             return results;
         } catch (Exception e) {
             throw new AuraHandledException('Failed to get recent documents: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Call a backend metrics endpoint and return the parsed JSON body
+     *
+     * @param path Endpoint path, e.g. '/metrics/performance'
+     * @param label Human-readable name used in error messages
+     */
+    private static Map<String, Object> callBackend(String path, String label) {
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint('callout:' + getNamedCredentialName() + path);
+        req.setMethod('GET');
+        req.setTimeout(TIMEOUT_MS);
+
+        HTTPResponse res = new Http().send(req);
+
+        if (res.getStatusCode() != 200) {
+            throw new CustomException(label + ' request failed with status: ' + res.getStatusCode());
+        }
+
+        return (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+    }
+
+    /**
+     * Get processing time, throughput and per-stage timings from /metrics/performance
+     *
+     * NOTE: Per-replica and in-memory. The callout lands on one of the backend
+     * replicas, and its samples cover a rolling window since that replica started.
+     * Org-wide volume comes from getUsageMetrics() instead.
+     *
+     * Cannot be cacheable: Apex disallows callouts from cacheable methods.
+     *
+     * @return Map with documents (count, throughput, latency percentiles) and stages
+     */
+    @AuraEnabled
+    public static Map<String, Object> getPerformanceMetrics() {
+        try {
+            return callBackend('/metrics/performance', 'Performance metrics');
+        } catch (Exception e) {
+            throw new AuraHandledException('Failed to get performance metrics: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Get CPU, memory, LibreOffice pool and template cache usage from /metrics/resources
+     *
+     * NOTE: Per-replica by nature - CPU, memory, pool slots and cache contents are
+     * properties of a single container instance.
+     *
+     * @return Map with cpu, memory, eventLoopDelayMs, libreOfficePool, templateCache
+     */
+    @AuraEnabled
+    public static Map<String, Object> getResourceMetrics() {
+        try {
+            return callBackend('/metrics/resources', 'Resource metrics');
+        } catch (Exception e) {
+            throw new AuraHandledException('Failed to get resource metrics: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * Get org-wide document volume from Salesforce (complete across all replicas)
+     *
+     * Hour buckets use convertTimezone() so they line up with the times the running
+     * user sees on records. Intentionally not cacheable: an imperative call to a
+     * cacheable method is served from the client cache, which would make Refresh a
+     * no-op on a page whose whole purpose is live data.
+     *
+     * @return Map with volume counts, hourly buckets, format split and top templates
+     */
+    @AuraEnabled
+    public static Map<String, Object> getUsageMetrics() {
+        try {
+            Datetime last24Hours = Datetime.now().addHours(-HOURS_FOR_METRICS);
+
+            // Hourly volume, keyed by local date + local hour
+            Map<String, Integer> countsByHour = new Map<String, Integer>();
+            for (AggregateResult ar : [
+                SELECT DAY_ONLY(convertTimezone(CreatedDate)) localDay,
+                       HOUR_IN_DAY(convertTimezone(CreatedDate)) localHour,
+                       COUNT(Id) cnt
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :last24Hours
+                GROUP BY DAY_ONLY(convertTimezone(CreatedDate)),
+                         HOUR_IN_DAY(convertTimezone(CreatedDate))
+            ]) {
+                String key = String.valueOf((Date) ar.get('localDay')) + '#' + String.valueOf(ar.get('localHour'));
+                countsByHour.put(key, (Integer) ar.get('cnt'));
+            }
+
+            // Emit all 24 buckets so empty hours are visible rather than skipped
+            List<Map<String, Object>> hourly = new List<Map<String, Object>>();
+            Integer peakCount = 0;
+            String peakLabel = null;
+            Datetime nowTime = Datetime.now();
+
+            for (Integer i = HOURS_FOR_METRICS - 1; i >= 0; i--) {
+                Datetime slot = nowTime.addHours(-i);
+                String key = slot.format('yyyy-MM-dd') + '#' + slot.format('H');
+                Integer count = countsByHour.containsKey(key) ? countsByHour.get(key) : 0;
+                String label = slot.format('EEE HH:00');
+
+                hourly.add(new Map<String, Object>{ 'label' => label, 'count' => count });
+
+                if (count > peakCount) {
+                    peakCount = count;
+                    peakLabel = label;
+                }
+            }
+
+            // Volume by output format
+            List<Map<String, Object>> byFormat = new List<Map<String, Object>>();
+            for (AggregateResult ar : [
+                SELECT OutputFormat__c fmt, COUNT(Id) cnt
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :last24Hours
+                GROUP BY OutputFormat__c
+                ORDER BY COUNT(Id) DESC
+            ]) {
+                byFormat.add(new Map<String, Object>{
+                    'format' => ar.get('fmt') == null ? 'Unknown' : (String) ar.get('fmt'),
+                    'count' => (Integer) ar.get('cnt')
+                });
+            }
+
+            // Busiest templates
+            List<Map<String, Object>> topTemplates = new List<Map<String, Object>>();
+            for (AggregateResult ar : [
+                SELECT Template__r.Name templateName, COUNT(Id) cnt
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :last24Hours AND Template__c != null
+                GROUP BY Template__r.Name
+                ORDER BY COUNT(Id) DESC
+                LIMIT :TOP_TEMPLATES_LIMIT
+            ]) {
+                topTemplates.add(new Map<String, Object>{
+                    'templateName' => ar.get('templateName') == null ? 'Unknown' : (String) ar.get('templateName'),
+                    'count' => (Integer) ar.get('cnt')
+                });
+            }
+
+            Datetime lastHourStart = nowTime.addHours(-1);
+            Datetime last7DaysStart = nowTime.addDays(-7);
+
+            Integer lastHour = [
+                SELECT COUNT()
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :lastHourStart
+            ];
+            Integer last7Days = [
+                SELECT COUNT()
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :last7DaysStart
+            ];
+            Integer last24 = 0;
+            for (Map<String, Object> bucket : hourly) {
+                last24 += (Integer) bucket.get('count');
+            }
+
+            return new Map<String, Object>{
+                'lastHour' => lastHour,
+                'last24Hours' => last24,
+                'last7Days' => last7Days,
+                'perHourAverage' => (Decimal.valueOf(last24) / HOURS_FOR_METRICS).setScale(1),
+                'peakHourLabel' => peakLabel,
+                'peakHourCount' => peakCount,
+                'hourly' => hourly,
+                'byFormat' => byFormat,
+                'topTemplates' => topTemplates
+            };
+        } catch (Exception e) {
+            throw new AuraHandledException('Failed to get usage metrics: ' + e.getMessage());
         }
     }
 

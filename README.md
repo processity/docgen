@@ -393,6 +393,14 @@ The **Docgen** app includes:
 - **GET /worker/status**: Current worker state
 - **GET /worker/stats**: Detailed worker metrics
 
+### Metrics
+
+Per-replica metrics backing the Salesforce "System Status" page. Both carry a
+`replicaId`, because a callout reaches one replica out of several.
+
+- **GET /metrics/performance**: Processing times, throughput and per-stage timings over a rolling window
+- **GET /metrics/resources**: CPU, memory, event loop delay, LibreOffice pool and template cache utilization
+
 See [API Reference](docs/api.md) for complete endpoint documentation.
 
 ## Contributing

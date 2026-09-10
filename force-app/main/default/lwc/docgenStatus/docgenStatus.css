@@ -99,3 +99,56 @@
         min-height: 150px;
     }
 }
+
+/* Horizontal bars for volume, utilization and stage timings */
+.metric-bar {
+    background: #ecebea;
+    border-radius: 0.125rem;
+    height: 0.75rem;
+    overflow: hidden;
+    width: 100%;
+}
+
+.metric-bar_inline {
+    display: inline-block;
+    height: 0.5rem;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+    width: 4rem;
+}
+
+.metric-bar__fill {
+    background: #0176d3;
+    display: block;
+    height: 100%;
+}
+
+/* Compact tables for the metric panels */
+.metric-table td,
+.metric-table th {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.metric-table .bar-label {
+    color: #706e6b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 8rem;
+}
+
+.metric-table .bar-count {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    width: 4rem;
+}
+
+.resource-card {
+    height: 100%;
+}
+
+.resource-card .metric-value {
+    font-size: 1.5rem;
+}

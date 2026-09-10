@@ -2,6 +2,7 @@ import createReport, { listCommands } from 'docx-templates';
 import type { MergeOptions } from '../types';
 // import { ImageAllowlist } from '../utils/image-allowlist'; // TODO: Use for image URL validation
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 import { TemplateMergeError, TemplateInvalidFormatError } from '../errors';
 import { preprocessDocxTemplate, postProcessMergedDocx } from './docx-postprocess';
 import { DOCGEN_LITERAL_XML_DELIMITER } from './rich-text';
@@ -37,6 +38,14 @@ const logger = createLogger('templates:merge');
  * @throws Error if merge fails or invalid image URLs
  */
 export async function mergeTemplate(
+  template: Buffer,
+  data: Record<string, any>,
+  options: MergeOptions
+): Promise<Buffer> {
+  return timeStage('merge', () => mergeTemplateInternal(template, data, options));
+}
+
+async function mergeTemplateInternal(
   template: Buffer,
   data: Record<string, any>,
   options: MergeOptions

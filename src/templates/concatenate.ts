@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import type { TemplateSection } from '../types';
 import { createLogger } from '../utils/logger';
+import { timeStage } from '../obs';
 
 const logger = createLogger('templates:concatenate');
 
@@ -42,6 +43,13 @@ interface ParagraphStyleCatalog {
  * @throws Error if sections array is empty or invalid DOCX structure
  */
 export async function concatenateDocx(
+  sections: TemplateSection[],
+  correlationId?: string
+): Promise<Buffer> {
+  return timeStage('concatenate', () => concatenateDocxInternal(sections, correlationId));
+}
+
+async function concatenateDocxInternal(
   sections: TemplateSection[],
   correlationId?: string
 ): Promise<Buffer> {
