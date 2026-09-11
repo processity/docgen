@@ -2,7 +2,8 @@ import { LightningElement } from 'lwc';
 import getSystemStatus from '@salesforce/apex/DocgenStatusController.getSystemStatus';
 import getQueueMetrics from '@salesforce/apex/DocgenStatusController.getQueueMetrics';
 import getRecentDocuments from '@salesforce/apex/DocgenStatusController.getRecentDocuments';
-import getFleetMetrics from '@salesforce/apex/DocgenStatusController.getFleetMetrics';
+import getPerformanceMetrics from '@salesforce/apex/DocgenStatusController.getPerformanceMetrics';
+import getResourceMetrics from '@salesforce/apex/DocgenStatusController.getResourceMetrics';
 import getUsageMetrics from '@salesforce/apex/DocgenStatusController.getUsageMetrics';
 
 const STAGE_LABELS = {
@@ -21,15 +22,17 @@ export default class DocgenStatus extends LightningElement {
     recentDocuments = [];
     usage;
     performance;
-    fleet;
+    resources;
     healthError;
     queueError;
     documentsError;
     usageError;
-    fleetError;
+    performanceError;
+    resourcesError;
     isLoading = false;
     usageLoading = false;
-    fleetLoading = false;
+    performanceLoading = false;
+    resourcesLoading = false;
     lastUpdated;
     activeTab = 'overview';
     pageNumber = 1;
@@ -38,6 +41,7 @@ export default class DocgenStatus extends LightningElement {
     statusFilter = 'ALL';
     sortedBy = 'createdDate';
     sortDirection = 'desc';
+    diagnosticsVisited = false;
 
     pageSizeOptions = [
         { label: '10', value: '10' },
@@ -85,7 +89,7 @@ export default class DocgenStatus extends LightningElement {
     connectedCallback() {
         this.loadAllData();
         this.loadUsage();
-        this.loadFleet();
+        this.loadPerformance();
     }
 
     // Each source fails independently so a backend outage does not hide the queue.
@@ -125,11 +129,16 @@ export default class DocgenStatus extends LightningElement {
         if (this.isRefreshing) return;
         this.loadAllData();
         this.loadUsage();
-        this.loadFleet();
+        this.loadPerformance();
+        if (this.diagnosticsVisited) this.loadResources();
     }
 
     handleTabActive(event) {
         this.activeTab = event.target.value;
+        if (this.activeTab === 'diagnostics' && !this.diagnosticsVisited) {
+            this.diagnosticsVisited = true;
+            this.loadResources();
+        }
     }
 
     async loadUsage() {
@@ -146,21 +155,31 @@ export default class DocgenStatus extends LightningElement {
         }
     }
 
-    async loadFleet() {
-        if (this.fleetLoading) return;
-        this.fleetLoading = true;
-        this.fleetError = null;
-        this.fleet = null;
+    async loadPerformance() {
+        if (this.performanceLoading) return;
+        this.performanceLoading = true;
+        this.performanceError = null;
         this.performance = null;
         try {
-            const snapshot = await getFleetMetrics();
-            if (snapshot?.scope !== 'fleet') throw new Error('The backend did not return fleet metrics.');
-            this.fleet = this.buildFleetView(snapshot);
-            this.performance = snapshot.performance ? this.buildPerformanceView(snapshot.performance) : null;
+            this.performance = this.buildPerformanceView(await getPerformanceMetrics());
         } catch (error) {
-            this.fleetError = this.reduceErrors(error);
+            this.performanceError = this.reduceErrors(error);
         } finally {
-            this.fleetLoading = false;
+            this.performanceLoading = false;
+        }
+    }
+
+    async loadResources() {
+        if (this.resourcesLoading) return;
+        this.resourcesLoading = true;
+        this.resourcesError = null;
+        this.resources = null;
+        try {
+            this.resources = this.buildResourceView(await getResourceMetrics());
+        } catch (error) {
+            this.resourcesError = this.reduceErrors(error);
+        } finally {
+            this.resourcesLoading = false;
         }
     }
 
@@ -237,7 +256,7 @@ export default class DocgenStatus extends LightningElement {
             : '0 documents';
     }
     get isRefreshing() {
-        return this.isLoading || this.usageLoading || this.fleetLoading;
+        return this.isLoading || this.usageLoading || this.performanceLoading || this.resourcesLoading;
     }
     get updatedLabel() {
         return this.lastUpdated ? `Last refresh: ${this.lastUpdated}` : 'Loading status…';
@@ -402,6 +421,12 @@ export default class DocgenStatus extends LightningElement {
         const stages = backend.stages || [];
         const slowestTotal = Math.max(0, ...stages.map((stage) => stage.totalMs));
         return {
+            replica: {
+                replicaId: backend.replicaId,
+                windowMinutes: Math.round((backend.windowSeconds || 0) / 60),
+                observedLabel: this.formatSeconds(backend.observedSeconds),
+                uptimeLabel: this.formatSeconds(backend.processUptimeSeconds)
+            },
             hasSamples: (documents.count || 0) > 0,
             sampleCount: documents.count || 0,
             succeeded: documents.succeeded || 0,
@@ -447,78 +472,80 @@ export default class DocgenStatus extends LightningElement {
         };
     }
 
-    buildFleetView(snapshot) {
-        const coverage = snapshot.coverage || {};
-        const resources = snapshot.resources || {};
-        const number = (value, suffix = '') =>
-            value == null ? '—' : `${Number(value).toFixed(1).replace(/\.0$/, '')}${suffix}`;
+    buildResourceView(snapshot) {
+        const cpu = snapshot.cpu || {};
+        const memory = snapshot.memory || {};
+        const pool = snapshot.libreOfficePool || {};
+        const cache = snapshot.templateCache || {};
+        const eventLoop = snapshot.eventLoopDelayMs;
+
         return {
-            coverageLabel: !coverage.inventoryAvailable
-                ? 'Replica inventory unavailable'
-                : `${coverage.reportingReplicas} of ${coverage.activeReplicas} active replicas reporting`,
-            incomplete: !coverage.complete,
-            noTelemetry: !coverage.telemetryAvailable,
-            updatedLabel: new Date(snapshot.generatedAt).toLocaleString(),
-            windowMinutes: Math.round(snapshot.windowSeconds / 60),
-            resourceCards: [
-                {
-                    key: 'cpu',
-                    label: 'Fleet CPU',
-                    value: number(resources.cpuPercent, '%'),
-                    detail: `${number(resources.cores)} allocated cores · capacity weighted`
-                },
-                {
-                    key: 'memory',
-                    label: 'Fleet memory',
-                    value: number(resources.memoryPercent, '%'),
-                    detail: `${number(resources.memoryUsedMb)} / ${number(resources.memoryLimitMb)} MB`
-                },
-                {
-                    key: 'pool',
-                    label: 'Conversion slots',
-                    value: number(resources.activeJobs),
-                    detail: `${number(resources.maxConcurrent)} total slots · ${number(resources.queuedJobs)} waiting`
-                },
-                {
-                    key: 'cache',
-                    label: 'Cache hit rate',
-                    value: number(resources.cacheHitRatePercent, '%'),
-                    detail: `${number(resources.cacheHits)} hits · ${number(resources.cacheMisses)} misses since active processes started`
-                }
-            ],
-            replicas: (snapshot.replicas || []).map((replica) => {
-                const resource = replica.snapshot || {};
-                const cpu = resource.cpu || {};
-                const memory = resource.memory || {};
-                const pool = resource.libreOfficePool || {};
-                const cache = resource.templateCache || {};
-                const status =
-                    replica.active === false
-                        ? 'Historical · no longer active'
-                        : replica.active === null
-                          ? 'Activity unknown'
-                          : replica.freshness === 'fresh'
-                            ? 'Active · reporting'
-                            : replica.freshness === 'stale'
-                              ? 'Active · stale data'
-                              : 'Active · awaiting telemetry';
-                return {
-                    ...replica,
-                    status,
-                    badgeClass: replica.active && replica.freshness === 'fresh' ? 'success-badge' : '',
-                    lastSeenLabel: replica.lastSeen ? new Date(replica.lastSeen).toLocaleTimeString() : 'Not received',
-                    cpuLabel: number(cpu.percent, '%'),
-                    memoryLabel: number(memory.percentOfLimit, '%'),
-                    cpuSource: cpu.source === 'process' ? 'Node process only' : 'Container total',
-                    cpuStyle: this.barStyle(cpu.percent || 0, 100),
-                    memoryStyle: this.barStyle(memory.percentOfLimit || 0, 100),
-                    memoryDetail: `${number(memory.usedMb)} / ${number(memory.limitMb)} MB`,
-                    poolLabel: `${number(pool.activeJobs)} / ${number(pool.maxConcurrent)} active · ${number(pool.queuedJobs)} waiting`,
-                    cacheLabel: number(cache.hitRatePercent, '%'),
-                    countLabel: replica.documents ? replica.documents.count : '—',
-                    p95Label: replica.documents ? this.formatMs(replica.documents.p95Ms) : '—'
-                };
-            })
+            replicaId: snapshot.replicaId,
+            uptimeLabel: this.formatSeconds(snapshot.processUptimeSeconds),
+            cpu: {
+                hasReading: cpu.percent !== null && cpu.percent !== undefined,
+                percent: cpu.percent,
+                cores: cpu.cores,
+                source: this.sourceLabel(cpu.source),
+                sampleLabel: cpu.sampleSeconds ? `${cpu.sampleSeconds}s average` : 'Warming up',
+                barStyle: this.barStyle(cpu.percent || 0, 100)
+            },
+            memory: {
+                hasLimit: memory.limitMb !== null && memory.limitMb !== undefined,
+                usedMb: memory.usedMb,
+                limitMb: memory.limitMb,
+                percentOfLimit: memory.percentOfLimit,
+                source: this.sourceLabel(memory.source),
+                barStyle: this.barStyle(memory.percentOfLimit || 0, 100),
+                nodeRssMb: memory.node ? memory.node.rssMb : null,
+                nodeHeapLabel: memory.node ? `${memory.node.heapUsedMb} / ${memory.node.heapTotalMb} MB` : '-'
+            },
+            eventLoop: eventLoop
+                ? {
+                      p50: `${eventLoop.p50} ms`,
+                      p99: `${eventLoop.p99} ms`,
+                      max: `${eventLoop.max} ms`,
+                      isHealthy: eventLoop.p99 < 100
+                  }
+                : null,
+            pool: {
+                activeJobs: pool.activeJobs,
+                queuedJobs: pool.queuedJobs,
+                maxConcurrent: pool.maxConcurrent,
+                utilizationPercent: pool.utilizationPercent,
+                completedJobs: pool.completedJobs,
+                failedJobs: pool.failedJobs,
+                totalConversions: pool.totalConversions,
+                barStyle: this.barStyle(pool.activeJobs || 0, pool.maxConcurrent || 1),
+                isSaturated: pool.queuedJobs > 0
+            },
+            cache: {
+                hasLookups: (cache.lookups || 0) > 0,
+                hitRatePercent: cache.hitRatePercent,
+                hits: cache.hits,
+                misses: cache.misses,
+                entryCount: cache.entryCount,
+                evictions: cache.evictions,
+                sizeLabel: `${cache.sizeMb} / ${cache.maxSizeMb} MB`,
+                utilizationPercent: cache.utilizationPercent,
+                hitBarStyle: this.barStyle(cache.hitRatePercent || 0, 100),
+                sizeBarStyle: this.barStyle(cache.utilizationPercent || 0, 100)
+            }
         };
+    }
+
+    /**
+     * Explain where a CPU or memory reading came from
+     */
+    sourceLabel(source) {
+        switch (source) {
+            case 'cgroup-v2':
+            case 'cgroup-v1':
+                return 'Container total (includes LibreOffice)';
+            case 'process':
+                return 'Node process only (LibreOffice not counted)';
+            default:
+                return 'Unknown';
+        }
     }
 }

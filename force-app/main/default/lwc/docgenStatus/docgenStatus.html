@@ -63,18 +63,13 @@
                 <p class="scope-note">Document metrics include Salesforce records you can access, across all replicas. Canceled and unfinished requests are excluded from the success rate.</p>
                 <div class="tab-content">
                     <div class="panel-heading"><h2>Document activity</h2><span class="scope-label">Salesforce · all replicas</span></div>
-                    <template if:true={fleetLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading fleet performance" size="small"></lightning-spinner></div></template>
-                    <template if:true={fleetError}><p class="error-message" role="alert">{fleetError}</p></template>
-                    <template if:true={fleet}>
-                        <p class="scope-note"><strong>{fleet.coverageLabel}</strong> · Shared metrics as of {fleet.updatedLabel}.</p>
-                        <template if:true={fleet.incomplete}><p class="insight">Replica coverage is incomplete. Received timings are shown; missing and delayed telemetry can affect totals.</p></template>
-                        <template if:true={fleet.noTelemetry}><p class="insight">Shared timing telemetry is not available yet. Document volume below remains available from Salesforce.</p></template>
-                    </template>
+                    <template if:true={performanceLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading processing timings" size="small"></lightning-spinner></div></template>
+                    <template if:true={performanceError}><p class="error-message" role="alert">{performanceError}</p></template>
                     <template if:true={performance}>
-                    <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing time · all replicas</h3>
-                    <p class="scope-note">Individual completion events across all replicas over the last {fleet.windowMinutes} minutes, including replicas that have since stopped. Percentiles are calculated across events; recent events may still be arriving.</p>
+                    <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing time · current replica</h3>
+                    <p class="scope-note">Replica <strong>{performance.replica.replicaId}</strong> · Last {performance.replica.windowMinutes} minutes · Uptime {performance.replica.uptimeLabel}. Refresh may reach a different replica. Document volume and outcomes come from Salesforce across all replicas.</p>
                     <template if:false={performance.hasSamples}>
-                        <p class="empty-state">No completed-document timing events have arrived for this window.</p>
+                        <p class="empty-state">No documents completed on this replica in the last {performance.replica.windowMinutes} minutes. Other replicas may have processed documents.</p>
                     </template>
                     <template if:true={performance.hasSamples}>
                         <div class="slds-grid slds-wrap slds-gutters">
@@ -247,7 +242,7 @@
                             </section>
                         </div>
                     </template>
-                    <p class="scope-note">Document volume covers Salesforce records you can access. Processing timings cover this backend service across all replicas and can lag while Azure Monitor ingests events.</p>
+                    <p class="scope-note">Document volume covers Salesforce records you can access across all replicas. Processing timings are an in-memory sample from the responding replica and reset on restart.</p>
                 </div>
             </lightning-tab>
             <lightning-tab label="Documents" value="documents" onactive={handleTabActive}>
@@ -279,38 +274,163 @@
             </lightning-tab>
             <lightning-tab label="Diagnostics" value="diagnostics" onactive={handleTabActive}>
                 <div class="tab-content">
-                    <div class="panel-heading"><h2>All backend replicas</h2><span class="scope-label">Azure inventory + shared telemetry</span></div>
-                    <template if:true={fleetLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading fleet metrics" size="small"></lightning-spinner></div></template>
-                    <template if:true={fleetError}><p class="error-message" role="alert">{fleetError}</p></template>
-                    <template if:true={fleet}>
-                        <p class="scope-note"><strong>{fleet.coverageLabel}</strong> · Snapshot: {fleet.updatedLabel}. Heartbeats are collected every 30 seconds; Azure Monitor ingestion can take several minutes.</p>
-                        <template if:true={fleet.incomplete}><p class="insight" role="status">Fleet resource totals are unavailable until every active replica has a recent reading. Check the replica cards for missing or stale telemetry.</p></template>
-                        <template if:true={fleet.noTelemetry}><p class="insight">No shared telemetry has arrived yet. Collection must be enabled on the backend replicas.</p></template>
-                        <div class="summary-grid">
-                            <template for:each={fleet.resourceCards} for:item="card">
-                                <article key={card.key} class="summary-card"><h3>{card.label}</h3><div class="summary-value">{card.value}</div><p class="muted">{card.detail}</p></article>
-                            </template>
-                        </div>
-                        <div class="two-column">
-                            <template for:each={fleet.replicas} for:item="replica">
-                                <section key={replica.replicaId} class="panel replica-panel">
-                                    <div class="panel-heading"><h3 class="replica-name">{replica.replicaId}</h3><lightning-badge label={replica.status} class={replica.badgeClass}></lightning-badge></div>
-                                    <p class="muted">Last reading: {replica.lastSeenLabel} · Revision: {replica.revision}</p>
-                                    <div class="ranked-list">
-                                        <div class="ranked-row"><div class="ranked-label"><span>CPU · {replica.cpuSource}</span><strong>{replica.cpuLabel}</strong></div><div class="metric-bar"><span class="metric-bar__fill" style={replica.cpuStyle}></span></div></div>
-                                        <div class="ranked-row"><div class="ranked-label"><span>Memory · {replica.memoryDetail}</span><strong>{replica.memoryLabel}</strong></div><div class="metric-bar"><span class="metric-bar__fill outcome-succeeded" style={replica.memoryStyle}></span></div></div>
+                    <p class="scope-note">Resource readings describe the responding replica, identified below. Performance and resource requests can reach different replicas.</p>
+                    <h2 class="slds-text-heading_small slds-m-vertical_medium">Resource snapshot</h2>
+                <template if:true={resourcesLoading}>
+                    <div class="slds-p-vertical_large slds-text-align_center">
+                        <lightning-spinner alternative-text="Loading resource metrics" size="small"></lightning-spinner>
+                    </div>
+                </template>
+
+                <template if:true={resourcesError}>
+                    <div class="slds-notify slds-notify_alert slds-alert_error" role="alert">
+                        <h2>{resourcesError}</h2>
+                    </div>
+                </template>
+
+                <template if:true={resources}>
+                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
+                        <p class="slds-text-body_small">
+                            CPU, memory, pool slots and cache contents belong to one container instance:
+                            replica <strong>{resources.replicaId}</strong>, up {resources.uptimeLabel}.
+                            Refreshing may sample a different replica.
+                        </p>
+                    </div>
+
+                    <div class="slds-grid slds-wrap slds-gutters">
+                        <!-- CPU -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">CPU</h3>
+                                <template if:true={resources.cpu.hasReading}>
+                                    <div class="metric-value">{resources.cpu.percent}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.cpu.barStyle}></span>
                                     </div>
-                                    <dl class="replica-details">
-                                        <dt>Conversion slots</dt><dd>{replica.poolLabel}</dd>
-                                        <dt>Cache hit rate</dt><dd>{replica.cacheLabel}</dd>
-                                        <dt>Recorded completions · 60m</dt><dd>{replica.countLabel}</dd>
-                                        <dt>Processing p95 · 60m</dt><dd>{replica.p95Label}</dd>
-                                    </dl>
-                                </section>
-                            </template>
+                                </template>
+                                <template if:false={resources.cpu.hasReading}>
+                                    <div class="metric-value">&ndash;</div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Cores:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.cores}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Window:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.sampleLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
+                                    <dd class="slds-item_detail">{resources.cpu.source}</dd>
+                                </dl>
+                            </article>
                         </div>
-                        <p class="scope-note">Resource totals include only current replicas. Historical cards retain received timings from stopped replicas within the reporting window. CPU and memory totals require container readings; process-only readings remain labeled on their cards.</p>
-                    </template>
+
+                        <!-- Memory -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Memory</h3>
+                                <template if:true={resources.memory.hasLimit}>
+                                    <div class="metric-value">{resources.memory.percentOfLimit}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.memory.barStyle}></span>
+                                    </div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        {resources.memory.usedMb} MB of {resources.memory.limitMb} MB
+                                    </div>
+                                </template>
+                                <template if:false={resources.memory.hasLimit}>
+                                    <div class="metric-value">{resources.memory.usedMb} MB</div>
+                                    <div class="metric-label slds-m-bottom_x-small">No container limit reported</div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Node RSS:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.nodeRssMb} MB</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Heap:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.nodeHeapLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
+                                    <dd class="slds-item_detail">{resources.memory.source}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- LibreOffice pool -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">LibreOffice Pool</h3>
+                                <div class="metric-value">{resources.pool.utilizationPercent}%</div>
+                                <div class="metric-bar slds-m-vertical_x-small">
+                                    <span class="metric-bar__fill" style={resources.pool.barStyle}></span>
+                                </div>
+                                <div class="metric-label slds-m-bottom_x-small">
+                                    {resources.pool.activeJobs} of {resources.pool.maxConcurrent} slots converting
+                                </div>
+                                <template if:true={resources.pool.isSaturated}>
+                                    <div class="slds-text-color_error slds-text-body_small slds-m-bottom_x-small">
+                                        {resources.pool.queuedJobs} conversion(s) waiting for a slot
+                                    </div>
+                                </template>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Completed:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.completedJobs}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Failed:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.failedJobs}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Total:</dt>
+                                    <dd class="slds-item_detail">{resources.pool.totalConversions}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- Template cache -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                            <article class="slds-card slds-p-around_small resource-card">
+                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Template Cache</h3>
+                                <template if:true={resources.cache.hasLookups}>
+                                    <div class="metric-value">{resources.cache.hitRatePercent}%</div>
+                                    <div class="metric-bar slds-m-vertical_x-small">
+                                        <span class="metric-bar__fill" style={resources.cache.hitBarStyle}></span>
+                                    </div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        Hit rate &middot; {resources.cache.hits} hits, {resources.cache.misses} misses
+                                    </div>
+                                </template>
+                                <template if:false={resources.cache.hasLookups}>
+                                    <div class="metric-value">&ndash;</div>
+                                    <div class="metric-label slds-m-bottom_x-small">
+                                        No template lookups on this replica yet
+                                    </div>
+                                </template>
+                                <div class="metric-bar slds-m-bottom_x-small">
+                                    <span class="metric-bar__fill" style={resources.cache.sizeBarStyle}></span>
+                                </div>
+                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                    <dt class="slds-item_label slds-text-color_weak">Size:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.sizeLabel}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Templates:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.entryCount}</dd>
+                                    <dt class="slds-item_label slds-text-color_weak">Evictions:</dt>
+                                    <dd class="slds-item_detail">{resources.cache.evictions}</dd>
+                                </dl>
+                            </article>
+                        </div>
+
+                        <!-- Event loop -->
+                        <template if:true={resources.eventLoop}>
+                            <div class="slds-col slds-size_1-of-1">
+                                <article class="slds-card slds-p-around_small">
+                                    <h3 class="slds-text-title_caps slds-m-bottom_x-small">Event Loop Delay</h3>
+                                    <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
+                                        <dt class="slds-item_label slds-text-color_weak">Median:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.p50}</dd>
+                                        <dt class="slds-item_label slds-text-color_weak">p99:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.p99}</dd>
+                                        <dt class="slds-item_label slds-text-color_weak">Worst:</dt>
+                                        <dd class="slds-item_detail">{resources.eventLoop.max}</dd>
+                                    </dl>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        High values mean the Node process is blocked and slow to answer requests.
+                                    </p>
+                                </article>
+                            </div>
+                        </template>
+                    </div>
+                </template>
                 </div>
             </lightning-tab>
         </lightning-tabset>

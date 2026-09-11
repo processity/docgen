@@ -1,4 +1,3 @@
-import getFleetMetrics from '@salesforce/apex/DocgenStatusController.getFleetMetrics';
 import { createElement } from 'lwc';
 import DocgenStatus from 'c/docgenStatus';
 import getSystemStatus from '@salesforce/apex/DocgenStatusController.getSystemStatus';
@@ -57,8 +56,6 @@ jest.mock(
   () => ({ default: jest.fn() }),
   { virtual: true }
 );
-
-jest.mock('@salesforce/apex/DocgenStatusController.getFleetMetrics', () => ({ default: jest.fn() }), { virtual: true });
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -156,18 +153,6 @@ const RESOURCES = {
   }
 };
 
-const FLEET = {
-  scope: 'fleet', generatedAt: '2026-09-10T12:00:00Z', windowSeconds: 3600,
-  coverage: { inventoryAvailable: true, activeReplicas: 2, reportingReplicas: 2, complete: true, telemetryAvailable: true },
-  performance: PERFORMANCE,
-  resources: { cpuPercent: 37.5, cores: 4, memoryUsedMb: 2048, memoryLimitMb: 8192, memoryPercent: 25,
-    activeJobs: 4, maxConcurrent: 16, queuedJobs: 2, cacheHits: 180, cacheMisses: 20, cacheHitRatePercent: 90 },
-  replicas: [
-    { replicaId: 'docgen--abc123', revision: 'rev1', active: true, freshness: 'fresh', lastSeen: '2026-09-10T11:59:00Z', snapshot: RESOURCES, documents: { count: 7, p95Ms: 9100 } },
-    { replicaId: 'different-replica', revision: 'rev1', active: true, freshness: 'fresh', lastSeen: '2026-09-10T11:59:00Z', snapshot: RESOURCES, documents: { count: 5, p95Ms: 4000 } }
-  ]
-};
-
 function createStatusPage() {
   const element = createElement('c-docgen-status', { is: DocgenStatus });
   document.body.appendChild(element);
@@ -200,32 +185,29 @@ describe('c-docgen-status dashboard', () => {
     getUsageMetrics.mockResolvedValue(USAGE);
     getPerformanceMetrics.mockResolvedValue(PERFORMANCE);
     getResourceMetrics.mockResolvedValue(RESOURCES);
-    getFleetMetrics.mockResolvedValue(FLEET);
   });
   afterEach(() => {
     while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     jest.clearAllMocks();
   });
 
-  it('opens the combined first tab and loads overview and performance without switching tabs', async () => {
+  it('loads Salesforce volume and current-replica timings on the combined first tab', async () => {
     const element = createStatusPage();
     await flushPromises();
     expect(element.shadowRoot.querySelector('lightning-tabset').activeTabValue).toBe('overview');
-    expect(getSystemStatus).toHaveBeenCalledTimes(1);
-    expect(getUsageMetrics).toHaveBeenCalledTimes(1);
-    expect(getFleetMetrics).toHaveBeenCalledTimes(1);
     const tabs = [...element.shadowRoot.querySelectorAll('lightning-tab')];
     expect(tabs.map(tab => tab.label)).toEqual(['Overview & Performance', 'Documents', 'Diagnostics']);
-    expect(tabs[0].textContent).toContain('Document outcomes');
-    expect(tabs[0].textContent).toContain('Processing time · all replicas');
+    expect(tabs[0].textContent).toContain('Processing time · current replica');
     expect(tabs[0].querySelector('.donut')).not.toBeNull();
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(getSystemStatus).toHaveBeenCalledTimes(1);
+    expect(getUsageMetrics).toHaveBeenCalledTimes(1);
+    expect(getPerformanceMetrics).toHaveBeenCalledTimes(1);
     expect(getWorkerStats).not.toHaveBeenCalled();
     expect(getWorkerStatus).not.toHaveBeenCalled();
     activateTab(element, 'overview');
     await flushPromises();
     expect(getUsageMetrics).toHaveBeenCalledTimes(1);
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(getPerformanceMetrics).toHaveBeenCalledTimes(1);
     expect(getResourceMetrics).not.toHaveBeenCalled();
   });
 
@@ -240,8 +222,7 @@ describe('c-docgen-status dashboard', () => {
     expect(donut.getAttribute('aria-label')).toContain('PDF: 36 requests (90.0%)');
     expect(donut.getAttribute('style')).toContain('conic-gradient');
     expect(textOf(element)).toContain('Order Form');
-    expect(textOf(element)).toContain('Processing time · all replicas');
-    expect(getFleetMetrics).toHaveBeenCalledTimes(1);
+    expect(textOf(element)).toContain('Processing time · current replica');
   });
 
   it('paginates, sorts before paging, filters and resets the page', async () => {
@@ -286,7 +267,7 @@ describe('c-docgen-status dashboard', () => {
 
   it('keeps org metrics and records when health or diagnostics fail', async () => {
     getSystemStatus.mockRejectedValue(new Error('Health unavailable'));
-    getFleetMetrics.mockRejectedValue(new Error('Fleet unavailable'));
+    getPerformanceMetrics.mockRejectedValue(new Error('Timings unavailable'));
     const element = createStatusPage();
     await flushPromises();
     expect(textOf(element)).toContain('Health unavailable');
@@ -295,9 +276,9 @@ describe('c-docgen-status dashboard', () => {
     activateTab(element, 'overview');
     activateTab(element, 'diagnostics');
     await flushPromises();
-    expect(textOf(element)).toContain('Fleet unavailable');
+    expect(textOf(element)).toContain('Timings unavailable');
     expect(textOf(element)).toContain('40');
-    expect(textOf(element)).not.toContain('37.5%');
+    expect(textOf(element)).toContain('37.5%');
   });
 
   it('shows actual readiness failures and unavailable values without false zeroes', async () => {
@@ -307,44 +288,44 @@ describe('c-docgen-status dashboard', () => {
     await flushPromises();
     expect(textOf(element)).toContain('Needs attention');
     expect(textOf(element)).toContain('Queue unavailable');
-    const values = [...element.shadowRoot.querySelectorAll('.dashboard > .summary-grid .summary-value')].map(entry => entry.textContent);
+    const values = [...element.shadowRoot.querySelectorAll('.summary-value')].map(entry => entry.textContent);
     expect(values).toEqual(['—', '—', '—', '—']);
   });
 
-  it('loads one shared snapshot and displays every replica with fleet totals', async () => {
+  it('loads independent replica diagnostics and keeps their identity visible', async () => {
+    getResourceMetrics.mockResolvedValue({ ...RESOURCES, replicaId: 'different-replica' });
     const element = createStatusPage();
-    await flushPromises();
-    activateTab(element, 'overview');
     await flushPromises();
     activateTab(element, 'diagnostics');
     await flushPromises();
+    expect(getUsageMetrics).toHaveBeenCalledTimes(1);
     const text = textOf(element);
     for (const label of ['docgen--abc123', 'different-replica', '4.2 s', '9.1 s',
-      'PDF conversion (LibreOffice)', 'Batch (poller)', 'Interactive',
-      '2 of 2 active replicas reporting', '2048 / 8192 MB', '37.5%']) {
+      'PDF conversion (LibreOffice)', 'Batch (poller)', 'Interactive', '5.4 s', '3.6 s',
+      '1024 MB of 4096 MB', '1 conversion(s) waiting for a slot', '90 hits, 10 misses']) {
       expect(text).toContain(label);
     }
-    expect(element.shadowRoot.querySelectorAll('.replica-panel')).toHaveLength(2);
-    expect(getFleetMetrics).toHaveBeenCalledTimes(1);
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
-    expect(getResourceMetrics).not.toHaveBeenCalled();
+    activateTab(element, 'overview');
+    activateTab(element, 'diagnostics');
+    await flushPromises();
+    expect(getPerformanceMetrics).toHaveBeenCalledTimes(1);
   });
 
   it('shows no-sample state and keeps empty charts honest', async () => {
-    getFleetMetrics.mockResolvedValue({ ...FLEET, performance: { ...PERFORMANCE, documents: { count: 0, latency: null }, stages: [] } });
+    getPerformanceMetrics.mockResolvedValue({ ...PERFORMANCE, documents: { count: 0, latency: null }, stages: [] });
     getUsageMetrics.mockResolvedValue({ ...USAGE, last24Hours: 0, hourly: [], byFormat: [], topTemplates: [] });
     const element = createStatusPage();
     await flushPromises();
     activateTab(element, 'overview');
     activateTab(element, 'diagnostics');
     await flushPromises();
-    expect(textOf(element)).toContain('No completed-document timing events have arrived');
+    expect(textOf(element)).toContain('No documents completed on this replica');
     expect(textOf(element)).toContain('No document requests in the last 24 hours');
     expect(textOf(element)).not.toContain('Median (p50)');
     expect(element.shadowRoot.querySelector('.donut')).toBeNull();
   });
 
-  it('refreshes overview and performance, retries errors, and clamps the document page', async () => {
+  it('refreshes visited tabs, retries errors, and clamps the document page after records disappear', async () => {
     getUsageMetrics.mockRejectedValueOnce(new Error('Usage unavailable'));
     const element = createStatusPage();
     await flushPromises();
@@ -357,46 +338,18 @@ describe('c-docgen-status dashboard', () => {
     button(element, 'Refresh').click();
     await flushPromises();
     expect(getUsageMetrics).toHaveBeenCalledTimes(2);
-    expect(getFleetMetrics).toHaveBeenCalledTimes(2);
     expect(textOf(element)).not.toContain('Usage unavailable');
     expect(button(element, 'Previous').disabled).toBe(true);
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
+    expect(getPerformanceMetrics).toHaveBeenCalledTimes(2);
     expect(getResourceMetrics).not.toHaveBeenCalled();
   });
 
   it('labels process-only resource readings', async () => {
-    getFleetMetrics.mockResolvedValue({ ...FLEET, replicas: [{ ...FLEET.replicas[0], snapshot: { ...RESOURCES, cpu: { ...RESOURCES.cpu, source: 'process' } } }] });
+    getResourceMetrics.mockResolvedValue({ ...RESOURCES, cpu: { ...RESOURCES.cpu, source: 'process' } });
     const element = createStatusPage();
     await flushPromises();
     activateTab(element, 'diagnostics');
     await flushPromises();
-    expect(textOf(element)).toContain('Node process only');
-  });
-
-  it('shows missing replicas and unavailable capacity when coverage is incomplete', async () => {
-    getFleetMetrics.mockResolvedValue({ ...FLEET, resources: {},
-      coverage: { ...FLEET.coverage, reportingReplicas: 1, complete: false },
-      replicas: [FLEET.replicas[0], { ...FLEET.replicas[1], snapshot: null, freshness: 'missing', lastSeen: null }]
-    });
-    const element = createStatusPage();
-    await flushPromises();
-    activateTab(element, 'diagnostics');
-    await flushPromises();
-    expect(textOf(element)).toContain('1 of 2 active replicas reporting');
-    expect([...element.shadowRoot.querySelectorAll('.replica-panel lightning-badge')].map(badge => badge.label)).toContain('Active · awaiting telemetry');
-    expect(textOf(element)).toContain('Fleet resource totals are unavailable');
-    const values = [...element.shadowRoot.querySelectorAll('.summary-value')].slice(-4).map(entry => entry.textContent);
-    expect(values).toEqual(['—', '—', '—', '—']);
-  });
-
-  it('rejects a legacy single-replica response instead of labeling it as fleet metrics', async () => {
-    getFleetMetrics.mockResolvedValue(PERFORMANCE);
-    const element = createStatusPage();
-    await flushPromises();
-    activateTab(element, 'overview');
-    await flushPromises();
-    expect(textOf(element)).toContain('The backend did not return fleet metrics');
-    expect(getPerformanceMetrics).not.toHaveBeenCalled();
-    expect(textOf(element)).not.toContain('4.2 s');
+    expect(textOf(element)).toContain('Node process only (LibreOffice not counted)');
   });
 });
