@@ -277,7 +277,6 @@ export function createFleetReader() {
     const appId = process.env.FLEET_METRICS_APP_RESOURCE_ID || '';
     const workspace = process.env.FLEET_METRICS_WORKSPACE_ID || '';
     if (
-      process.env.FLEET_METRICS_ENABLED !== 'true' ||
       !/^\/subscriptions\/[\w-]+\/resourceGroups\/[\w.()-]+\/providers\/Microsoft.App\/containerApps\/[\w-]+$/i.test(
         appId
       ) ||

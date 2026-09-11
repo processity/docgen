@@ -181,6 +181,9 @@ jobs:
       previous_revision: ${{ steps.get-current.outputs.current_revision }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -200,6 +203,15 @@ jobs:
           echo "current_revision=${CURRENT_REV}" >> $GITHUB_OUTPUT
           echo "📌 Current active revision: ${CURRENT_REV}"
 
+      - name: Prepare fleet metrics
+        id: fleet
+        run: |
+          python3 scripts/configure-fleet-metrics.py \
+            --app-name "${{ secrets.APP_NAME }}" \
+            --resource-group "${{ secrets.RESOURCE_GROUP }}" \
+            --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Update Container App with new image
         id: update
         run: |
@@ -211,6 +223,9 @@ jobs:
             --name ${{ secrets.APP_NAME }} \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --image ${IMAGE_URI} \
+            --set-env-vars \
+              "FLEET_METRICS_WORKSPACE_ID=${{ steps.fleet.outputs.workspace_id }}" \
+              "FLEET_METRICS_APP_RESOURCE_ID=${{ steps.fleet.outputs.app_resource_id }}" \
             --output none
 
           echo "✅ Container App updated"

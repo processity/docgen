@@ -35,28 +35,39 @@ credentials, or user information. Event IDs are deduplicated before aggregation.
   document counts/outcomes; those counts need not equal the 60-minute backend
   completion counts.
 
-## Configuration
+## Automatic deployment setup
 
-The Container App must have its existing system-assigned managed identity and its
-environment must send console logs to Log Analytics.
+Fleet metrics are on by default for deployed backends. There is no enable switch
+and no manual fleet setting to enter in Salesforce or the Azure portal.
 
-| Environment variable | Value |
+The normal UAT, Staging, and Production image-update workflows call
+`scripts/configure-fleet-metrics.py`. It discovers the app's managed identity, the
+Container Apps environment, and its existing Log Analytics workspace. It reuses
+`infra/modules/fleet-metrics-access.bicep` to create only missing read assignments,
+then supplies the discovered metadata in the same update as the backend image.
+Existing unrelated environment variables are preserved.
+
+Full infrastructure deployments, including CI, E2E and the provisioning scripts,
+use `infra/main.bicep`, which already supplies the same metadata and scoped roles.
+The image-update preparation step also handles apps that predate that wiring.
+
+The following values are internal deployment outputs, not user configuration:
+
+| Environment variable | Discovered from |
 | --- | --- |
-| `FLEET_METRICS_ENABLED` | `true` |
-| `FLEET_METRICS_WORKSPACE_ID` | Workspace customer GUID, not its ARM resource ID |
-| `FLEET_METRICS_APP_RESOURCE_ID` | This Container App's full ARM resource ID |
+| `FLEET_METRICS_WORKSPACE_ID` | Environment's existing Log Analytics customer GUID |
+| `FLEET_METRICS_APP_RESOURCE_ID` | Container App's own Azure resource ID |
 
-The identity needs **Log Analytics Reader** scoped to the existing workspace and
-**Reader** scoped to this Container App for active revision/replica inventory.
-`infra/modules/fleet-metrics-access.bicep` defines those scoped assignments.
-`infra/main.bicep` wires them and the environment variables for infrastructure
-releases. No new workspace, database, cache, or storage account is required.
+Local development without Azure deployment metadata does not start the fleet
+heartbeat. The authenticated shared endpoint reports unavailable if deployment
+metadata is missing; it never falls back to one replica.
 
-For an existing app whose image is updated by `.github/workflows/deploy-uat.yml`,
-image deployment alone does not configure the identity or these variables. Apply
-the access module and environment settings once as an explicitly approved Azure
-configuration change; do not redeploy the entire main infrastructure template just
-to turn on metrics.
+Azure still requires **Log Analytics Reader** on the existing workspace and
+**Reader** on the app for its managed identity. The deployment identity needs
+permission to create those scoped assignments when absent. If discovery or access
+setup fails, deployment stops with an actionable error before the image update.
+Assignments are reused on subsequent deployments. No new workspace, database,
+cache, storage account, or subscription-wide permission is added.
 
 ### UAT values verified read-only
 
@@ -69,14 +80,14 @@ to turn on metrics.
 - App resource ID: `/subscriptions/e17586a0-be7a-491e-b35e-20cc104a103a/resourceGroups/docgen-uat-rg/providers/Microsoft.App/containerapps/docgen-uat`
 - Managed identity: `b66077b8-4b74-4d8d-86a6-944fc111e101`
 
-The identity currently has AcrPull and Key Vault Secrets User. The two monitoring
-read roles still need to be assigned. These values are deployment inputs, not
-evidence that the new feature is deployed.
+At the last read-only check the identity had AcrPull and Key Vault Secrets User.
+The updated deployment workflow provisions the missing monitoring read roles.
+These recorded values are not hardcoded into the deployment helper.
 
 ## Release acceptance
 
-Deploy the backend image and configure collection/read access, then install the
-Salesforce package containing `getFleetMetrics` and the updated LWC. Installing a
+Run the normal backend deployment, which configures collection/read access, then
+install the Salesforce package containing `getFleetMetrics` and the updated LWC. Installing a
 Salesforce package alone cannot enable backend collection.
 
 1. Query Azure inventory independently. `/metrics/fleet.coverage.activeReplicas`

@@ -6,15 +6,15 @@ import { recordDocument, recordStage, resetPerfMetrics } from '../src/obs/perf';
 import { startFleetHeartbeat } from '../src/obs/resources';
 
 beforeEach(() => {
-  process.env.FLEET_METRICS_ENABLED = 'true';
   process.env.FLEET_METRICS_APP_RESOURCE_ID = '/test-app';
+  process.env.FLEET_METRICS_WORKSPACE_ID = 'test-workspace';
   process.env.CONTAINER_APP_REPLICA_NAME = 'replica-a';
   mockInfo.mockClear();
 });
 afterEach(() => {
   resetPerfMetrics();
-  delete process.env.FLEET_METRICS_ENABLED;
   delete process.env.FLEET_METRICS_APP_RESOURCE_ID;
+  delete process.env.FLEET_METRICS_WORKSPACE_ID;
   delete process.env.CONTAINER_APP_REPLICA_NAME;
   jest.useRealTimers();
 });
@@ -53,8 +53,8 @@ it('publishes idle replica heartbeats without dashboard traffic and stops on clo
   jest.advanceTimersByTime(60000);
   expect(events()).toHaveLength(3);
 });
-it('does not emit when the feature is disabled', () => {
-  process.env.FLEET_METRICS_ENABLED = 'false';
+it('does not emit from local processes without deployment metadata', () => {
+  delete process.env.FLEET_METRICS_WORKSPACE_ID;
   recordDocument({ durationMs: 100, success: true });
   const stop = startFleetHeartbeat();
   stop();

@@ -205,10 +205,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             // Shared fleet metrics, collected from stdout by the environment.
             {
-              name: 'FLEET_METRICS_ENABLED'
-              value: empty(fleetMetricsWorkspaceId) ? 'false' : 'true'
-            }
-            {
               name: 'FLEET_METRICS_WORKSPACE_ID'
               value: fleetMetricsWorkspaceId
             }

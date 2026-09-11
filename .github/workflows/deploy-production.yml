@@ -136,6 +136,9 @@ jobs:
       revision_name: ${{ steps.wait-revision.outputs.revision_name }}
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -143,6 +146,15 @@ jobs:
 
       - name: Set Azure Subscription
         run: az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Prepare fleet metrics
+        id: fleet
+        run: |
+          python3 scripts/configure-fleet-metrics.py \
+            --app-name "${APP_NAME}" \
+            --resource-group "${{ secrets.RESOURCE_GROUP }}" \
+            --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Update Container App with new image
         id: update
@@ -157,6 +169,9 @@ jobs:
             --name "${APP_NAME}" \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --image ${IMAGE_URI} \
+            --set-env-vars \
+              "FLEET_METRICS_WORKSPACE_ID=${{ steps.fleet.outputs.workspace_id }}" \
+              "FLEET_METRICS_APP_RESOURCE_ID=${{ steps.fleet.outputs.app_resource_id }}" \
             --output none
 
           echo "✅ Container App updated"

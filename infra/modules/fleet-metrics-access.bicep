@@ -3,11 +3,13 @@
 param appName string
 param workspaceName string
 param principalId string
+param assignLogsReader bool = true
+param assignInventoryReader bool = true
 
 resource app 'Microsoft.App/containerApps@2023-05-01' existing = { name: appName }
 resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = { name: workspaceName }
 
-resource logsReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource logsReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignLogsReader) {
   name: guid(workspace.id, principalId, 'docgen-fleet-logs-reader')
   scope: workspace
   properties: {
@@ -17,7 +19,7 @@ resource logsReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource inventoryReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource inventoryReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignInventoryReader) {
   name: guid(app.id, principalId, 'docgen-fleet-inventory-reader')
   scope: app
   properties: {

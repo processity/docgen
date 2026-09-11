@@ -76,6 +76,15 @@ jobs:
           az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none
           echo "UAT resources found: ${RESOURCE_GROUP}/${APP_NAME}, ACR ${ACR_NAME}"
 
+      - name: Prepare fleet metrics
+        id: fleet
+        run: |
+          python3 scripts/configure-fleet-metrics.py \
+            --app-name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Login to UAT ACR
         run: az acr login --name "$ACR_NAME"
 
@@ -110,6 +119,9 @@ jobs:
             --name "$APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${{ steps.image.outputs.image_uri }}" \
+            --set-env-vars \
+              "FLEET_METRICS_WORKSPACE_ID=${{ steps.fleet.outputs.workspace_id }}" \
+              "FLEET_METRICS_APP_RESOURCE_ID=${{ steps.fleet.outputs.app_resource_id }}" \
             --output none
 
       - name: Wait for new revision

@@ -1,7 +1,7 @@
 import { getRuntimeSnapshot } from './perf';
 import { getLibreOfficeConverter } from '../convert/soffice';
 import { templateCache } from '../templates/cache';
-import { emitFleetMetric } from './fleet-events';
+import { emitFleetMetric, hasFleetMetricsConfiguration } from './fleet-events';
 
 export function getResourceSnapshot() {
   const runtime = getRuntimeSnapshot();
@@ -47,7 +47,7 @@ export function getResourceSnapshot() {
 export type ResourceSnapshot = ReturnType<typeof getResourceSnapshot>;
 
 export function startFleetHeartbeat(): () => void {
-  if (process.env.FLEET_METRICS_ENABLED !== 'true') return () => {};
+  if (!hasFleetMetricsConfiguration()) return () => {};
   const publish = () => {
     try {
       emitFleetMetric('resource', getResourceSnapshot());

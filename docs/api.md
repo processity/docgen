@@ -482,7 +482,7 @@ Resource totals are null until coverage is complete. CPU is weighted by allocate
 cores, memory by total capacity, and cache hit rate by summed hits/misses from active
 processes. Historical timing events survive replica restarts in the shared store.
 Azure Monitor ingestion can lag by several minutes. A partial query response is an
-error, not a valid fleet total. If shared collection is disabled or query access fails,
+error, not a valid fleet total. If deployment metadata is missing or query access fails,
 the endpoint returns 503; it never substitutes a local snapshot.
 
 See [fleet metrics setup](fleet-metrics.md) for configuration and release checks.

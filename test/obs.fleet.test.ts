@@ -143,7 +143,6 @@ describe('shared fleet reader', () => {
     ],
   });
   beforeEach(() => {
-    process.env.FLEET_METRICS_ENABLED = 'true';
     process.env.FLEET_METRICS_APP_RESOURCE_ID = APP;
     process.env.FLEET_METRICS_WORKSPACE_ID = 'f7f7cbf0-dd54-4201-8049-612c954a46ff';
     mockToken.mockResolvedValue({ token: 'test-token' });
@@ -157,11 +156,11 @@ describe('shared fleet reader', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.clearAllMocks();
-    delete process.env.FLEET_METRICS_ENABLED;
     delete process.env.FLEET_METRICS_APP_RESOURCE_ID;
+  delete process.env.FLEET_METRICS_WORKSPACE_ID;
     delete process.env.FLEET_METRICS_WORKSPACE_ID;
   });
-  it('reads shared logs and inventory once for concurrent callers and cached refreshes', async () => {
+  it('works without an enable flag and shares the query across concurrent callers and refreshes', async () => {
     const read = createFleetReader();
     const [one, two] = await Promise.all([read(), read()]);
     expect(one).toEqual(two);
@@ -209,11 +208,11 @@ describe('shared fleet reader', () => {
     expect(result.coverage.inventoryAvailable).toBe(false);
     expect(fetchMock.mock.calls.every(([url]) => !url.includes('untrusted'))).toBe(true);
   });
-  it('never falls back to local metrics when disabled or Azure fails', async () => {
-    process.env.FLEET_METRICS_ENABLED = 'false';
+  it('never falls back to local metrics when deployment metadata is missing or Azure fails', async () => {
+    delete process.env.FLEET_METRICS_WORKSPACE_ID;
     await expect(createFleetReader()()).rejects.toThrow('not configured');
     expect(fetchMock).not.toHaveBeenCalled();
-    process.env.FLEET_METRICS_ENABLED = 'true';
+    process.env.FLEET_METRICS_WORKSPACE_ID = 'f7f7cbf0-dd54-4201-8049-612c954a46ff';
     fetchMock.mockResolvedValue(response({}, false));
     await expect(createFleetReader()()).rejects.toThrow('Azure Monitor query unavailable');
   });
