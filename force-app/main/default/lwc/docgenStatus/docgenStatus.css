@@ -424,3 +424,8 @@ h3 {
         font-size: 0.55rem;
     }
 }
+
+.replica-name { overflow-wrap: anywhere; font-size: .85rem; }
+.replica-details { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; font-size: .8rem; }
+.replica-details dt { color: #5c6c7f; }
+.replica-details dd { text-align: right; }

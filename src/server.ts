@@ -12,6 +12,7 @@ import { createSalesforceAuth } from './sf/auth';
 import { createErrorHandler } from './errors';
 import { pollerService } from './worker';
 import { initializeAppInsights, startCpuSampler } from './obs';
+import { startFleetHeartbeat } from './obs/resources';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -73,6 +74,9 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(workerRoutes, { prefix: '/worker' });
   await app.register(previewRoutes, { prefix: '/preview' });
   await app.register(metricsRoutes, { prefix: '/metrics' });
+
+  const stopHeartbeat = startFleetHeartbeat();
+  app.addHook('onClose', async () => stopHeartbeat());
 
   return app;
 }

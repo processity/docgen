@@ -6,6 +6,9 @@ import { createSalesforceAuth } from '../../src/sf/auth';
 import { generateValidJWT } from '../helpers/jwt-helper';
 import { recordDocument, recordStage, resetPerfMetrics } from '../../src/obs/perf';
 import type { FastifyInstance } from 'fastify';
+import * as fleet from '../../src/obs/fleet';
+
+const readFleet = jest.fn();
 
 dotenvConfig();
 process.env.SFDX_AUTH_URL = 'force://PlatformCLI::refresh-token@test.salesforce.com';
@@ -22,6 +25,7 @@ describe('Metrics Routes', () => {
       sfdxAuthUrl: appConfig.sfdxAuthUrl!,
     });
 
+    jest.spyOn(fleet, 'createFleetReader').mockReturnValue(readFleet);
     app = await build();
     await app.ready();
   });
@@ -35,6 +39,7 @@ describe('Metrics Routes', () => {
 
   beforeEach(async () => {
     nock.cleanAll();
+    readFleet.mockReset();
     resetPerfMetrics();
 
     const { getMockJWKS } = await import('../helpers/jwt-helper');
@@ -64,6 +69,34 @@ describe('Metrics Routes', () => {
     const response = await app.inject({ method: 'GET', url, headers });
     return { status: response.statusCode, body: response.json() };
   }
+
+  describe('GET /metrics/fleet', () => {
+    it('requires AAD authentication before querying shared telemetry', async () => {
+      expect((await get('/metrics/fleet')).status).toBe(401);
+      expect(readFleet).not.toHaveBeenCalled();
+    });
+    it('preserves all replica rows and unavailable totals in the response', async () => {
+      readFleet.mockResolvedValue({
+        scope: 'fleet',
+        coverage: { activeReplicas: 2, complete: false },
+        resources: { cpuPercent: null },
+        replicas: [{ replicaId: 'a' }, { replicaId: 'b', freshness: 'missing' }],
+      });
+      const response = await get('/metrics/fleet', await generateValidJWT());
+      expect(response.status).toBe(200);
+      expect(response.body.replicas).toHaveLength(2);
+      expect(response.body.resources.cpuPercent).toBeNull();
+      expect(response.body.coverage.complete).toBe(false);
+    });
+    it('returns unavailable rather than a local snapshot when the shared reader fails', async () => {
+      readFleet.mockRejectedValue(new Error('Shared query denied'));
+      recordDocument({ durationMs: 100, success: true });
+      const response = await get('/metrics/fleet', await generateValidJWT());
+      expect(response.status).toBe(503);
+      expect(response.body.error).toContain('Fleet metrics unavailable');
+      expect(response.body).not.toHaveProperty('documents');
+    });
+  });
 
   describe('GET /metrics/performance', () => {
     it('should require AAD authentication', async () => {

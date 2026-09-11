@@ -25,7 +25,7 @@
             </template>
         </div>
         <lightning-tabset active-tab-value={activeTab}>
-            <lightning-tab label="Overview" value="overview" onactive={handleTabActive}>
+            <lightning-tab label="Overview &amp; Performance" value="overview" onactive={handleTabActive}>
                 <div class="two-column tab-content">
                     <section class="panel">
                         <div class="panel-heading"><h2>Document outcomes</h2><span class="scope-label">Last 24 hours</span></div>
@@ -61,122 +61,21 @@
                     </section>
                 </div>
                 <p class="scope-note">Document metrics include Salesforce records you can access, across all replicas. Canceled and unfinished requests are excluded from the success rate.</p>
-            </lightning-tab>
-            <lightning-tab label="Documents" value="documents" onactive={handleTabActive}>
-                <section class="panel tab-content">
-                    <div class="panel-heading"><div><h2>Recent documents</h2><p class="muted">Search and filter the latest 50 records you can access.</p></div>
-                        <a href="/lightning/o/Generated_Document__c/list">View all documents</a>
-                    </div>
-                    <div class="document-toolbar">
-                        <lightning-input type="search" label="Search documents" placeholder="Document, template, requester, or error" value={searchTerm} onchange={handleSearch}></lightning-input>
-                        <lightning-combobox label="Status" value={statusFilter} options={statusOptions} onchange={handleStatusFilter}></lightning-combobox>
-                        <lightning-combobox label="Rows per page" value={pageSize} options={pageSizeOptions} onchange={handlePageSize}></lightning-combobox>
-                    </div>
-                    <template if:true={documentsError}><p class="error-message" role="alert">{documentsError}</p></template>
-                    <template if:true={hasDocuments}>
-                        <div class="documents-table">
-                            <lightning-datatable key-field="id" data={pagedDocuments} columns={documentColumns}
-                                hide-checkbox-column show-row-number-column row-number-offset={rowOffset}
-                                sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}>
-                            </lightning-datatable>
-                        </div>
-                    </template>
-                    <template if:false={hasDocuments}><p class="empty-state">No recent documents match these filters.</p></template>
-                    <div class="pagination">
-                        <span class="muted" aria-live="polite">{paginationLabel}</span>
-                        <div><lightning-button label="Previous" onclick={handlePrevious} disabled={previousDisabled}></lightning-button>
-                            <lightning-button label="Next" onclick={handleNext} disabled={nextDisabled}></lightning-button></div>
-                    </div>
-                </section>
-            </lightning-tab>
-            <lightning-tab label="Performance" value="performance" onactive={handleTabActive}>
                 <div class="tab-content">
                     <div class="panel-heading"><h2>Document activity</h2><span class="scope-label">Salesforce · all replicas</span></div>
-                    <template if:true={usageLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading document activity" size="small"></lightning-spinner></div></template>
-                    <template if:true={usageError}><p class="error-message" role="alert">{usageError}</p></template>
-                    <template if:true={usage}>
-                        <div class="activity-totals">
-                            <div><strong>{usage.lastHour}</strong><span>Requested in the last hour</span></div>
-                            <div><strong>{usage.last24Hours}</strong><span>Requested in the last 24 hours</span></div>
-                            <div><strong>{usage.last7Days}</strong><span>Requested in the last 7 days</span></div>
-                            <div><strong>{usage.perHourAverage}</strong><span>Average per hour · 24h</span></div>
-                        </div>
-                        <section class="panel">
-                            <div class="panel-heading"><h3>Requests over time</h3><span class="muted">Peak: {usage.peakHourCount} · {usage.peakHourLabel}</span></div>
-                            <div class="volume-chart" role="group" aria-label="Document requests by hour over the last 24 hours">
-                                <template for:each={usage.hourly} for:item="bucket">
-                                    <div key={bucket.key} class="chart-column">
-                                        <button class="chart-bar-target" aria-label={bucket.title}>
-                                            <span class="chart-bar" style={bucket.barStyle}></span>
-                                            <span class="chart-tooltip">{bucket.title}</span>
-                                        </button>
-                                        <span class="chart-axis">{bucket.axisLabel}</span>
-                                    </div>
-                                </template>
-                            </div>
-                            <p class="muted chart-caption">Hourly buckets in your time zone. First and last hours are partial. Hover or focus a bar for its count.</p>
-                            <template if:false={usage.hasVolume}><p class="empty-state">No document requests in the last 24 hours.</p></template>
-                        </section>
-                        <div class="two-column charts-row">
-                            <section class="panel">
-                                <div class="panel-heading"><h3>Output formats</h3><span class="muted">Last 24 hours</span></div>
-                                <template if:true={usage.hasVolume}>
-                                    <div class="format-chart">
-                                        <div class="donut" style={usage.donutStyle} role="img" aria-label={usage.formatDescription}>
-                                            <div class="donut-center"><strong>{usage.last24Hours}</strong><span>requests</span></div>
-                                        </div>
-                                        <ul class="chart-legend">
-                                            <template for:each={usage.byFormat} for:item="entry">
-                                                <li key={entry.key}><span class="legend-swatch" style={entry.colorStyle}></span><span>{entry.label}</span><strong>{entry.count}</strong><span class="muted">{entry.percent}%</span></li>
-                                            </template>
-                                        </ul>
-                                    </div>
-                                </template>
-                                <template if:false={usage.hasVolume}><p class="empty-state">No format data in this window.</p></template>
-                            </section>
-                            <section class="panel">
-                                <div class="panel-heading"><h3>Most requested templates</h3><span class="muted">Top 5 · 24 hours</span></div>
-                                <div class="ranked-list">
-                                    <template for:each={usage.topTemplates} for:item="entry">
-                                        <div key={entry.key} class="ranked-row"><div class="ranked-label"><span title={entry.label}>{entry.label}</span><strong>{entry.count}</strong></div>
-                                            <div class="metric-bar"><span class="metric-bar__fill" style={entry.barStyle}></span></div>
-                                        </div>
-                                    </template>
-                                </div>
-                                <p class="muted">Requests with a linked template. Bars show share of all requests.</p>
-                            </section>
-                        </div>
+                    <template if:true={fleetLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading fleet performance" size="small"></lightning-spinner></div></template>
+                    <template if:true={fleetError}><p class="error-message" role="alert">{fleetError}</p></template>
+                    <template if:true={fleet}>
+                        <p class="scope-note"><strong>{fleet.coverageLabel}</strong> · Shared metrics as of {fleet.updatedLabel}.</p>
+                        <template if:true={fleet.incomplete}><p class="insight">Replica coverage is incomplete. Received timings are shown; missing and delayed telemetry can affect totals.</p></template>
+                        <template if:true={fleet.noTelemetry}><p class="insight">Shared timing telemetry is not available yet. Document volume below remains available from Salesforce.</p></template>
                     </template>
-                    <p class="scope-note">Volume covers records you can access across replicas. Fleet-wide processing times are not collected by the current service; Diagnostics provides a single-replica timing sample.</p>
-                </div>
-            </lightning-tab>
-            <lightning-tab label="Diagnostics" value="diagnostics" onactive={handleTabActive}>
-                <div class="tab-content">
-                    <p class="scope-note">For troubleshooting: each endpoint samples one replica independently. Timing and resource readings can come from different replicas and reset on restart.</p>
-                    <template if:true={performanceLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading processing timings" size="small"></lightning-spinner></div></template>
-                    <template if:true={performanceError}><p class="error-message" role="alert">{performanceError}</p></template>
                     <template if:true={performance}>
-                    <!-- Per-replica processing time -->
-                    <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing Time</h3>
-                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
-                        <p class="slds-text-body_small">
-                            Measured in memory on a single backend replica
-                            (<strong>{performance.replica.replicaId}</strong>, up {performance.replica.uptimeLabel}) over the
-                            last {performance.replica.windowMinutes} minutes. Each refresh may reach a different replica,
-                            so these timings are a sample rather than a fleet total. These samples reset when the replica restarts.
-                        </p>
-                    </div>
-
+                    <h3 class="slds-text-title_caps slds-m-top_large slds-m-bottom_x-small">Processing time · all replicas</h3>
+                    <p class="scope-note">Individual completion events across all replicas over the last {fleet.windowMinutes} minutes, including replicas that have since stopped. Percentiles are calculated across events; recent events may still be arriving.</p>
                     <template if:false={performance.hasSamples}>
-                        <div class="slds-box slds-box_small slds-m-bottom_small">
-                            <p class="slds-text-body_small slds-text-color_weak">
-                                No documents completed on this replica in the last
-                                {performance.replica.windowMinutes} minutes (observed {performance.replica.observedLabel}).
-                                This does not mean the service has no activity. Use Performance for document volume across replicas.
-                            </p>
-                        </div>
+                        <p class="empty-state">No completed-document timing events have arrived for this window.</p>
                     </template>
-
                     <template if:true={performance.hasSamples}>
                         <div class="slds-grid slds-wrap slds-gutters">
                             <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-5">
@@ -216,7 +115,7 @@
                             <dd class="slds-item_detail slds-truncate">
                                 {performance.perMinute} /min &middot; {performance.perHour} /hour
                             </dd>
-                            <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Sample">Sample:</dt>
+                            <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Recorded completions">Recorded completions:</dt>
                             <dd class="slds-item_detail slds-truncate">
                                 {performance.sampleCount} documents ({performance.succeeded} succeeded,
                                 {performance.failed} failed, {performance.successRate} success)
@@ -293,162 +192,125 @@
                         </template>
                     </template>
                     </template>
-                    <h2 class="slds-text-heading_small slds-m-vertical_medium">Resource snapshot</h2>
-                <template if:true={resourcesLoading}>
-                    <div class="slds-p-vertical_large slds-text-align_center">
-                        <lightning-spinner alternative-text="Loading resource metrics" size="small"></lightning-spinner>
-                    </div>
-                </template>
-
-                <template if:true={resourcesError}>
-                    <div class="slds-notify slds-notify_alert slds-alert_error" role="alert">
-                        <h2>{resourcesError}</h2>
-                    </div>
-                </template>
-
-                <template if:true={resources}>
-                    <div class="slds-box slds-box_small slds-theme_info slds-m-bottom_small">
-                        <p class="slds-text-body_small">
-                            CPU, memory, pool slots and cache contents belong to one container instance:
-                            replica <strong>{resources.replicaId}</strong>, up {resources.uptimeLabel}.
-                            Refreshing may sample a different replica.
-                        </p>
-                    </div>
-
-                    <div class="slds-grid slds-wrap slds-gutters">
-                        <!-- CPU -->
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-                            <article class="slds-card slds-p-around_small resource-card">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">CPU</h3>
-                                <template if:true={resources.cpu.hasReading}>
-                                    <div class="metric-value">{resources.cpu.percent}%</div>
-                                    <div class="metric-bar slds-m-vertical_x-small">
-                                        <span class="metric-bar__fill" style={resources.cpu.barStyle}></span>
-                                    </div>
-                                </template>
-                                <template if:false={resources.cpu.hasReading}>
-                                    <div class="metric-value">&ndash;</div>
-                                </template>
-                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
-                                    <dt class="slds-item_label slds-text-color_weak">Cores:</dt>
-                                    <dd class="slds-item_detail">{resources.cpu.cores}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Window:</dt>
-                                    <dd class="slds-item_detail">{resources.cpu.sampleLabel}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
-                                    <dd class="slds-item_detail">{resources.cpu.source}</dd>
-                                </dl>
-                            </article>
+                    <template if:true={usageLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading document activity" size="small"></lightning-spinner></div></template>
+                    <template if:true={usageError}><p class="error-message" role="alert">{usageError}</p></template>
+                    <template if:true={usage}>
+                        <div class="activity-totals">
+                            <div><strong>{usage.lastHour}</strong><span>Requested in the last hour</span></div>
+                            <div><strong>{usage.last24Hours}</strong><span>Requested in the last 24 hours</span></div>
+                            <div><strong>{usage.last7Days}</strong><span>Requested in the last 7 days</span></div>
+                            <div><strong>{usage.perHourAverage}</strong><span>Average per hour · 24h</span></div>
                         </div>
-
-                        <!-- Memory -->
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-                            <article class="slds-card slds-p-around_small resource-card">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Memory</h3>
-                                <template if:true={resources.memory.hasLimit}>
-                                    <div class="metric-value">{resources.memory.percentOfLimit}%</div>
-                                    <div class="metric-bar slds-m-vertical_x-small">
-                                        <span class="metric-bar__fill" style={resources.memory.barStyle}></span>
-                                    </div>
-                                    <div class="metric-label slds-m-bottom_x-small">
-                                        {resources.memory.usedMb} MB of {resources.memory.limitMb} MB
+                        <section class="panel">
+                            <div class="panel-heading"><h3>Requests over time</h3><span class="muted">Peak: {usage.peakHourCount} · {usage.peakHourLabel}</span></div>
+                            <div class="volume-chart" role="group" aria-label="Document requests by hour over the last 24 hours">
+                                <template for:each={usage.hourly} for:item="bucket">
+                                    <div key={bucket.key} class="chart-column">
+                                        <button class="chart-bar-target" aria-label={bucket.title}>
+                                            <span class="chart-bar" style={bucket.barStyle}></span>
+                                            <span class="chart-tooltip">{bucket.title}</span>
+                                        </button>
+                                        <span class="chart-axis">{bucket.axisLabel}</span>
                                     </div>
                                 </template>
-                                <template if:false={resources.memory.hasLimit}>
-                                    <div class="metric-value">{resources.memory.usedMb} MB</div>
-                                    <div class="metric-label slds-m-bottom_x-small">No container limit reported</div>
-                                </template>
-                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
-                                    <dt class="slds-item_label slds-text-color_weak">Node RSS:</dt>
-                                    <dd class="slds-item_detail">{resources.memory.nodeRssMb} MB</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Heap:</dt>
-                                    <dd class="slds-item_detail">{resources.memory.nodeHeapLabel}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Source:</dt>
-                                    <dd class="slds-item_detail">{resources.memory.source}</dd>
-                                </dl>
-                            </article>
-                        </div>
-
-                        <!-- LibreOffice pool -->
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-                            <article class="slds-card slds-p-around_small resource-card">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">LibreOffice Pool</h3>
-                                <div class="metric-value">{resources.pool.utilizationPercent}%</div>
-                                <div class="metric-bar slds-m-vertical_x-small">
-                                    <span class="metric-bar__fill" style={resources.pool.barStyle}></span>
-                                </div>
-                                <div class="metric-label slds-m-bottom_x-small">
-                                    {resources.pool.activeJobs} of {resources.pool.maxConcurrent} slots converting
-                                </div>
-                                <template if:true={resources.pool.isSaturated}>
-                                    <div class="slds-text-color_error slds-text-body_small slds-m-bottom_x-small">
-                                        {resources.pool.queuedJobs} conversion(s) waiting for a slot
-                                    </div>
-                                </template>
-                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
-                                    <dt class="slds-item_label slds-text-color_weak">Completed:</dt>
-                                    <dd class="slds-item_detail">{resources.pool.completedJobs}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Failed:</dt>
-                                    <dd class="slds-item_detail">{resources.pool.failedJobs}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Total:</dt>
-                                    <dd class="slds-item_detail">{resources.pool.totalConversions}</dd>
-                                </dl>
-                            </article>
-                        </div>
-
-                        <!-- Template cache -->
-                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
-                            <article class="slds-card slds-p-around_small resource-card">
-                                <h3 class="slds-text-title_caps slds-m-bottom_x-small">Template Cache</h3>
-                                <template if:true={resources.cache.hasLookups}>
-                                    <div class="metric-value">{resources.cache.hitRatePercent}%</div>
-                                    <div class="metric-bar slds-m-vertical_x-small">
-                                        <span class="metric-bar__fill" style={resources.cache.hitBarStyle}></span>
-                                    </div>
-                                    <div class="metric-label slds-m-bottom_x-small">
-                                        Hit rate &middot; {resources.cache.hits} hits, {resources.cache.misses} misses
-                                    </div>
-                                </template>
-                                <template if:false={resources.cache.hasLookups}>
-                                    <div class="metric-value">&ndash;</div>
-                                    <div class="metric-label slds-m-bottom_x-small">
-                                        No template lookups on this replica yet
-                                    </div>
-                                </template>
-                                <div class="metric-bar slds-m-bottom_x-small">
-                                    <span class="metric-bar__fill" style={resources.cache.sizeBarStyle}></span>
-                                </div>
-                                <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
-                                    <dt class="slds-item_label slds-text-color_weak">Size:</dt>
-                                    <dd class="slds-item_detail">{resources.cache.sizeLabel}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Templates:</dt>
-                                    <dd class="slds-item_detail">{resources.cache.entryCount}</dd>
-                                    <dt class="slds-item_label slds-text-color_weak">Evictions:</dt>
-                                    <dd class="slds-item_detail">{resources.cache.evictions}</dd>
-                                </dl>
-                            </article>
-                        </div>
-
-                        <!-- Event loop -->
-                        <template if:true={resources.eventLoop}>
-                            <div class="slds-col slds-size_1-of-1">
-                                <article class="slds-card slds-p-around_small">
-                                    <h3 class="slds-text-title_caps slds-m-bottom_x-small">Event Loop Delay</h3>
-                                    <dl class="slds-list_horizontal slds-wrap slds-text-body_small">
-                                        <dt class="slds-item_label slds-text-color_weak">Median:</dt>
-                                        <dd class="slds-item_detail">{resources.eventLoop.p50}</dd>
-                                        <dt class="slds-item_label slds-text-color_weak">p99:</dt>
-                                        <dd class="slds-item_detail">{resources.eventLoop.p99}</dd>
-                                        <dt class="slds-item_label slds-text-color_weak">Worst:</dt>
-                                        <dd class="slds-item_detail">{resources.eventLoop.max}</dd>
-                                    </dl>
-                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
-                                        High values mean the Node process is blocked and slow to answer requests.
-                                    </p>
-                                </article>
                             </div>
-                        </template>
+                            <p class="muted chart-caption">Hourly buckets in your time zone. First and last hours are partial. Hover or focus a bar for its count.</p>
+                            <template if:false={usage.hasVolume}><p class="empty-state">No document requests in the last 24 hours.</p></template>
+                        </section>
+                        <div class="two-column charts-row">
+                            <section class="panel">
+                                <div class="panel-heading"><h3>Output formats</h3><span class="muted">Last 24 hours</span></div>
+                                <template if:true={usage.hasVolume}>
+                                    <div class="format-chart">
+                                        <div class="donut" style={usage.donutStyle} role="img" aria-label={usage.formatDescription}>
+                                            <div class="donut-center"><strong>{usage.last24Hours}</strong><span>requests</span></div>
+                                        </div>
+                                        <ul class="chart-legend">
+                                            <template for:each={usage.byFormat} for:item="entry">
+                                                <li key={entry.key}><span class="legend-swatch" style={entry.colorStyle}></span><span>{entry.label}</span><strong>{entry.count}</strong><span class="muted">{entry.percent}%</span></li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
+                                <template if:false={usage.hasVolume}><p class="empty-state">No format data in this window.</p></template>
+                            </section>
+                            <section class="panel">
+                                <div class="panel-heading"><h3>Most requested templates</h3><span class="muted">Top 5 · 24 hours</span></div>
+                                <div class="ranked-list">
+                                    <template for:each={usage.topTemplates} for:item="entry">
+                                        <div key={entry.key} class="ranked-row"><div class="ranked-label"><span title={entry.label}>{entry.label}</span><strong>{entry.count}</strong></div>
+                                            <div class="metric-bar"><span class="metric-bar__fill" style={entry.barStyle}></span></div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <p class="muted">Requests with a linked template. Bars show share of all requests.</p>
+                            </section>
+                        </div>
+                    </template>
+                    <p class="scope-note">Document volume covers Salesforce records you can access. Processing timings cover this backend service across all replicas and can lag while Azure Monitor ingests events.</p>
+                </div>
+            </lightning-tab>
+            <lightning-tab label="Documents" value="documents" onactive={handleTabActive}>
+                <section class="panel tab-content">
+                    <div class="panel-heading"><div><h2>Recent documents</h2><p class="muted">Search and filter the latest 50 records you can access.</p></div>
+                        <a href="/lightning/o/Generated_Document__c/list">View all documents</a>
                     </div>
-                </template>
+                    <div class="document-toolbar">
+                        <lightning-input type="search" label="Search documents" placeholder="Document, template, requester, or error" value={searchTerm} onchange={handleSearch}></lightning-input>
+                        <lightning-combobox label="Status" value={statusFilter} options={statusOptions} onchange={handleStatusFilter}></lightning-combobox>
+                        <lightning-combobox label="Rows per page" value={pageSize} options={pageSizeOptions} onchange={handlePageSize}></lightning-combobox>
+                    </div>
+                    <template if:true={documentsError}><p class="error-message" role="alert">{documentsError}</p></template>
+                    <template if:true={hasDocuments}>
+                        <div class="documents-table">
+                            <lightning-datatable key-field="id" data={pagedDocuments} columns={documentColumns}
+                                hide-checkbox-column show-row-number-column row-number-offset={rowOffset}
+                                sorted-by={sortedBy} sorted-direction={sortDirection} onsort={handleSort}>
+                            </lightning-datatable>
+                        </div>
+                    </template>
+                    <template if:false={hasDocuments}><p class="empty-state">No recent documents match these filters.</p></template>
+                    <div class="pagination">
+                        <span class="muted" aria-live="polite">{paginationLabel}</span>
+                        <div><lightning-button label="Previous" onclick={handlePrevious} disabled={previousDisabled}></lightning-button>
+                            <lightning-button label="Next" onclick={handleNext} disabled={nextDisabled}></lightning-button></div>
+                    </div>
+                </section>
+            </lightning-tab>
+            <lightning-tab label="Diagnostics" value="diagnostics" onactive={handleTabActive}>
+                <div class="tab-content">
+                    <div class="panel-heading"><h2>All backend replicas</h2><span class="scope-label">Azure inventory + shared telemetry</span></div>
+                    <template if:true={fleetLoading}><div class="loading-region"><lightning-spinner alternative-text="Loading fleet metrics" size="small"></lightning-spinner></div></template>
+                    <template if:true={fleetError}><p class="error-message" role="alert">{fleetError}</p></template>
+                    <template if:true={fleet}>
+                        <p class="scope-note"><strong>{fleet.coverageLabel}</strong> · Snapshot: {fleet.updatedLabel}. Heartbeats are collected every 30 seconds; Azure Monitor ingestion can take several minutes.</p>
+                        <template if:true={fleet.incomplete}><p class="insight" role="status">Fleet resource totals are unavailable until every active replica has a recent reading. Check the replica cards for missing or stale telemetry.</p></template>
+                        <template if:true={fleet.noTelemetry}><p class="insight">No shared telemetry has arrived yet. Collection must be enabled on the backend replicas.</p></template>
+                        <div class="summary-grid">
+                            <template for:each={fleet.resourceCards} for:item="card">
+                                <article key={card.key} class="summary-card"><h3>{card.label}</h3><div class="summary-value">{card.value}</div><p class="muted">{card.detail}</p></article>
+                            </template>
+                        </div>
+                        <div class="two-column">
+                            <template for:each={fleet.replicas} for:item="replica">
+                                <section key={replica.replicaId} class="panel replica-panel">
+                                    <div class="panel-heading"><h3 class="replica-name">{replica.replicaId}</h3><lightning-badge label={replica.status} class={replica.badgeClass}></lightning-badge></div>
+                                    <p class="muted">Last reading: {replica.lastSeenLabel} · Revision: {replica.revision}</p>
+                                    <div class="ranked-list">
+                                        <div class="ranked-row"><div class="ranked-label"><span>CPU · {replica.cpuSource}</span><strong>{replica.cpuLabel}</strong></div><div class="metric-bar"><span class="metric-bar__fill" style={replica.cpuStyle}></span></div></div>
+                                        <div class="ranked-row"><div class="ranked-label"><span>Memory · {replica.memoryDetail}</span><strong>{replica.memoryLabel}</strong></div><div class="metric-bar"><span class="metric-bar__fill outcome-succeeded" style={replica.memoryStyle}></span></div></div>
+                                    </div>
+                                    <dl class="replica-details">
+                                        <dt>Conversion slots</dt><dd>{replica.poolLabel}</dd>
+                                        <dt>Cache hit rate</dt><dd>{replica.cacheLabel}</dd>
+                                        <dt>Recorded completions · 60m</dt><dd>{replica.countLabel}</dd>
+                                        <dt>Processing p95 · 60m</dt><dd>{replica.p95Label}</dd>
+                                    </dl>
+                                </section>
+                            </template>
+                        </div>
+                        <p class="scope-note">Resource totals include only current replicas. Historical cards retain received timings from stopped replicas within the reporting window. CPU and memory totals require container readings; process-only readings remain labeled on their cards.</p>
+                    </template>
                 </div>
             </lightning-tab>
         </lightning-tabset>

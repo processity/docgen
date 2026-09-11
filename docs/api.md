@@ -468,10 +468,27 @@ curl "https://docgen.azurecontainerapps.io/worker/stats" \
 These two endpoints back the **Performance Metrics** and **System Resources**
 panels on the Salesforce "System Status" page.
 
-**Everything here is per-replica.** With 1-5 replicas behind the Named
-Credential, a callout reaches one of them, so both payloads carry `replicaId`
-and consecutive calls may sample different replicas. Use SOQL over
-`Generated_Document__c` for org-wide document volume.
+### GET /metrics/fleet
+
+The dashboard uses this authenticated endpoint for a coherent cross-replica snapshot.
+Document/stage events are aggregated in the existing shared Log Analytics workspace;
+percentiles are computed over individual events, not averaged replica percentiles.
+The response has `scope: "fleet"`, `generatedAt`, a 60-minute `windowSeconds`,
+`performance`, `resources`, `replicas`, and `coverage`.
+
+`coverage` reports the active replica count from Azure inventory and how many have a
+heartbeat no older than five minutes. Missing/stale replicas are listed explicitly.
+Resource totals are null until coverage is complete. CPU is weighted by allocated
+cores, memory by total capacity, and cache hit rate by summed hits/misses from active
+processes. Historical timing events survive replica restarts in the shared store.
+Azure Monitor ingestion can lag by several minutes. A partial query response is an
+error, not a valid fleet total. If shared collection is disabled or query access fails,
+the endpoint returns 503; it never substitutes a local snapshot.
+
+See [fleet metrics setup](fleet-metrics.md) for configuration and release checks.
+
+The following two endpoints are retained for API compatibility and direct
+single-replica troubleshooting. The dashboard no longer calls them.
 
 ### GET /metrics/performance
 

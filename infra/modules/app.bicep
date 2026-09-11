@@ -64,6 +64,9 @@ param maxReplicas int = 5
 @description('Maximum concurrent LibreOffice conversions')
 param libreOfficeMaxConcurrent string = '8'
 
+@description('Existing Log Analytics workspace customer ID for shared fleet metrics')
+param fleetMetricsWorkspaceId string = ''
+
 // ============================================================================
 // Variables
 // ============================================================================
@@ -199,6 +202,19 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'POLLER_MAX_ATTEMPTS'
               value: '3'
+            }
+            // Shared fleet metrics, collected from stdout by the environment.
+            {
+              name: 'FLEET_METRICS_ENABLED'
+              value: empty(fleetMetricsWorkspaceId) ? 'false' : 'true'
+            }
+            {
+              name: 'FLEET_METRICS_WORKSPACE_ID'
+              value: fleetMetricsWorkspaceId
+            }
+            {
+              name: 'FLEET_METRICS_APP_RESOURCE_ID'
+              value: resourceId('Microsoft.App/containerApps', containerAppName)
             }
             // Observability
             {

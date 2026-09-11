@@ -653,6 +653,45 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /metrics/fleet:
+    get:
+      summary: Performance and resource metrics across all replicas
+      description: |
+        Reads deduplicated document and stage events from shared Azure Monitor Logs,
+        including replicas stopped within the last 60 minutes. Resource totals use the
+        latest heartbeat from every currently active replica, checked against Azure inventory.
+        CPU is capacity-weighted; cache hit rate uses summed hits and misses.
+        Totals are null if any active replica has missing/stale telemetry or inventory is
+        unavailable. Resource freshness is 5 minutes; logs can take minutes to arrive.
+        Azure partial query errors fail the request; there is no local-replica fallback.
+      operationId: getFleetMetrics
+      tags: [metrics]
+      security:
+        - oauth2: []
+      responses:
+        '200':
+          description: Shared fleet snapshot with performance, resources, replicas, and coverage
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scope, source, generatedAt, windowSeconds, coverage, resources, replicas, performance]
+                properties:
+                  scope: { type: string, enum: [fleet] }
+                  source: { type: string }
+                  generatedAt: { type: string, format: date-time }
+                  windowSeconds: { type: integer }
+                  coverage: { type: object, additionalProperties: true }
+                  resources: { type: object, additionalProperties: true }
+                  replicas:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  performance: { type: object, nullable: true, additionalProperties: true }
+        '401':
+          description: Authentication required
+        '503':
+          description: Shared metrics unconfigured, unauthorized, or unavailable
+
   /metrics/performance:
     get:
       summary: Get document processing times, throughput and stage timings

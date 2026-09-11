@@ -264,6 +264,16 @@ public with sharing class DocgenStatusController {
         }
     }
 
+    /** Return one coherent snapshot from the shared fleet metrics endpoint. */
+    @AuraEnabled
+    public static Map<String, Object> getFleetMetrics() {
+        try {
+            return callBackend('/metrics/fleet', 'Fleet metrics');
+        } catch (Exception e) {
+            throw new AuraHandledException('Failed to get fleet metrics: ' + e.getMessage());
+        }
+    }
+
     /**
      * Get CPU, memory, LibreOffice pool and template cache usage from /metrics/resources
      *

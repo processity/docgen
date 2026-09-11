@@ -395,11 +395,12 @@ The **Docgen** app includes:
 
 ### Metrics
 
-Per-replica metrics backing the Salesforce "System Status" page. Both carry a
-`replicaId`, because a callout reaches one replica out of several.
+The dashboard reads shared metrics across backend replicas, with inventory coverage
+and per-replica resource details. Legacy local endpoints remain for compatibility.
 
-- **GET /metrics/performance**: Processing times, throughput and per-stage timings over a rolling window
-- **GET /metrics/resources**: CPU, memory, event loop delay, LibreOffice pool and template cache utilization
+- **GET /metrics/fleet**: Shared timings, weighted resource totals, and all-replica coverage ([setup](docs/fleet-metrics.md))
+- **GET /metrics/performance** (legacy single replica): Processing times, throughput and per-stage timings over a rolling window
+- **GET /metrics/resources** (legacy single replica): CPU, memory, event loop delay, LibreOffice pool and template cache utilization
 
 See [API Reference](docs/api.md) for complete endpoint documentation.
 

@@ -1,17 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getPerformanceSnapshot, getRuntimeSnapshot } from '../obs';
-import { getLibreOfficeConverter } from '../convert/soffice';
-import { templateCache } from '../templates/cache';
+import { getPerformanceSnapshot } from '../obs';
+import { getResourceSnapshot } from '../obs/resources';
+import { createFleetReader } from '../obs/fleet';
 import { getCorrelationId } from '../utils/correlation-id';
 
 /**
  * Metrics routes backing the Salesforce "System Status" page.
  *
- * NOTE: Every number here is per-replica. In multi-replica deployments (Azure
- * Container Apps, 1-5 replicas) a Salesforce callout lands on an arbitrary
- * replica, so both payloads carry `replicaId` and callers must present these
- * as a sample of one replica rather than a fleet total. Org-wide volume comes
- * from SOQL over Generated_Document__c instead.
+ * /fleet queries shared telemetry and current Azure replica inventory.
+ * /performance and /resources remain local snapshots for API compatibility;
+ * the Salesforce dashboard uses /fleet for timing and resource metrics.
  *
  * The 200 responses declare `additionalProperties: true` rather than a full
  * property list: Fastify's serializer drops properties a response schema does
@@ -21,6 +19,34 @@ import { getCorrelationId } from '../utils/correlation-id';
  * All endpoints require AAD authentication.
  */
 export async function metricsRoutes(fastify: FastifyInstance) {
+  const readFleet = createFleetReader();
+  fastify.get(
+    '/fleet',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        description:
+          'Shared performance metrics and resource snapshots across all backend replicas',
+        tags: ['metrics'],
+        security: [{ oauth2: [] }],
+        response: { 200: { type: 'object', additionalProperties: true } },
+      },
+    },
+    async (request, reply) => {
+      const correlationId = getCorrelationId(request);
+      try {
+        return { ...(await readFleet()), correlationId };
+      } catch {
+        // Never substitute a single-replica snapshot for a failed shared query.
+        fastify.log.warn({ correlationId }, 'Fleet metrics query unavailable');
+        return reply.code(503).send({
+          error:
+            'Fleet metrics unavailable. Check workspace configuration, managed identity access, and Azure Monitor availability.',
+          correlationId,
+        });
+      }
+    }
+  );
   /**
    * GET /metrics/performance
    * Processing times, throughput and per-stage timings over a rolling window
@@ -77,47 +103,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       const correlationId = getCorrelationId(request);
 
       try {
-        const runtime = getRuntimeSnapshot();
-
-        const converter = getLibreOfficeConverter();
-        const poolStats = converter.getStats();
-        const maxConcurrent = converter.getMaxConcurrent();
-        const activeJobs = converter.getActiveJobs();
-
-        const cacheStats = templateCache.getStats();
-        const cacheLookups = cacheStats.hits + cacheStats.misses;
-        const maxCacheBytes = templateCache.getMaxSizeBytes();
-        const toMb = (bytes: number) => Math.round((bytes / (1024 * 1024)) * 10) / 10;
-
-        return reply.code(200).send({
-          ...runtime,
-          libreOfficePool: {
-            activeJobs,
-            queuedJobs: converter.getQueuedJobs(),
-            maxConcurrent,
-            utilizationPercent:
-              maxConcurrent > 0 ? Math.round((activeJobs / maxConcurrent) * 1000) / 10 : null,
-            completedJobs: poolStats.completedJobs,
-            failedJobs: poolStats.failedJobs,
-            totalConversions: poolStats.totalConversions,
-          },
-          templateCache: {
-            hits: cacheStats.hits,
-            misses: cacheStats.misses,
-            hitRatePercent:
-              cacheLookups > 0 ? Math.round((cacheStats.hits / cacheLookups) * 1000) / 10 : null,
-            lookups: cacheLookups,
-            entryCount: cacheStats.entryCount,
-            evictions: cacheStats.evictions,
-            sizeMb: toMb(cacheStats.currentSize),
-            maxSizeMb: toMb(maxCacheBytes),
-            utilizationPercent:
-              maxCacheBytes > 0
-                ? Math.round((cacheStats.currentSize / maxCacheBytes) * 1000) / 10
-                : null,
-          },
-          correlationId,
-        });
+        return reply.code(200).send({ ...getResourceSnapshot(), correlationId });
       } catch (error: any) {
         fastify.log.error({ error, correlationId }, 'Failed to get resource metrics');
 

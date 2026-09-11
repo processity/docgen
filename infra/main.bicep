@@ -165,6 +165,7 @@ module containerApp './modules/app.bicep' = {
     keyVaultId: keyVault.outputs.keyVaultId
     tenantId: tenantId
     clientId: clientId
+    fleetMetricsWorkspaceId: monitoring.outputs.workspaceCustomerId
     imageAllowlist: imageAllowlist
     tags: tags
     // Environment-specific resource allocation
@@ -174,6 +175,15 @@ module containerApp './modules/app.bicep' = {
     maxReplicas: environment == 'ci' ? 5 : 5
     // Reduce LibreOffice concurrency to give more memory per conversion
     libreOfficeMaxConcurrent: environment == 'ci' ? '5' : '8'
+  }
+}
+
+module fleetMetricsAccess './modules/fleet-metrics-access.bicep' = {
+  name: 'fleet-metrics-access'
+  params: {
+    appName: appName
+    workspaceName: monitoring.outputs.workspaceName
+    principalId: containerApp.outputs.appIdentityPrincipalId
   }
 }
 

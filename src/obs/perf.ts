@@ -19,6 +19,7 @@
  */
 
 import os from 'os';
+import { emitFleetMetric } from './fleet-events';
 import { readFileSync } from 'fs';
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
 import { createLogger } from '../utils/logger';
@@ -166,6 +167,7 @@ function prune<T extends { t: number }>(samples: T[], cutoff: number): T[] {
  * Called from leaf services so both the interactive and batch paths are covered.
  */
 export function recordStage(stage: PipelineStage, durationMs: number, ok: boolean = true): void {
+  emitFleetMetric('stage', { stage, durationMs, success: ok });
   const now = Date.now();
   const existing = stageSamples.get(stage) ?? [];
   const pruned = prune(existing, now - windowMs());
@@ -199,6 +201,10 @@ export function recordDocument(sample: {
   outputFormat?: string;
   mode?: string;
 }): void {
+  emitFleetMetric('document', {
+    durationMs: sample.durationMs, success: sample.success,
+    outputFormat: sample.outputFormat || 'UNKNOWN', mode: sample.mode || 'unknown',
+  });
   const now = Date.now();
   documentSamples = prune(documentSamples, now - windowMs());
 

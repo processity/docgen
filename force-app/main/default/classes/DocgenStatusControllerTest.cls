@@ -25,6 +25,8 @@ private class DocgenStatusControllerTest {
                 res.setBody('{"isRunning":true,"currentQueueDepth":5,"lastPollTime":"2025-01-17T10:30:00Z"}');
             } else if (endpoint.endsWith('/worker/stats')) {
                 res.setBody('{"totalProcessed":100,"totalSucceeded":95,"totalFailed":5,"totalRetries":3,"uptimeSeconds":3600}');
+            } else if (endpoint.endsWith('/metrics/fleet')) {
+                res.setBody('{"scope":"fleet","coverage":{"activeReplicas":2,"reportingReplicas":1,"complete":false},"replicas":[{"replicaId":"a"},{"replicaId":"b"}],"resources":{"cpuPercent":null}}');
             } else if (endpoint.endsWith('/metrics/performance')) {
                 res.setBody(
                     '{"replicaId":"replica-1","windowSeconds":3600,"observedSeconds":1800,' +
@@ -391,5 +393,28 @@ private class DocgenStatusControllerTest {
             formatTotal += (Integer) ((Map<String, Object>) entry).get('count');
         }
         System.assertEquals(bucketTotal, formatTotal, 'Volume and format charts agree');
+    }
+
+    @isTest
+    static void testGetFleetMetricsPreservesCoverage() {
+        Test.setMock(HttpCalloutMock.class, new SuccessMock('/metrics/fleet'));
+        Test.startTest();
+        Map<String, Object> result = DocgenStatusController.getFleetMetrics();
+        Test.stopTest();
+        System.assertEquals('fleet', result.get('scope'));
+        System.assertEquals(2, ((List<Object>) result.get('replicas')).size());
+        System.assertEquals(false, ((Map<String, Object>) result.get('coverage')).get('complete'));
+        System.assertEquals(null, ((Map<String, Object>) result.get('resources')).get('cpuPercent'));
+    }
+
+    @isTest
+    static void testGetFleetMetricsError() {
+        Test.setMock(HttpCalloutMock.class, new ErrorMock());
+        Boolean threw = false;
+        Test.startTest();
+        try { DocgenStatusController.getFleetMetrics(); }
+        catch (AuraHandledException e) { threw = true; }
+        Test.stopTest();
+        System.assert(threw, 'Shared query failure must reach the UI instead of returning local metrics');
     }
 }
