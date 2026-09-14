@@ -15,6 +15,9 @@ The Named Credential setup consists of two components:
 1. **External Credential**: Stores Azure AD OAuth 2.0 configuration
 2. **Named Credential**: Defines the Node API endpoint and links to the External Credential
 
+For the admin Status-page **Connect / Reconnect** flow, including one-time backend
+and OAuth callback configuration, see [Backend reconnect](backend-reconnect.md).
+
 ## Defaults and migration
 
 When `Docgen_Settings__c.Named_Credential_Name__c` is blank (or no setting exists),

@@ -422,6 +422,20 @@ describe('Config', () => {
   });
 
   describe('Key Vault Integration', () => {
+    it('loads the optional reconnect secret from Key Vault when its public URL is configured', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+      process.env.DOCGEN_RECONNECT_PUBLIC_URL = 'https://docgen.example.com';
+      process.env.DOCGEN_RECONNECT_AAD_CLIENT_SECRET = 'env-secret';
+      mockLoadSecretsFromKeyVault.mockResolvedValue({ reconnectAadClientSecret: 'kv-secret' });
+
+      const config = await loadConfig();
+
+      expect(config.reconnectPublicUrl).toBe('https://docgen.example.com');
+      expect(config.reconnectAadClientSecret).toBe('kv-secret');
+      expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', expect.objectContaining({ includeReconnectSecret: true }));
+    });
+
     it('should load secrets from Key Vault in production mode', async () => {
       process.env.NODE_ENV = 'production';
       process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
@@ -440,6 +454,7 @@ describe('Config', () => {
 
       expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
         includeSfUsername: true,
+        includeReconnectSecret: false,
       });
       expect(config.sfPrivateKey).toBe('kv-private-key');
       expect(config.sfClientId).toBe('kv-client-id');
@@ -526,6 +541,7 @@ describe('Config', () => {
       expect(config.sfUsername).toBe('integration@uipath.com.uatfull');
       expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
         includeSfUsername: false,
+        includeReconnectSecret: false,
       });
       // Env var used where KV doesn't have it
       expect(config.sfClientId).toBe('env-client-id');
@@ -542,6 +558,7 @@ describe('Config', () => {
       expect(config.sfUsername).toBe('kv-user@example.com');
       expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
         includeSfUsername: true,
+        includeReconnectSecret: false,
       });
     });
   });

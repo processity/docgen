@@ -59,6 +59,8 @@ export async function loadConfig(): Promise<AppConfig> {
     sfUsername: process.env.SF_USERNAME?.trim() || undefined,
     sfClientId: process.env.SF_CLIENT_ID,
     sfPrivateKey: loadPrivateKey(),
+    reconnectPublicUrl: process.env.DOCGEN_RECONNECT_PUBLIC_URL,
+    reconnectAadClientSecret: process.env.DOCGEN_RECONNECT_AAD_CLIENT_SECRET,
     // Salesforce SFDX Auth URL (alternative to JWT Bearer)
     sfdxAuthUrl: process.env.SFDX_AUTH_URL,
     // Salesforce access token (short-lived CI/scratch org auth)
@@ -93,6 +95,7 @@ export async function loadConfig(): Promise<AppConfig> {
   if (nodeEnv === 'production' && keyVaultUri) {
     const kvSecrets = await loadSecretsFromKeyVault(keyVaultUri, {
       includeSfUsername: !config.sfUsername,
+      includeReconnectSecret: !!config.reconnectPublicUrl,
     });
 
     // Merge Key Vault secrets into config (KV takes precedence over env vars)
@@ -119,6 +122,9 @@ export async function loadConfig(): Promise<AppConfig> {
     }
     if (kvSecrets.sfInstanceUrl) {
       config.sfInstanceUrl = kvSecrets.sfInstanceUrl;
+    }
+    if (kvSecrets.reconnectAadClientSecret) {
+      config.reconnectAadClientSecret = kvSecrets.reconnectAadClientSecret;
     }
   }
 

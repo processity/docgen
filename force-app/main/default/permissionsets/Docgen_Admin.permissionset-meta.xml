@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <classAccesses>
+        <apexClass>DocgenConnectionController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>Docgen_Manage_Connection</name>
+    </customPermissions>
+    <description>Assign with Docgen_User to administrators who already have permission to manage Named Credentials.</description>
+    <label>Docgen Admin</label>
+</PermissionSet>

@@ -10,9 +10,14 @@
             </div>
             <div class="header-actions">
                 <span class="muted" aria-live="polite">{updatedLabel}</span>
+                <template if:true={canManageConnection}>
+                    <lightning-button label={connectLabel} icon-name="utility:link" onclick={handleReconnect} disabled={isConnecting}></lightning-button>
+                </template>
                 <lightning-button label="Refresh" icon-name="utility:refresh" onclick={handleRefresh} disabled={isRefreshing}></lightning-button>
             </div>
         </header>
+        <template if:true={connectionMessage}><p class="slds-m-top_small" role="status">{connectionMessage}</p></template>
+        <template if:true={connectionError}><p class="error-message" role="alert">{connectionError}</p></template>
         <template if:true={isLoading}>
             <div class="loading-region"><lightning-spinner alternative-text="Refreshing dashboard" size="small"></lightning-spinner></div>
         </template>

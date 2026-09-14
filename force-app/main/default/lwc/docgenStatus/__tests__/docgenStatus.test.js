@@ -8,6 +8,8 @@ import getRecentDocuments from '@salesforce/apex/DocgenStatusController.getRecen
 import getPerformanceMetrics from '@salesforce/apex/DocgenStatusController.getPerformanceMetrics';
 import getResourceMetrics from '@salesforce/apex/DocgenStatusController.getResourceMetrics';
 import getUsageMetrics from '@salesforce/apex/DocgenStatusController.getUsageMetrics';
+import getReconnectInfo from '@salesforce/apex/DocgenConnectionController.getReconnectInfo';
+import checkConnection from '@salesforce/apex/DocgenConnectionController.checkConnection';
 
 jest.mock(
   '@salesforce/apex/DocgenStatusController.getSystemStatus',
@@ -56,6 +58,10 @@ jest.mock(
   () => ({ default: jest.fn() }),
   { virtual: true }
 );
+
+jest.mock('@salesforce/apex/DocgenConnectionController.getReconnectInfo', () => ({ default: jest.fn() }), { virtual: true });
+jest.mock('@salesforce/apex/DocgenConnectionController.checkConnection', () => ({ default: jest.fn() }), { virtual: true });
+jest.mock('@salesforce/customPermission/Docgen_Manage_Connection', () => ({ default: true }), { virtual: true });
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -189,6 +195,7 @@ describe('c-docgen-status dashboard', () => {
   afterEach(() => {
     while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('loads Salesforce volume and current-replica timings on the combined first tab', async () => {
@@ -352,4 +359,80 @@ describe('c-docgen-status dashboard', () => {
     await flushPromises();
     expect(textOf(element)).toContain('Node process only (LibreOffice not counted)');
   });
+});
+
+
+describe('Docgen reconnect', () => {
+  const info = { orgId: '00D000000000001AAA', userId: '005000000000001AAA',
+    namedCredential: 'Custom_Backend', backendUrl: 'https://custom-backend.example.com' };
+  let popup;
+  beforeEach(() => {
+    getReconnectInfo.mockResolvedValue(info);
+    checkConnection.mockResolvedValue({ connected: true, orgId: info.orgId, integrationUsername: 'integration@uipath.com.uatfull' });
+    popup = { closed: false, location: '', close: jest.fn(() => { popup.closed = true; }) };
+    jest.spyOn(window, 'open').mockReturnValue(popup);
+  });
+  afterEach(() => {
+    while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
+    jest.restoreAllMocks();
+    jest.clearAllMocks();
+  });
+  function notify(data = {}, origin = 'https://custom-backend.example.com', source = popup) {
+    window.dispatchEvent(new MessageEvent('message', { origin, source, data: {
+      type: 'docgen:reconnect', success: true, orgId: info.orgId, namedCredential: info.namedCredential, ...data
+    } }));
+  }
+  it('opens the resolved override endpoint without relying on an authenticated Named Credential callout', async () => {
+    const element = createStatusPage();
+    await flushPromises();
+    button(element, 'Connect / Reconnect').click();
+    expect(window.open).toHaveBeenCalled();
+    await flushPromises();
+    const url = new URL(popup.location);
+    expect(url.origin).toBe('https://custom-backend.example.com');
+    expect(url.pathname).toBe('/connect/start');
+    expect(url.searchParams.get('namedCredential')).toBe(info.namedCredential);
+    expect(url.searchParams.get('orgId')).toBe(info.orgId);
+    expect(url.searchParams.get('sourceOrigin')).toBe(window.location.origin);
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(button(element, 'Connecting…').disabled).toBe(true);
+  });
+  it('requires a matching popup message and a fresh connection check before reporting success', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    notify({}, 'https://attacker.example.com');
+    notify({}, 'https://custom-backend.example.com', window);
+    notify({ orgId: 'different-org' });
+    expect(checkConnection).not.toHaveBeenCalled();
+    notify(); await flushPromises();
+    expect(checkConnection).toHaveBeenCalledTimes(1);
+    expect(textOf(element)).toContain('Both directions verified as integration@uipath.com.uatfull');
+    expect(popup.close).toHaveBeenCalled();
+  });
+  it('reports a failed final check rather than trusting popup success', async () => {
+    checkConnection.mockRejectedValue({ body: { message: 'Wrong backend org' } });
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    notify(); await flushPromises();
+    expect(textOf(element)).toContain('Wrong backend org');
+    expect(textOf(element)).not.toContain('Both directions verified as');
+  });
+  it('handles declined authorization and blocked popups without claiming a connection', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    notify({ success: false, message: 'Authorization declined' }); await flushPromises();
+    expect(textOf(element)).toContain('Authorization declined');
+    expect(checkConnection).not.toHaveBeenCalled();
+    window.open.mockReturnValue(null);
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(textOf(element)).toContain('Allow popups');
+  });
+  it('closes the popup and reports missing credential metadata', async () => {
+    getReconnectInfo.mockRejectedValue({ body: { message: 'Named Credential is missing' } });
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(textOf(element)).toContain('Named Credential is missing');
+    expect(popup.close).toHaveBeenCalled();
+  });
+
 });

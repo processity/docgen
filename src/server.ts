@@ -3,6 +3,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { healthRoutes } from './routes/health';
 import { generateRoutes } from './routes/generate';
 import { authTestRoutes } from './routes/auth-test';
+import { connectRoutes } from './routes/connect';
 import { workerRoutes } from './routes/worker';
 import { previewRoutes } from './routes/preview';
 import { metricsRoutes } from './routes/metrics';
@@ -70,6 +71,7 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(generateRoutes);
   await app.register(authTestRoutes);
+  await app.register(connectRoutes, { config });
   await app.register(workerRoutes, { prefix: '/worker' });
   await app.register(previewRoutes, { prefix: '/preview' });
   await app.register(metricsRoutes, { prefix: '/metrics' });

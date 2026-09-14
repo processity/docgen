@@ -38,6 +38,14 @@ describe('Key Vault Secrets Loader', () => {
   });
 
   describe('loadSecretsFromKeyVault', () => {
+    it('loads the reconnect secret only when the feature is configured', async () => {
+      mockSecretClient.getSecret.mockImplementation(async (name) => ({ value: name === 'DOCGEN-RECONNECT-AAD-CLIENT-SECRET' ? 'reconnect-secret' : undefined, name, properties: {} } as any));
+      expect((await loadSecretsFromKeyVault(mockKeyVaultUri)).reconnectAadClientSecret).toBeUndefined();
+      expect(mockSecretClient.getSecret).not.toHaveBeenCalledWith('DOCGEN-RECONNECT-AAD-CLIENT-SECRET');
+      expect((await loadSecretsFromKeyVault(mockKeyVaultUri, { includeReconnectSecret: true })).reconnectAadClientSecret).toBe('reconnect-secret');
+      expect(mockSecretClient.getSecret).toHaveBeenCalledWith('DOCGEN-RECONNECT-AAD-CLIENT-SECRET');
+    });
+
     it('should skip SF-USERNAME when deployment supplies it and still load authentication secrets', async () => {
       mockSecretClient.getSecret.mockImplementation(async (name) => ({
         value: name === 'SF-PRIVATE-KEY' ? 'test-private-key' : undefined,

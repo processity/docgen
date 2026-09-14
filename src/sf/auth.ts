@@ -326,7 +326,7 @@ export class SalesforceAuth {
       const tokenResponse = response.data;
 
       if (!tokenResponse.access_token) {
-        logger.error({ tokenResponse }, 'Malformed token response from Salesforce');
+        logger.error('Malformed token response from Salesforce: missing access_token');
         throw new Error('Malformed token response: missing access_token');
       }
 
@@ -350,7 +350,7 @@ export class SalesforceAuth {
 
       return tokenResponse.access_token;
     } catch (error: unknown) {
-      logger.error({ error }, 'Failed to fetch Salesforce access token via refresh token');
+      logger.error({ message: error instanceof Error ? error.message : 'Authentication failed' }, 'Failed to fetch Salesforce access token via refresh token');
 
       // Re-throw axios errors with better messages
       if (isAxiosError(error) && error.response) {
@@ -403,7 +403,7 @@ export class SalesforceAuth {
       const tokenResponse = response.data;
 
       if (!tokenResponse.access_token) {
-        logger.error({ tokenResponse }, 'Malformed token response from Salesforce');
+        logger.error('Malformed token response from Salesforce: missing access_token');
         throw new Error('Malformed token response: missing access_token');
       }
 
@@ -427,7 +427,7 @@ export class SalesforceAuth {
 
       return tokenResponse.access_token;
     } catch (error: unknown) {
-      logger.error({ error }, 'Failed to fetch Salesforce access token');
+      logger.error({ message: error instanceof Error ? error.message : 'Authentication failed' }, 'Failed to fetch Salesforce access token');
 
       // Re-throw axios errors with better messages
       if (isAxiosError(error) && error.response) {

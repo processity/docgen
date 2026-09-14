@@ -5,6 +5,9 @@ import getRecentDocuments from '@salesforce/apex/DocgenStatusController.getRecen
 import getPerformanceMetrics from '@salesforce/apex/DocgenStatusController.getPerformanceMetrics';
 import getResourceMetrics from '@salesforce/apex/DocgenStatusController.getResourceMetrics';
 import getUsageMetrics from '@salesforce/apex/DocgenStatusController.getUsageMetrics';
+import getReconnectInfo from '@salesforce/apex/DocgenConnectionController.getReconnectInfo';
+import checkConnection from '@salesforce/apex/DocgenConnectionController.checkConnection';
+import canManageConnection from '@salesforce/customPermission/Docgen_Manage_Connection';
 
 const STAGE_LABELS = {
     templateFetch: 'Template fetch',
@@ -42,6 +45,15 @@ export default class DocgenStatus extends LightningElement {
     sortedBy = 'createdDate';
     sortDirection = 'desc';
     diagnosticsVisited = false;
+    isConnecting = false;
+    connectionMessage;
+    connectionError;
+    reconnectPopup;
+    reconnectOrigin;
+    reconnectInfo;
+    reconnectTimer;
+    reconnectListener;
+    verifyingConnection = false;
 
     pageSizeOptions = [
         { label: '10', value: '10' },
@@ -87,9 +99,92 @@ export default class DocgenStatus extends LightningElement {
     ];
 
     connectedCallback() {
+        this.reconnectListener = this.handleReconnectMessage.bind(this);
+        window.addEventListener('message', this.reconnectListener);
         this.loadAllData();
         this.loadUsage();
         this.loadPerformance();
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('message', this.reconnectListener);
+        this.clearReconnect();
+    }
+
+    get canManageConnection() { return canManageConnection; }
+    get connectLabel() { return this.isConnecting ? 'Connecting…' : 'Connect / Reconnect'; }
+
+    async handleReconnect() {
+        if (this.isConnecting || !this.canManageConnection) return;
+        this.connectionError = null;
+        this.connectionMessage = null;
+        this.isConnecting = true;
+        // Open synchronously with the click so browser popup blockers do not block OAuth.
+        try {
+            this.reconnectPopup = window.open('about:blank', '_blank', 'popup,width=680,height=800');
+            if (!this.reconnectPopup) {
+                this.connectionError = 'Allow popups for Salesforce, then click Connect / Reconnect again.';
+                this.isConnecting = false;
+                return;
+            }
+            this.reconnectInfo = await getReconnectInfo();
+            if (!this.isConnected) { this.clearReconnect(); return; }
+            const url = new URL(`${this.reconnectInfo.backendUrl}/connect/start`);
+            if (url.protocol !== 'https:') throw new Error('The selected backend must use HTTPS.');
+            this.reconnectOrigin = url.origin;
+            url.searchParams.set('orgId', this.reconnectInfo.orgId);
+            url.searchParams.set('userId', this.reconnectInfo.userId);
+            url.searchParams.set('namedCredential', this.reconnectInfo.namedCredential);
+            url.searchParams.set('sourceOrigin', window.location.origin);
+            this.reconnectPopup.location = url.toString();
+            this.connectionMessage = 'Complete Salesforce authorization in the connection window.';
+            this.reconnectTimer = setInterval(() => {
+                if (this.reconnectPopup?.closed && !this.verifyingConnection) this.finishReconnect();
+            }, 1000);
+        } catch (error) {
+            this.connectionError = this.reduceErrors(error);
+            this.clearReconnect();
+        }
+    }
+
+    handleReconnectMessage(event) {
+        if (!this.isConnecting || this.verifyingConnection || event.origin !== this.reconnectOrigin || event.source !== this.reconnectPopup
+            || event.data?.type !== 'docgen:reconnect' || event.data.orgId !== this.reconnectInfo?.orgId
+            || event.data.namedCredential !== this.reconnectInfo?.namedCredential) return;
+        if (event.data.success === true) {
+            this.finishReconnect();
+        } else {
+            this.connectionError = event.data.message || 'Reconnect did not complete. Please retry.';
+            this.clearReconnect();
+        }
+    }
+
+    async finishReconnect() {
+        if (this.verifyingConnection) return;
+        this.verifyingConnection = true;
+        clearInterval(this.reconnectTimer);
+        try {
+            const result = await checkConnection();
+            if (!result?.connected || result.orgId !== this.reconnectInfo.orgId) {
+                throw new Error('Both connection directions could not be verified for this org.');
+            }
+            this.connectionMessage = `Connected. Both directions verified as ${result.integrationUsername}.`;
+        } catch (error) {
+            this.connectionError = this.reduceErrors(error);
+            this.connectionMessage = null;
+        } finally {
+            this.clearReconnect();
+            this.verifyingConnection = false;
+            if (this.isConnected) this.handleRefresh();
+        }
+    }
+
+    clearReconnect() {
+        clearInterval(this.reconnectTimer);
+        if (this.reconnectPopup && !this.reconnectPopup.closed) this.reconnectPopup.close();
+        this.reconnectPopup = null;
+        this.isConnecting = false;
+        if (this.connectionError) this.connectionMessage = null;
     }
 
     // Each source fails independently so a backend outage does not hide the queue.
@@ -256,7 +351,7 @@ export default class DocgenStatus extends LightningElement {
             : '0 documents';
     }
     get isRefreshing() {
-        return this.isLoading || this.usageLoading || this.performanceLoading || this.resourcesLoading;
+        return this.isConnecting || this.isLoading || this.usageLoading || this.performanceLoading || this.resourcesLoading;
     }
     get updatedLabel() {
         return this.lastUpdated ? `Last refresh: ${this.lastUpdated}` : 'Loading status…';
