@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Configure Named Credential URL for Scratch Org
+# Configure Named Credential URL for a Salesforce Org
 # ============================================================================
 # This script configures the Named Credential in a Salesforce org
 # with the backend URL.
@@ -10,11 +10,12 @@
 #   - Enables the scratch org to make callouts to the backend
 #
 # Usage:
-#   ./scripts/configure-named-credential.sh [org-alias] [backend-url]
+#   ./scripts/configure-named-credential.sh [org-alias] [backend-url] [named-credential]
 #
 # Arguments:
 #   org-alias       Optional. Salesforce org alias. Defaults to 'docgen-dev'
 #   backend-url     Optional. Backend URL. Falls back to BACKEND_URL env var
+#   named-credential Optional. Docgen_Node_API_Sandbox (default) or Docgen_Node_API
 #
 # Environment Variables:
 #   BACKEND_URL     Backend URL (e.g., https://docgen-ci.bravemeadow-58840dba.eastus.azurecontainerapps.io)
@@ -41,6 +42,7 @@ NC='\033[0m' # No Color
 # Configuration
 ORG_ALIAS="${1:-docgen-dev}"
 BACKEND_URL="${2:-${BACKEND_URL:-}}"
+NAMED_CREDENTIAL="${3:-Docgen_Node_API_Sandbox}"
 APEX_TEMPLATE="scripts/ConfigureNamedCredential.apex"
 
 # Functions
@@ -61,9 +63,14 @@ log_error() {
 }
 
 # Validate inputs
+case "$NAMED_CREDENTIAL" in
+    Docgen_Node_API_Sandbox|Docgen_Node_API) ;;
+    *) log_error "Named Credential must be Docgen_Node_API_Sandbox or Docgen_Node_API"; exit 1 ;;
+esac
+
 if [ -z "$BACKEND_URL" ]; then
     log_error "Backend URL not provided"
-    log_info "Usage: $0 [org-alias] [backend-url]"
+    log_info "Usage: $0 [org-alias] [backend-url] [named-credential]"
     log_info "Or set BACKEND_URL environment variable"
     exit 1
 fi
@@ -88,7 +95,7 @@ echo ""
 
 log_info "Org Alias: $ORG_ALIAS"
 log_info "Backend URL: $BACKEND_URL"
-log_info "Named Credential: Docgen_Node_API_CI"
+log_info "Named Credential: $NAMED_CREDENTIAL"
 echo ""
 
 # Create temporary file for the Apex script
@@ -100,6 +107,7 @@ trap "rm -f '$TEMP_APEX'" EXIT
 # Substitute placeholder in the Apex template
 log_info "Preparing Apex script..."
 sed -e "s|{{BACKEND_URL}}|$BACKEND_URL|g" \
+    -e "s|{{NAMED_CREDENTIAL}}|$NAMED_CREDENTIAL|g" \
     "$APEX_TEMPLATE" > "$TEMP_APEX"
 
 log_success "Apex script prepared"
@@ -114,7 +122,7 @@ if sf apex run --file "$TEMP_APEX" --target-org "$ORG_ALIAS"; then
     log_success "Named Credential configured successfully!"
     log_success "==================================================="
     echo ""
-    log_info "The scratch org can now make callouts to:"
+    log_info "The org can now make callouts to:"
     log_info "  $BACKEND_URL"
     echo ""
 else

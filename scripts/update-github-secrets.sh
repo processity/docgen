@@ -152,28 +152,7 @@ gh secret list --env "$ENVIRONMENT" -R "$REPO"
 
 echo ""
 echo "============================================================================"
-echo -e "${GREEN}Next Steps:${NC}"
-echo "1. Re-run the failed deployment workflow:"
-echo "   gh workflow run deploy-staging.yml -R $REPO"
-echo ""
-echo "2. Monitor the deployment:"
-echo "   gh run watch -R $REPO"
-echo ""
-echo "3. Check deployment status:"
-echo "   gh run list --workflow=deploy-staging.yml -R $REPO"
-echo ""
+echo "The staging deployment workflow has been retired."
+echo "This legacy helper only updates secrets; it does not trigger a deployment."
+echo "Use docs/deploy.md for the UAT and production deployment procedures."
 echo "============================================================================"
-
-# Optional: Ask if user wants to trigger deployment now
-echo ""
-read -p "Do you want to trigger the staging deployment now? (y/n) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Triggering staging deployment...${NC}"
-    if gh workflow run deploy-staging.yml -R "$REPO"; then
-        echo -e "${GREEN}✓ Deployment triggered successfully!${NC}"
-        echo "Run 'gh run watch -R $REPO' to monitor the deployment."
-    else
-        echo -e "${RED}Failed to trigger deployment. Please run manually.${NC}"
-    fi
-fi

@@ -5,16 +5,18 @@
  * to verify the Named Credential is working correctly.
  */
 
+String namedCredentialName = DocgenConnectionConfig.getNamedCredentialName();
+
 try {
     System.debug(LoggingLevel.INFO, '=== Testing Named Credential Callout ===');
-    System.debug(LoggingLevel.INFO, 'Named Credential: Docgen_Node_API_CI');
-    System.debug(LoggingLevel.INFO, 'Endpoint: callout:Docgen_Node_API_CI/worker/status');
+    System.debug(LoggingLevel.INFO, 'Named Credential: ' + namedCredentialName);
+    System.debug(LoggingLevel.INFO, 'Endpoint: callout:' + namedCredentialName + '/worker/status');
     System.debug(LoggingLevel.INFO, 'Note: This endpoint requires authentication');
     System.debug(LoggingLevel.INFO, '');
 
     // Make HTTP callout using Named Credential
     HttpRequest req = new HttpRequest();
-    req.setEndpoint('callout:Docgen_Node_API_CI/worker/status');
+    req.setEndpoint('callout:' + namedCredentialName + '/worker/status');
     req.setMethod('GET');
     req.setTimeout(10000); // 10 seconds
 

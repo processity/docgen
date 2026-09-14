@@ -109,8 +109,8 @@ jobs:
           echo "Configuring External Credential with AAD client credentials..."
           echo "Using org alias: ${ORG_ALIAS}"
 
-          # Use the configure-external-credential.sh script with CI environment
-          ./scripts/configure-external-credential.sh "${ORG_ALIAS}" CI "$AAD_CLIENT_ID" "$AAD_CLIENT_SECRET"
+          # Use the configure-external-credential.sh script with SANDBOX selection
+          ./scripts/configure-external-credential.sh "${ORG_ALIAS}" SANDBOX "$AAD_CLIENT_ID" "$AAD_CLIENT_SECRET"
 
           if [ $? -eq 0 ]; then
             echo "✅ External Credential configured successfully"
@@ -371,7 +371,7 @@ jobs:
           cat /tmp/readyz-response.json 2>/dev/null || echo "No response captured"
           exit 1
 
-      - name: Configure CI Named Credential URL
+      - name: Configure Sandbox Named Credential URL for CI backend
         run: |
           ./scripts/configure-named-credential.sh "${{ steps.create-org.outputs.org_alias }}" "${BACKEND_URL}"
 

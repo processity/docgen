@@ -1,21 +1,20 @@
 /**
- * Configure Named Credential URL for CI environment
+ * Configure the selected Named Credential URL
  *
  * Template file for setting the backend URL on Named Credential.
- * Placeholder {{BACKEND_URL}} must be replaced via shell substitution.
+ * Placeholders {{BACKEND_URL}} and {{NAMED_CREDENTIAL}} are replaced by the shell helper.
  *
  * Usage:
- *   sed -e "s|{{BACKEND_URL}}|$BACKEND_URL|g" \
- *       scripts/ConfigureNamedCredential.apex > /tmp/configure-nc.apex
- *   sf apex run --file /tmp/configure-nc.apex
+ *   ./scripts/configure-named-credential.sh <org> <backend-url> [named-credential]
  */
 
 // TEMPLATE PLACEHOLDER - Replace via shell string substitution
 String backendUrl = '{{BACKEND_URL}}';
+String namedCredentialName = '{{NAMED_CREDENTIAL}}';
 
 try {
     System.debug(LoggingLevel.INFO, 'Configuring Named Credential URL');
-    System.debug(LoggingLevel.INFO, 'Named Credential: Docgen_Node_API_CI');
+    System.debug(LoggingLevel.INFO, 'Named Credential: ' + namedCredentialName);
     System.debug(LoggingLevel.INFO, 'Backend URL: ' + backendUrl);
 
     // Validate URL format
@@ -27,8 +26,9 @@ try {
     // ConnectApi.NamedCredentials.updateNamedCredential takes the developer name
     // as the method argument; NamedCredentialInput carries the replacement config.
     ConnectApi.NamedCredentialInput ncInput = new ConnectApi.NamedCredentialInput();
-    ncInput.developerName = 'Docgen_Node_API_CI';
-    ncInput.masterLabel = 'Docgen Node API (CI)';
+    ncInput.developerName = namedCredentialName;
+    ncInput.masterLabel = namedCredentialName == 'Docgen_Node_API_Sandbox'
+        ? 'Docgen Node API (Sandbox)' : 'Docgen Node API';
     ncInput.type = ConnectApi.NamedCredentialType.SecuredEndpoint;
     ncInput.calloutUrl = backendUrl;
 
@@ -39,15 +39,15 @@ try {
     ncInput.calloutOptions = calloutOptions;
 
     ConnectApi.ExternalCredentialInput externalCredential = new ConnectApi.ExternalCredentialInput();
-    externalCredential.developerName = 'Docgen_AAD_Credential_CI';
+    externalCredential.developerName = 'Docgen_AAD_Credential';
     ncInput.externalCredentials = new List<ConnectApi.ExternalCredentialInput>{ externalCredential };
 
     // Check if Named Credential exists
-    Boolean exists = namedCredentialExists('Docgen_Node_API_CI');
+    Boolean exists = namedCredentialExists(namedCredentialName);
 
     if (exists) {
         System.debug(LoggingLevel.INFO, 'Named Credential exists - updating URL');
-        ConnectApi.NamedCredentials.updateNamedCredential('Docgen_Node_API_CI', ncInput);
+        ConnectApi.NamedCredentials.updateNamedCredential(namedCredentialName, ncInput);
     } else {
         System.debug(LoggingLevel.INFO, 'Named Credential does not exist - creating with URL');
         ConnectApi.NamedCredentials.createNamedCredential(ncInput);

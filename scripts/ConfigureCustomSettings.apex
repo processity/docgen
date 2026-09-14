@@ -5,7 +5,7 @@
  * Template placeholder {{NAMED_CREDENTIAL}} will be replaced via shell substitution.
  *
  * Usage:
- *   sed -e "s|{{NAMED_CREDENTIAL}}|Docgen_Node_API_CI|g" \
+ *   sed -e "s|{{NAMED_CREDENTIAL}}|Docgen_Node_API_Sandbox|g" \
  *       scripts/ConfigureCustomSettings.apex > /tmp/configure-settings.apex
  *   sf apex run --file /tmp/configure-settings.apex
  */

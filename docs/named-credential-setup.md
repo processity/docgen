@@ -15,6 +15,53 @@ The Named Credential setup consists of two components:
 1. **External Credential**: Stores Azure AD OAuth 2.0 configuration
 2. **Named Credential**: Defines the Node API endpoint and links to the External Credential
 
+## Defaults and migration
+
+When `Docgen_Settings__c.Named_Credential_Name__c` is blank (or no setting exists),
+Docgen reads `Organization.IsSandbox` and uses:
+
+| Org type | Named Credential | Packaged endpoint |
+| --- | --- | --- |
+| Sandbox | `Docgen_Node_API_Sandbox` | `https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io` |
+| Non-sandbox | `Docgen_Node_API` | Existing production endpoint |
+
+A nonblank hierarchy setting (user, profile, or org) continues to override the default.
+Generation, worker wake-up, status calls, and diagnostic scripts use the same resolver.
+Both Named Credentials link to `Docgen_AAD_Credential`, named principal `Main`.
+
+`Docgen_Node_API_CI` and its separate External Credential are retired from source.
+After installing/deploying this change:
+
+1. Configure `Docgen_AAD_Credential` / `Main` with the Entra client ID and secret for
+   the org, and assign `Docgen_User` to users who make callouts.
+2. Clear old CI overrides at the org/profile/user levels in sandbox orgs, or set
+   them to `Docgen_Node_API_Sandbox`. An explicit `Docgen_Node_API` setting in UAT
+   must also be cleared/changed to use the new default. Nonblank values are never
+   silently redirected.
+3. Scratch/CI tests explicitly select `Docgen_Node_API_Sandbox` and replace its URL
+   with their own backend URL. Do not generate scratch-org documents against UAT.
+4. Verify connectivity before removing legacy credentials from existing orgs.
+   Removing source metadata does not itself delete an installed org's components.
+
+The default fixes endpoint selection after refresh. Salesforce still requires the
+External Credential principal secrets to be populated again after refresh; backend
+Salesforce authentication must also match the refreshed org.
+[Salesforce sandbox credential considerations](https://help.salesforce.com/s/articleView?id=sf.nc_considerations.htm&language=en_US&type=5).
+
+Example UAT configuration using credentials supplied through environment variables:
+
+```bash
+./scripts/configure-external-credential.sh UipathUatfull SANDBOX
+./scripts/configure-named-credential.sh UipathUatfull \
+  https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io
+sf apex run --file scripts/TestNamedCredentialCallout.apex --target-org UipathUatfull
+```
+
+The credential helper sets an explicit override. In an actual sandbox, clear that
+setting afterward if you prefer automatic org-type selection. For production, use
+`PRODUCTION` with the credential helper and pass `Docgen_Node_API` as the URL helper's
+third argument. Keep secrets out of source control.
+
 ## Part 1: Configure External Credential
 
 ### Step 1: Navigate to External Credentials
@@ -60,7 +107,7 @@ Click **Save**. You'll be taken to the External Credential detail page.
 1. Scroll to **Principals** related list
 2. Click **New**
 3. Configure:
-   - **Principal Name**: `DocgenAADPrincipal`
+   - **Principal Name**: `Main`
    - **Sequence Number**: `1`
 4. Click **Save**
 
@@ -96,19 +143,20 @@ After saving the principal, you'll see **Authentication Parameters** section:
 
 1. From **Setup** → **Named Credentials**
 2. Click the **Named Credentials** tab
-3. Click **New** (or edit existing `Docgen_Node_API`)
+3. Edit `Docgen_Node_API_Sandbox` for a sandbox, or `Docgen_Node_API` for a non-sandbox org
 
 ### Step 2: Configure Named Credential
 
 **Basic Information**:
-- **Label**: `Docgen Node API`
-- **Name**: `Docgen_Node_API` (auto-populated)
+- **Label**: `Docgen Node API (Sandbox)` or `Docgen Node API`
+- **Name**: `Docgen_Node_API_Sandbox` or `Docgen_Node_API`
 
 **URL Configuration**:
 - **URL**: Choose based on environment:
   - **Local Development**: `http://localhost:8080`
     - ⚠️ Salesforce **cannot** call localhost from the cloud. Use this only for local Apex test execution.
-  - **Scratch Org / Sandbox**: Use ngrok or similar tunnel: `https://xxxx.ngrok.io`
+  - **Sandbox / UAT**: `https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io`
+  - **Scratch Org / CI**: Explicitly repoint `Docgen_Node_API_Sandbox` to the backend connected to that scratch org
   - **Production**: Azure Container Apps endpoint (configured in T-16):
     ```
     https://docgen-api-<unique>.ukwest.azurecontainerapps.io
@@ -117,7 +165,7 @@ After saving the principal, you'll see **Authentication Parameters** section:
 **Authentication**:
 - **External Credential**: `Docgen_AAD_Credential`
 - **Authentication Protocol**: `OAuth 2.0` (auto-selected based on External Credential)
-- **Principal**: `DocgenAADPrincipal`
+- **Principal**: `Main`
 
 **Callout Options**:
 - **Generate Authorization Header**: ✅ Checked
@@ -140,7 +188,7 @@ From Salesforce Developer Console:
 ```apex
 // Test callout (will fail if Node API not running, but proves auth works)
 HttpRequest req = new HttpRequest();
-req.setEndpoint('callout:Docgen_Node_API/healthz');
+req.setEndpoint('callout:' + DocgenConnectionConfig.getNamedCredentialName() + '/healthz');
 req.setMethod('GET');
 
 Http http = new Http();
@@ -354,6 +402,7 @@ The External Credential and Named Credential are partially defined in metadata:
 **Included in source control**:
 - `force-app/main/default/externalCredentials/Docgen_AAD_Credential.externalCredential-meta.xml`
 - `force-app/main/default/namedCredentials/Docgen_Node_API.namedCredential-meta.xml`
+- `force-app/main/default/namedCredentials/Docgen_Node_API_Sandbox.namedCredential-meta.xml`
 
 **NOT included** (configured via UI):
 - Client Secret (security best practice)
@@ -389,8 +438,8 @@ After completing Named Credential setup:
 | **Token Endpoint** | `https://login.microsoftonline.com/d8353d2a-b153-4d17-8827-902c51f72357/oauth2/v2.0/token` |
 | **Scope** | `api://f42d24be-0a17-4a87-bfc5-d6cd84339302/.default` |
 | **Secret Expires** | 2027-11-06 |
-| **Named Credential Name** | `Docgen_Node_API` |
-| **Callout Syntax** | `callout:Docgen_Node_API/generate` |
+| **Default Named Credential** | Sandbox: `Docgen_Node_API_Sandbox`; non-sandbox: `Docgen_Node_API` |
+| **Callout Syntax** | `callout:<resolved Named Credential>/generate` |
 
 ---
 

@@ -148,7 +148,7 @@ async function logOneClickLoginUrl(): Promise<void> {
 
 /**
  * Configure Named Credential for backend tests via Custom Settings
- * Sets Named_Credential_Name__c to 'Docgen_Node_API_CI' for CI/test environments
+ * Sets Named_Credential_Name__c to 'Docgen_Node_API_Sandbox' for CI/test environments
  */
 async function configureNamedCredentialForRealBackend(): Promise<void> {
   // Check if Custom Setting record already exists
@@ -157,17 +157,17 @@ async function configureNamedCredentialForRealBackend(): Promise<void> {
   );
 
   if (existing.length === 0) {
-    // Create new record with CI Named Credential
+    // Create new record with Sandbox Named Credential
     await createRecord('Docgen_Settings__c', {
-      Named_Credential_Name__c: 'Docgen_Node_API_CI'
+      Named_Credential_Name__c: 'Docgen_Node_API_Sandbox'
     });
-    console.log('✓ Created Docgen_Settings__c with Named Credential: Docgen_Node_API_CI');
+    console.log('✓ Created Docgen_Settings__c with Named Credential: Docgen_Node_API_Sandbox');
   } else {
     // Update existing record - set Named Credential
     await updateRecord('Docgen_Settings__c', existing[0].Id, {
-      Named_Credential_Name__c: 'Docgen_Node_API_CI'
+      Named_Credential_Name__c: 'Docgen_Node_API_Sandbox'
     });
-    console.log('✓ Updated Docgen_Settings__c - Named Credential: Docgen_Node_API_CI');
+    console.log('✓ Updated Docgen_Settings__c - Named Credential: Docgen_Node_API_Sandbox');
   }
 
   // Enable Apex debug logging in CI for better diagnostics

@@ -55,25 +55,24 @@ Last Poll Time: 2025-11-17T18:40:38.728Z
 
 ### Configure External Credential
 
-Configure the Azure AD External Credential for CI/CD environments:
+Configure `Docgen_AAD_Credential` / `Main` for the selected org. Both Named Credentials use this principal:
 
 ```bash
 # Set environment variables
 export AAD_CLIENT_ID="your-client-id"
 export AAD_CLIENT_SECRET="your-client-secret"
 
-# Generate and run the script
-sed -e "s|{{CLIENT_ID}}|$AAD_CLIENT_ID|g" \
-    -e "s|{{CLIENT_SECRET}}|$AAD_CLIENT_SECRET|g" \
-    scripts/ConfigureExternalCredential.apex > /tmp/configure-cred.apex
-
-sf apex run --file /tmp/configure-cred.apex
+# Select Sandbox for a sandbox or scratch org; use PRODUCTION for a non-sandbox org
+./scripts/configure-external-credential.sh <org-alias> SANDBOX
 ```
 
 **What it does**:
-- Creates or updates the `Docgen_AAD_Credential_CI` External Credential
-- Sets the `clientId` and `clientSecret` for the `CI` named principal
+- Populates the `Docgen_AAD_Credential` External Credential principal
+- Sets the `clientId` and `clientSecret` for the `Main` named principal
+- Sets the explicit Named Credential override for the selected environment
 - Idempotent - safe to run multiple times
+
+With a blank override, sandbox orgs default to `Docgen_Node_API_Sandbox` (packaged UAT URL) and non-sandbox orgs to `Docgen_Node_API`. The URL helper accepts `[org-alias] [backend-url] [named-credential]`; the final argument defaults to `Docgen_Node_API_Sandbox`. Scratch/CI tests must supply their own backend URL. The verification scripts resolve the same setting/default as the controllers. See [setup and migration](../docs/named-credential-setup.md#defaults-and-migration).
 
 ## Usage in E2E Tests
 

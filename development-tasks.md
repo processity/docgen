@@ -452,7 +452,7 @@
   - Validation: `validateConfig()` ensures required fields in production
 - **CI/CD Pipelines** (4 GitHub Actions workflows - 1,200+ lines):
   - **docker-build.yml**: Reusable workflow with Buildx, multi-platform support, registry caching
-  - **deploy-staging.yml**: Auto-deploy on merge to main (7 jobs: build, deploy infra, populate secrets, update app, smoke tests, rollback, summary)
+  - **deploy-staging.yml**: Originally auto-deployed on merge to main; retired on 2026-09-11 because staging has no connected Salesforce sandbox. UAT uses explicit `deploy-uat.yml` dispatch.
   - **deploy-production.yml**: Manual approval, triggered on release (enhanced smoke tests, two image tags)
   - **ci.yml**: Added Dockerfile validation and LibreOffice installation
 - **Documentation** (5 major files - 5,637 lines):

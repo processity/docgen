@@ -346,10 +346,6 @@
     <!-- External Credential Principal Access -->
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
-        <externalCredentialPrincipal>Docgen_AAD_Credential_CI-CI</externalCredentialPrincipal>
-    </externalCredentialPrincipalAccesses>
-    <externalCredentialPrincipalAccesses>
-        <enabled>true</enabled>
         <externalCredentialPrincipal>Docgen_AAD_Credential-Main</externalCredentialPrincipal>
     </externalCredentialPrincipalAccesses>
 

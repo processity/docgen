@@ -382,11 +382,9 @@ APP_NAME=docgen-staging
 ### 3. Test Automated Deployment
 
 ```bash
-# For staging: merge to main branch
-git checkout main
-git pull
-git merge feature/your-feature
-git push
+# For UAT: after merging the PR, explicitly deploy the selected main commit
+# The staging deployment workflow is retired.
+gh workflow run deploy-uat.yml --ref main
 
 # For production: create GitHub release
 gh release create v1.0.0 --title "Release 1.0.0" --notes "Initial production release"

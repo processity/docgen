@@ -7,6 +7,7 @@
 # - Dev Hub org authenticated
 # - AAD_CLIENT_ID environment variable (Azure AD Client ID)
 # - AAD_CLIENT_SECRET environment variable (Azure AD Client Secret)
+# - BACKEND_URL for this scratch org backend (optional; required to test callouts)
 #
 # Usage:
 #   export AAD_CLIENT_ID="your-client-id"
@@ -296,31 +297,35 @@ else
     echo "⚠️  Warning: Failed to configure External Credential (non-critical)"
 fi
 
-# Configure Custom Settings to use CI Named Credential
+# Configure Custom Settings to use Sandbox Named Credential
 echo ""
 echo "⚙️  Configuring Custom Settings..."
 
 TEMP_SETTINGS_APEX=$(mktemp /tmp/configure-settings.XXXXXX.apex)
 trap "rm -f '$TEMP_SETTINGS_APEX'" EXIT
 
-sed -e "s|{{NAMED_CREDENTIAL}}|Docgen_Node_API_CI|g" \
+sed -e "s|{{NAMED_CREDENTIAL}}|Docgen_Node_API_Sandbox|g" \
     scripts/ConfigureCustomSettings.apex > "$TEMP_SETTINGS_APEX"
 
 if sf apex run --file "$TEMP_SETTINGS_APEX" --target-org "$ORG_ALIAS" > /dev/null 2>&1; then
-    echo "✓ Custom Settings configured to use: Docgen_Node_API_CI"
+    echo "✓ Custom Settings configured to use: Docgen_Node_API_Sandbox"
 else
     echo "⚠️  Warning: Failed to configure Custom Settings (non-critical)"
 fi
 
-# Test Named Credential connectivity
-echo ""
-echo "🔌 Testing Named Credential connectivity..."
-
-if sf apex run --file scripts/TestNamedCredentialCallout.apex --target-org "$ORG_ALIAS" 2>&1 | grep -q "✅ Named Credential is working correctly"; then
-    echo "✓ Named Credential connectivity verified"
-    echo "✓ Backend is reachable and authentication is working"
+# Point the scratch org at its own backend before testing connectivity.
+# The packaged Sandbox URL is UAT and must not be used for scratch-org tests.
+if [ -n "${BACKEND_URL:-}" ]; then
+    ./scripts/configure-named-credential.sh "$ORG_ALIAS" "$BACKEND_URL"
+    echo ""
+    echo "🔌 Testing Named Credential connectivity..."
+    if sf apex run --file scripts/TestNamedCredentialCallout.apex --target-org "$ORG_ALIAS" 2>&1 | grep -q "✅ Named Credential is working correctly"; then
+        echo "✓ Named Credential connectivity verified"
+    else
+        echo "⚠️  Warning: Named Credential test failed (check backend and credentials)"
+    fi
 else
-    echo "⚠️  Warning: Named Credential test failed (you may need to configure backend manually)"
+    echo "⚠️  BACKEND_URL not set: configure Docgen_Node_API_Sandbox for this scratch org before generating documents; connectivity test skipped"
 fi
 
 # Run Apex tests
@@ -337,8 +342,8 @@ echo "  ✓ Package installed ($DOCGEN_PACKAGE_VERSION)"
 echo "  ✓ Supplemental metadata deployed (customMetadata + test)"
 echo "  ✓ Permission set assigned (Docgen_User)"
 echo "  ✓ External Credential configured with AAD"
-echo "  ✓ Custom Settings pointing to CI Named Credential"
-echo "  ✓ Named Credential connectivity verified"
+echo "  ✓ Custom Settings pointing to Sandbox Named Credential"
+echo "  • Named Credential connectivity: see result above (requires BACKEND_URL)"
 echo "  ✓ Test template created and uploaded"
 echo "  ✓ Apex tests passed"
 echo "  ✓ .env file updated with SFDX_AUTH_URL"

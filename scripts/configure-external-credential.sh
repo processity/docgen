@@ -14,7 +14,7 @@
 #
 # Arguments:
 #   org-alias       Optional. Salesforce org alias. Defaults to 'docgen-dev'
-#   environment     Optional. Environment mode: 'CI' or 'PRODUCTION'. Defaults to 'CI'
+#   environment     Optional. Environment mode: 'SANDBOX' or 'PRODUCTION'. Defaults to 'SANDBOX'
 #   client-id       Optional. Azure AD Client ID. Falls back to AAD_CLIENT_ID env var
 #   client-secret   Optional. Azure AD Client Secret. Falls back to AAD_CLIENT_SECRET env var
 #
@@ -23,16 +23,16 @@
 #   AAD_CLIENT_SECRET   Azure AD Client Secret value
 #
 # Example:
-#   # Use defaults from environment for CI
+#   # Use defaults from environment for sandbox
 #   export AAD_CLIENT_ID="f42d24be-0a17-4a87-bfc5-d6cd84339302"
 #   export AAD_CLIENT_SECRET="your-secret-here"
 #   ./scripts/configure-external-credential.sh
 #
 #   # Configure for PRODUCTION environment
-#   ./scripts/configure-external-credential.sh UIPATH_UATFULL PRODUCTION "client-id" "secret"
+#   ./scripts/configure-external-credential.sh production-org PRODUCTION "client-id" "secret"
 #
-#   # Configure for CI environment
-#   ./scripts/configure-external-credential.sh docgen-dev CI "client-id" "secret"
+#   # Configure for sandbox environment
+#   ./scripts/configure-external-credential.sh docgen-dev SANDBOX "client-id" "secret"
 #
 # ============================================================================
 
@@ -47,24 +47,19 @@ NC='\033[0m' # No Color
 
 # Configuration
 ORG_ALIAS="${1:-docgen-dev}"
-ENVIRONMENT="${2:-CI}"
+ENVIRONMENT="${2:-SANDBOX}"
 CLIENT_ID="${3:-${AAD_CLIENT_ID:-}}"
 CLIENT_SECRET="${4:-${AAD_CLIENT_SECRET:-}}"
 APEX_TEMPLATE="scripts/ConfigureExternalCredential.apex"
 
-# Set environment-specific values
-if [ "$ENVIRONMENT" = "PRODUCTION" ]; then
-    EXTERNAL_CREDENTIAL="Docgen_AAD_Credential"
-    NAMED_CREDENTIAL="Docgen_Node_API"
-    PRINCIPAL_NAME="Main"  # The principal name in Docgen_AAD_Credential is "Main"
-elif [ "$ENVIRONMENT" = "CI" ]; then
-    EXTERNAL_CREDENTIAL="Docgen_AAD_Credential_CI"
-    NAMED_CREDENTIAL="Docgen_Node_API_CI"
-    PRINCIPAL_NAME="CI"
-else
-    log_error "Invalid environment: $ENVIRONMENT. Must be 'CI' or 'PRODUCTION'"
-    exit 1
-fi
+# Both Named Credentials use the same External Credential within each org.
+EXTERNAL_CREDENTIAL="Docgen_AAD_Credential"
+PRINCIPAL_NAME="Main"
+case "$ENVIRONMENT" in
+    PRODUCTION) NAMED_CREDENTIAL="Docgen_Node_API" ;;
+    SANDBOX) NAMED_CREDENTIAL="Docgen_Node_API_Sandbox" ;;
+    *) echo "Invalid environment: $ENVIRONMENT. Must be SANDBOX or PRODUCTION" >&2; exit 1 ;;
+esac
 
 # Functions
 log_info() {
@@ -86,14 +81,14 @@ log_error() {
 # Validate inputs
 if [ -z "$CLIENT_ID" ]; then
     log_error "Client ID not provided"
-    log_info "Usage: $0 [org-alias] [client-id] [client-secret]"
+    log_info "Usage: $0 [org-alias] [environment] [client-id] [client-secret]"
     log_info "Or set AAD_CLIENT_ID environment variable"
     exit 1
 fi
 
 if [ -z "$CLIENT_SECRET" ]; then
     log_error "Client Secret not provided"
-    log_info "Usage: $0 [org-alias] [client-id] [client-secret]"
+    log_info "Usage: $0 [org-alias] [environment] [client-id] [client-secret]"
     log_info "Or set AAD_CLIENT_SECRET environment variable"
     exit 1
 fi
@@ -131,8 +126,6 @@ trap cleanup EXIT
 log_info "Preparing Apex script..."
 sed -e "s|{{CLIENT_ID}}|$CLIENT_ID|g" \
     -e "s|{{CLIENT_SECRET}}|$CLIENT_SECRET|g" \
-    -e "s|{{EXTERNAL_CREDENTIAL}}|$EXTERNAL_CREDENTIAL|g" \
-    -e "s|{{PRINCIPAL_NAME}}|$PRINCIPAL_NAME|g" \
     "$APEX_TEMPLATE" > "$TEMP_APEX"
 
 log_success "Apex script prepared"

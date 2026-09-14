@@ -92,12 +92,14 @@ deploy_auth_metadata() {
     log_info "Deploying External Credential and Named Credential metadata..."
 
     sf project deploy start \
-      --metadata ExternalCredential:Docgen_AAD_Credential_CI \
-      --metadata NamedCredential:Docgen_Node_API_CI \
+      --metadata ExternalCredential:Docgen_AAD_Credential \
+      --metadata NamedCredential:Docgen_Node_API_Sandbox \
       --metadata PermissionSet:Docgen_User \
       --target-org "$SCRATCH_ORG_ALIAS"
 
-    log_success "Auth metadata deployed"
+    ./scripts/configure-named-credential.sh "$SCRATCH_ORG_ALIAS" "$(cat .ci-backend-url)"
+
+    log_success "Auth metadata deployed and Sandbox Named Credential points to CI backend"
 }
 
 configure_external_credential() {
@@ -105,17 +107,8 @@ configure_external_credential() {
 
     log_info "Updating External Credential with AAD client ID and secret..."
 
-    # Substitute placeholders in template
-    sed "s/{{CLIENT_ID}}/${AAD_CLIENT_ID}/g; s/{{CLIENT_SECRET}}/${AAD_CLIENT_SECRET}/g" \
-      scripts/ConfigureExternalCredential.apex > /tmp/configure-cred.apex
-
-    # Execute anonymous Apex
-    sf apex run \
-      --file /tmp/configure-cred.apex \
-      --target-org "$SCRATCH_ORG_ALIAS"
-
-    # Clean up
-    rm /tmp/configure-cred.apex
+    AAD_CLIENT_ID="$AAD_CLIENT_ID" AAD_CLIENT_SECRET="$AAD_CLIENT_SECRET" \
+      ./scripts/configure-external-credential.sh "$SCRATCH_ORG_ALIAS" SANDBOX
 
     log_success "External Credential configured"
 }

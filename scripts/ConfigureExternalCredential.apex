@@ -5,8 +5,6 @@
  * Placeholders must be replaced via shell substitution:
  *   {{CLIENT_ID}} - Azure AD Client ID
  *   {{CLIENT_SECRET}} - Azure AD Client Secret
- *   {{EXTERNAL_CREDENTIAL}} - External Credential name (Docgen_AAD_Credential or Docgen_AAD_Credential_CI)
- *   {{PRINCIPAL_NAME}} - Principal name (PRODUCTION or CI)
  *
  * Usage via script:
  *   ./scripts/configure-external-credential.sh [org] [environment] [client-id] [secret]
@@ -19,9 +17,9 @@ String clientSecret = '{{CLIENT_SECRET}}';
 try {
     ConnectApi.CredentialInput credentialInput = new ConnectApi.CredentialInput();
 
-    credentialInput.externalCredential = '{{EXTERNAL_CREDENTIAL}}';
+    credentialInput.externalCredential = 'Docgen_AAD_Credential';
     credentialInput.principalType = ConnectApi.CredentialPrincipalType.NamedPrincipal;
-    credentialInput.principalName = '{{PRINCIPAL_NAME}}';
+    credentialInput.principalName = 'Main';
 
     Map<String, ConnectApi.CredentialValueInput> credentials = new Map<String, ConnectApi.CredentialValueInput>();
 
@@ -37,11 +35,11 @@ try {
 
     credentialInput.credentials = credentials;
 
-    System.debug(LoggingLevel.INFO, 'Configuring External Credential: {{EXTERNAL_CREDENTIAL}}');
-    System.debug(LoggingLevel.INFO, 'Principal: {{PRINCIPAL_NAME}}');
+    System.debug(LoggingLevel.INFO, 'Configuring External Credential: Docgen_AAD_Credential');
+    System.debug(LoggingLevel.INFO, 'Principal: Main');
     System.debug(LoggingLevel.INFO, 'Client ID: ' + clientId.substring(0, 8) + '...');
 
-    ConnectApi.CredentialAuthenticationStatus principalStatus = getExistingPrincipalAuthenticationStatus('{{EXTERNAL_CREDENTIAL}}', '{{PRINCIPAL_NAME}}');
+    ConnectApi.CredentialAuthenticationStatus principalStatus = getExistingPrincipalAuthenticationStatus('Docgen_AAD_Credential', 'Main');
 
     if (principalStatus == ConnectApi.CredentialAuthenticationStatus.Configured) {
         System.debug(LoggingLevel.INFO, 'Principal exists and is configured - updating credentials');
@@ -52,7 +50,7 @@ try {
     }
 
     System.debug(LoggingLevel.INFO, '✅ External Credential configured successfully');
-    System.debug(LoggingLevel.INFO, '✅ Principal "{{PRINCIPAL_NAME}}" now has ClientId and ClientSecret set');
+    System.debug(LoggingLevel.INFO, '✅ Principal "Main" now has ClientId and ClientSecret set');
 
 } catch (Exception e) {
     System.debug(LoggingLevel.ERROR, '❌ Failed to configure External Credential: ' + e.getMessage());

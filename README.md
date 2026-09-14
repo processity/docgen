@@ -228,7 +228,7 @@ sf project deploy --target-org <YourOrg> --wait 30 --no-prompt
 **After Installation:**
 
 1. Assign the `Docgen_User` permission set to users who need access
-2. Configure the Named Credential endpoint URL for your Node.js API
+2. Leave `Docgen_Settings__c.Named_Credential_Name__c` blank for org-type defaults: `Docgen_Node_API_Sandbox` in sandbox orgs, `Docgen_Node_API` in non-sandbox orgs. The Sandbox credential includes `https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io`. An explicit setting takes precedence. Both use `Docgen_AAD_Credential` / `Main`; see [setup and migration](docs/named-credential-setup.md#defaults-and-migration).
 3. Set up External Credential principals for Azure AD authentication
 
 ### Salesforce Setup (Development)

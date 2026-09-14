@@ -2,6 +2,14 @@
 
 This guide covers **day-to-day deployment operations** for the docgen application. For **one-time initial environment setup**, see [PROVISIONING.md](./PROVISIONING.md).
 
+Staging deployment was retired because it has no connected Salesforce sandbox.
+Merging to `main` runs CI checks and does not deploy staging. UAT is deployed explicitly;
+production deploys on release creation or manual dispatch. Removing the workflow does
+not delete Azure resources or secrets. CI still references the registry in
+`docgen-staging-rg`, so resource cleanup requires a separate dependency review.
+
+Staging resource and manual-operation examples below are retained as legacy reference.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -11,7 +19,8 @@ This guide covers **day-to-day deployment operations** for the docgen applicatio
   - [Automated CI/CD (Recommended)](#automated-cicd-recommended)
   - [Manual Deployment](#manual-deployment)
   - [When to Use Each Method](#when-to-use-each-method)
-- [Deploying to Staging](#deploying-to-staging)
+- [Deploying to UAT](#deploying-to-uat)
+- [Legacy Staging Manual Deployment](#legacy-staging-manual-deployment)
 - [Deploying to Production](#deploying-to-production)
 - [Monitoring Deployments](#monitoring-deployments)
 - [Rollback Procedures](#rollback-procedures)
@@ -33,7 +42,7 @@ The docgen application uses **Azure Container Apps** for hosting with fully auto
 - Automatic rollback on failure
 
 **Environments:**
-- **Staging**: Automatic deployment on merge to `main` branch
+- **UAT**: Explicit `workflow_dispatch` using `deploy-uat.yml`
 - **Production**: Manual deployment on GitHub release (requires approval)
 
 ---
@@ -44,41 +53,14 @@ The docgen application uses **Azure Container Apps** for hosting with fully auto
 
 ```mermaid
 graph TB
-    subgraph "GitHub"
-        A[Main Branch] -->|Merge| B[deploy-staging.yml]
-        C[Release Tag] -->|Create| D[deploy-production.yml]
-    end
-
-    subgraph "Azure Subscription (POC-EA for Staging)"
-        subgraph "Resource Group: docgen-staging-rg"
-            E[Log Analytics Workspace]
-            F[Application Insights] -.->|linked to| E
-            G[Container Registry<br/>docgenstaging.azurecr.io]
-            H[Key Vault<br/>docgen-staging-kv]
-            I[Container Apps Environment]
-            J[Container App<br/>docgen-staging<br/>2vCPU / 4GB RAM<br/>1-5 replicas]
-            K[Managed Identity]
-
-            J -.->|deployed in| I
-            J -->|uses| K
-            K -->|Key Vault Secrets User| H
-            K -->|AcrPull| G
-            J -.->|logs to| E
-            J -.->|telemetry to| F
-        end
-    end
-
-    B -->|build & push| G
-    B -->|update| J
-    D -->|build & push| G
-    D -->|update| J
-
-    style J fill:#90EE90
-    style K fill:#FFD700
-    style H fill:#87CEEB
+    A[Pull request or push to main] --> B[CI checks]
+    C[Explicit UAT deployment] --> D[deploy-uat.yml]
+    D --> E[Build image and update docgen-uat]
+    F[Release creation or manual dispatch] --> G[deploy-production.yml]
+    G --> H[Build image and deploy production]
 ```
 
-### Resource Summary
+### Legacy Resource Summary
 
 | Resource | Staging | Production | Purpose |
 |----------|---------|------------|---------|
@@ -105,9 +87,9 @@ graph TB
 ## Prerequisites
 
 ### For Automated CI/CD (All Deployments)
-- ✅ GitHub repository access (push to `main` for staging, create releases for production)
+- ✅ GitHub repository access (dispatch UAT explicitly, create releases for production)
 - ✅ GitHub Actions enabled
-- ✅ GitHub environments configured (`staging`, `production`)
+- ✅ GitHub environments configured (`uat`, `production`)
 - ✅ GitHub secrets configured (see [PROVISIONING.md](./PROVISIONING.md#github-cicd-setup))
 
 ### For Manual Deployment (Troubleshooting/Backup)
@@ -144,7 +126,7 @@ graph TB
 - ✅ No local setup required
 
 **Workflow:**
-1. Code changes merged to `main` → Staging deployment
+1. Code changes merged to `main` → CI checks; explicitly dispatch `deploy-uat.yml` to deploy UAT
 2. GitHub release created → Production deployment (with approval)
 
 **Use for:**
@@ -192,74 +174,30 @@ graph TB
 
 ---
 
-## Deploying to Staging
+## Deploying to UAT
 
-### Method 1: Automated CI/CD (Recommended)
+After the PR is merged and CI passes, explicitly run the UAT workflow:
 
-**Trigger**: Merge to `main` branch
+```bash
+gh workflow run deploy-uat.yml --ref main
+gh run list --workflow=deploy-uat.yml
+gh run watch <run-id>
+```
 
-**Steps:**
+The workflow builds the selected commit, pushes the image to the UAT registry,
+updates `docgen-uat` in `docgen-uat-rg`, and runs `/healthz` and `/readyz` checks.
+It does not deploy Bicep, update Key Vault secrets, or install the Salesforce package.
+A successful deployment is followed by a document-generation check in UAT.
 
-1. **Create feature branch and make changes:**
-   ```bash
-   git checkout -b feature/my-feature
-   # Make code changes
-   git add .
-   git commit -m "feat: add new feature"
-   git push origin feature/my-feature
-   ```
+```bash
+curl https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io/healthz
+curl https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io/readyz
+```
 
-2. **Create Pull Request:**
-   ```bash
-   gh pr create --title "Add new feature" --body "Description of changes"
-   ```
+## Legacy Staging Manual Deployment
 
-3. **Wait for CI checks to pass:**
-   - Node.js tests (322 tests)
-   - Salesforce Apex tests (46 tests)
-   - Linting and TypeScript compilation
-   - Dockerfile validation
-
-4. **Merge to main:**
-   ```bash
-   gh pr merge <PR-number> --squash
-   # OR merge via GitHub UI
-   ```
-
-5. **Monitor deployment:**
-   ```bash
-   # Watch workflow progress
-   gh workflow view deploy-staging.yml
-   gh run list --workflow=deploy-staging.yml
-   gh run watch <run-id>
-   ```
-
-6. **Verify deployment:**
-   ```bash
-   # Check app health
-   curl https://docgen-staging.greenocean-24bbbaf2.eastus.azurecontainerapps.io/healthz
-   curl https://docgen-staging.greenocean-24bbbaf2.eastus.azurecontainerapps.io/readyz
-   ```
-
-**Automated workflow jobs:**
-1. ✅ **build-image**: Build Docker image, push to ACR with `sha-<git-sha>` tag
-2. ✅ **deploy-infrastructure**: Deploy/update Bicep templates (idempotent)
-3. ✅ **populate-secrets**: Update Key Vault secrets from GitHub
-4. ✅ **update-app**: Update Container App, wait for new revision
-5. ✅ **smoke-tests**: Health check + document generation test
-6. ✅ **rollback**: Auto-rollback if any job fails
-7. ✅ **summary**: Post deployment summary as commit comment
-
-**Expected duration**: 8-12 minutes
-
-**Success criteria:**
-- ✅ All workflow jobs complete successfully
-- ✅ Health check returns 200
-- ✅ Readiness check returns `{"ready":true,"checks":{"jwks":true,"salesforce":true,"keyVault":true}}`
-- ✅ Smoke test generates PDF successfully
-- ✅ New revision active in Container App
-
----
+The automatic staging workflow has been removed. The following commands are retained
+for historical reference; they are not part of the active UAT deployment process.
 
 ### Method 2: Manual Deployment
 
@@ -375,9 +313,9 @@ graph TB
 
 **Steps:**
 
-1. **Ensure staging is stable:**
-   - Verify staging deployment successful
-   - Run integration tests in staging
+1. **Ensure UAT is stable:**
+   - Verify the UAT deployment succeeded
+   - Run integration tests in UAT
    - Check Application Insights for errors
    - Verify no critical alerts
 
@@ -398,7 +336,7 @@ graph TB
    - Bug fix 3
 
    ## Deployment
-   - Staging validated: [link]
+   - UAT validated: [link]
    - Tests passed: 322/322
    - Breaking changes: None"
 
@@ -485,7 +423,7 @@ Same steps as manual staging deployment, but:
 ### GitHub Actions UI
 
 1. **Navigate to Actions tab**: https://github.com/<owner>/docgen/actions
-2. **Select workflow**: `deploy-staging.yml` or `deploy-production.yml`
+2. **Select workflow**: `deploy-uat.yml` or `deploy-production.yml`
 3. **View run details**: Click on latest run
 4. **Monitor job progress**: Real-time logs for each job
 5. **Check deployment summary**: Posted as commit comment
@@ -637,7 +575,7 @@ See [RUNBOOKS.md](./RUNBOOKS.md#rollback-procedure) for detailed rollback runboo
 | Aspect | Staging | Production |
 |--------|---------|------------|
 | **Subscription** | POC-EA | TBD (future) |
-| **Deployment** | Automatic (merge to main) | Manual (GitHub release + approval) |
+| **Deployment** | Retired; use explicit UAT dispatch for sandbox testing | GitHub release or manual dispatch |
 | **Data** | Salesforce sandbox/scratch org | Salesforce production org |
 | **Secrets** | GitHub staging environment | GitHub production environment |
 | **Smoke Tests** | 1 document generation | 5 document generations + worker tests |
@@ -660,15 +598,14 @@ See [RUNBOOKS.md](./RUNBOOKS.md#rollback-procedure) for detailed rollback runboo
    - Edit → Digital Certificate → Upload `server-new.pub`
    - Save
 
-3. **Update GitHub secret:**
-   ```bash
-   gh secret set SF_PRIVATE_KEY --env staging < keys/server-new.key
-   gh secret set SF_PRIVATE_KEY --env production < keys/server-new.key
-   ```
+3. **Update the target environment's key:**
+   - UAT: Update `SF-PRIVATE-KEY` directly in the UAT Key Vault.
+   - Production: Update the production GitHub secret used by the release workflow.
 
-4. **Deploy to update Key Vault:**
-   - Staging: Merge any commit to `main`
-   - Production: Create new release
+4. **Load the new key:**
+   - UAT: Restart the target Container App after updating Key Vault. `deploy-uat.yml` does not synchronize secrets.
+   - Production: Use the production release workflow.
+   - The retired staging workflow no longer runs on merges to `main`.
 
 5. **Verify connectivity:**
    ```bash

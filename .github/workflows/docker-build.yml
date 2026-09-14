@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: 'Target environment (staging or production)'
+        description: 'Target GitHub environment (ci or production)'
         required: true
         type: string
       image_tag:

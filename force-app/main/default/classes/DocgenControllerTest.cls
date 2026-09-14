@@ -12,7 +12,8 @@ private class DocgenControllerTest {
         public HTTPResponse respond(HTTPRequest req) {
             // Verify request structure
             Assert.areEqual('POST', req.getMethod(), 'HTTP method should be POST');
-            Assert.areEqual('callout:Docgen_Node_API/generate', req.getEndpoint(), 'Should call Named Credential endpoint');
+            Assert.areEqual('callout:' + ([SELECT IsSandbox FROM Organization LIMIT 1].IsSandbox
+                ? 'Docgen_Node_API_Sandbox' : 'Docgen_Node_API') + '/generate', req.getEndpoint(), 'Should call Named Credential endpoint');
             Assert.isTrue(req.getHeader('Content-Type').contains('application/json'), 'Content-Type should be JSON');
 
             // Parse and verify request body
@@ -960,7 +961,8 @@ private class DocgenControllerTest {
         public HTTPResponse respond(HTTPRequest req) {
             // Verify request structure
             Assert.areEqual('POST', req.getMethod(), 'HTTP method should be POST');
-            Assert.areEqual('callout:Docgen_Node_API/generate', req.getEndpoint(), 'Should call Named Credential endpoint');
+            Assert.areEqual('callout:' + ([SELECT IsSandbox FROM Organization LIMIT 1].IsSandbox
+                ? 'Docgen_Node_API_Sandbox' : 'Docgen_Node_API') + '/generate', req.getEndpoint(), 'Should call Named Credential endpoint');
             Assert.isTrue(req.getHeader('Content-Type').contains('application/json'), 'Content-Type should be JSON');
 
             // Parse and verify composite request body

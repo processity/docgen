@@ -2,6 +2,10 @@
 
 Quick reference guide to troubleshooting resources across all documentation. Use this index to quickly find solutions to common problems.
 
+The staging deployment workflow is retired. Staging resource commands below are
+legacy examples; use the current target environment's resources. For UAT deployment,
+see [Deploying to UAT](deploy.md#deploying-to-uat).
+
 ## Table of Contents
 
 - [Quick Issue Lookup](#quick-issue-lookup)
@@ -405,7 +409,7 @@ az containerapp replica list \
   --revision <revision-name>
 
 # Check GitHub workflow status
-gh run list --workflow=deploy-staging.yml --limit 5
+gh run list --workflow=deploy-uat.yml --limit 5
 ```
 
 ### Recovery Commands

@@ -16,7 +16,12 @@ Several scripts require environment variables to be set:
 | `AAD_CLIENT_SECRET` | `setup-scratch-org.sh`<br/>`configure-external-credential.sh` | Azure AD Client Secret value |
 | `BACKEND_URL` | `configure-named-credential.sh` | Backend API URL (e.g., `https://docgen-ci.bravemeadow-58840dba.eastus.azurecontainerapps.io`) |
 
-You can find Azure AD credentials in `azure-ad-config.md`.
+For normal orgs, leave `Docgen_Settings__c.Named_Credential_Name__c` blank to select
+`Docgen_Node_API_Sandbox` in a sandbox or `Docgen_Node_API` in a non-sandbox org.
+An explicit override always wins. Both credentials use `Docgen_AAD_Credential` / `Main`.
+The Sandbox metadata includes the UAT URL. Scratch/CI setup explicitly selects the
+Sandbox credential and repoints its URL to the backend connected to that scratch org.
+See [credential defaults and migration](named-credential-setup.md#defaults-and-migration).
 
 ## Scratch Org Management
 
@@ -39,8 +44,8 @@ export AAD_CLIENT_SECRET="your-secret-here"
 5. ✅ Creates and uploads test DOCX template
 6. ✅ Assigns Docgen_User permission set
 7. ✅ Configures External Credential with AAD credentials
-8. ✅ Configures Custom Settings to use CI Named Credential
-9. ✅ Tests Named Credential connectivity with backend
+8. ✅ Configures Custom Settings to use Sandbox Named Credential
+9. ✅ When `BACKEND_URL` is set, updates the Sandbox Named Credential to that scratch-org backend and tests connectivity; otherwise skips the callout
 10. ✅ Runs Apex tests to verify deployment
 
 **Duration:** ~5-7 minutes
@@ -77,20 +82,21 @@ export AAD_CLIENT_SECRET="your-secret-here"
 ```bash
 export AAD_CLIENT_ID="your-client-id"
 export AAD_CLIENT_SECRET="your-client-secret"
-./scripts/configure-external-credential.sh [org-alias] [client-id] [secret]
+./scripts/configure-external-credential.sh [org-alias] [environment] [client-id] [secret]
 ```
 
 **Parameters:**
 - `org-alias` (optional) - Salesforce org alias (default: `docgen-dev`)
+- `environment` (optional) - `SANDBOX` (default) selects `Docgen_Node_API_Sandbox`; `PRODUCTION` selects `Docgen_Node_API`. Both use `Docgen_AAD_Credential` / `Main`.
 - `client-id` (optional) - Azure AD Client ID (falls back to `AAD_CLIENT_ID` env var)
 - `secret` (optional) - Azure AD Client Secret (falls back to `AAD_CLIENT_SECRET` env var)
 
 **What it does:**
 1. Validates inputs
 2. Prepares Apex script from template (`ConfigureExternalCredential.apex`)
-3. Creates/updates External Credential `Docgen_AAD_Credential_CI` with principal `CI`
+3. Populates the `Main` principal on External Credential `Docgen_AAD_Credential`
 4. Sets Client ID (unencrypted) and Client Secret (encrypted)
-5. Configures Custom Settings to use `Docgen_Node_API_CI`
+5. Sets the selected Named Credential override: `Docgen_Node_API_Sandbox` for `SANDBOX`, or `Docgen_Node_API` for `PRODUCTION`
 
 **Example:**
 ```bash
@@ -100,7 +106,7 @@ export AAD_CLIENT_SECRET="your-client-secret-here"
 ./scripts/configure-external-credential.sh docgen-dev
 
 # Using arguments
-./scripts/configure-external-credential.sh docgen-dev "your-client-id" "your-client-secret"
+./scripts/configure-external-credential.sh docgen-dev SANDBOX "your-client-id" "your-client-secret"
 ```
 
 ---
@@ -112,17 +118,18 @@ export AAD_CLIENT_SECRET="your-client-secret-here"
 **Usage:**
 ```bash
 export BACKEND_URL="https://your-backend.azurecontainerapps.io"
-./scripts/configure-named-credential.sh [org-alias] [backend-url]
+./scripts/configure-named-credential.sh [org-alias] [backend-url] [named-credential]
 ```
 
 **Parameters:**
 - `org-alias` (optional) - Salesforce org alias (default: `docgen-dev`)
-- `backend-url` (optional) - Backend URL (falls back to `BACKEND_URL` env var)
+- `backend-url` (optional) - Backend URL (falls back to `BACKEND_URL` env var); one is required
+- `named-credential` (optional) - `Docgen_Node_API_Sandbox` (default) or `Docgen_Node_API`
 
 **What it does:**
 1. Validates backend URL (must start with `https://`)
 2. Prepares Apex script from template (`ConfigureNamedCredential.apex`)
-3. Updates Named Credential `Docgen_Node_API_CI` with the backend URL
+3. Updates the selected Named Credential with the backend URL and links it to `Docgen_AAD_Credential`
 
 **Example:**
 ```bash
@@ -193,10 +200,10 @@ sf apex run --file scripts/VerifyCredentialStatus.apex --target-org docgen-dev
 ```
 
 **What it checks:**
-- External Credential `Docgen_AAD_Credential_CI` exists
-- Principal `CI` is configured
+- External Credential `Docgen_AAD_Credential` exists
+- Principal `Main` is configured
 - Authentication status (Configured/NotConfigured)
-- Named Credential `Docgen_Node_API_CI` parameters
+- Parameters of the credential resolved from the setting or org-type default
 
 ---
 
@@ -243,7 +250,7 @@ Template for configuring External Credential with AAD credentials.
 Template for configuring Docgen Custom Settings.
 
 **Placeholders:**
-- `{{NAMED_CREDENTIAL}}` - Replaced with Named Credential name (e.g., `Docgen_Node_API_CI`)
+- `{{NAMED_CREDENTIAL}}` - Replaced with Named Credential name (e.g., `Docgen_Node_API_Sandbox`)
 
 ---
 
@@ -253,6 +260,7 @@ Template for configuring Named Credential URL.
 
 **Placeholders:**
 - `{{BACKEND_URL}}` - Replaced with backend URL
+- `{{NAMED_CREDENTIAL}}` - Replaced with the selected Named Credential name
 
 ---
 

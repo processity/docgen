@@ -128,7 +128,7 @@ Add these secrets to the GitHub environment:
 - [ ] `APP_NAME`
 
 ### Test CI/CD Pipeline
-- [ ] For staging: Create PR → merge to main → verify workflow
+- [ ] For UAT: Merge the PR, then explicitly dispatch `deploy-uat.yml`; staging deployment is retired
 - [ ] For production: Create GitHub release → verify workflow
 - [ ] Monitor workflow execution in GitHub Actions
 - [ ] Verify successful deployment

@@ -2,6 +2,10 @@
 
 This document provides detailed operational procedures for managing the docgen application in production and staging environments.
 
+The staging workflow is retired. Staging infrastructure examples below are legacy
+reference. Use [the UAT deployment procedure](deploy.md#deploying-to-uat) for active
+non-production deployments; merging to `main` does not deploy staging.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -712,23 +716,16 @@ gh secret list --env production | grep SF_PRIVATE_KEY
 
 ---
 
-#### Step 4: Deploy to Staging
+#### Step 4: Apply the Rotated Key to the Active Environment
 
-```bash
-# Merge any commit to main to trigger deployment
-# (Or make a dummy commit)
-git commit --allow-empty -m "chore: rotate Salesforce JWT key"
-git push origin main
+The staging deployment workflow is retired; an empty commit no longer updates
+Key Vault or restarts a backend. Update `SF-PRIVATE-KEY` in the target environment's
+Key Vault, then restart the target Container App to load the key.
+The UAT deployment workflow updates the application image only and does not
+synchronize GitHub secrets into Key Vault.
 
-# Monitor deployment
-gh run list --workflow=deploy-staging.yml
-gh run watch <run-id>
-```
-
-**Deployment will:**
-1. Update Key Vault with new private key (from GitHub secret)
-2. Restart Container App to load new key
-3. Run smoke tests (validates new key works)
+Use the current resource names and verify Salesforce authentication after restarting.
+The following staging connectivity example is retained as legacy reference.
 
 ---
 

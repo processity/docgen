@@ -78,7 +78,8 @@ private class DocgenAsyncControllerTest {
             calls++;
             Assert.areEqual('POST', req.getMethod(), 'Wake should be a POST');
             Assert.areEqual(
-                'callout:Docgen_Node_API/worker/wake',
+                'callout:' + ([SELECT IsSandbox FROM Organization LIMIT 1].IsSandbox
+                    ? 'Docgen_Node_API_Sandbox' : 'Docgen_Node_API') + '/worker/wake',
                 req.getEndpoint(),
                 'Wake should hit the worker endpoint via the Named Credential'
             );
@@ -124,7 +125,7 @@ private class DocgenAsyncControllerTest {
     static void testWakePollerUsesConfiguredNamedCredential() {
         insert new Docgen_Settings__c(
             SetupOwnerId = UserInfo.getOrganizationId(),
-            Named_Credential_Name__c = 'Docgen_Node_API_CI'
+            Named_Credential_Name__c = 'Custom_Docgen_API'
         );
 
         Test.startTest();
@@ -132,7 +133,7 @@ private class DocgenAsyncControllerTest {
         Test.stopTest();
 
         Assert.areEqual(
-            'Docgen_Node_API_CI',
+            'Custom_Docgen_API',
             credential,
             'Wake should honour the Named Credential override'
         );

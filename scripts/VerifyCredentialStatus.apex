@@ -9,7 +9,7 @@ try {
     System.debug(LoggingLevel.INFO, '=== Checking External Credential Status ===');
 
     // Check External Credential
-    ConnectApi.ExternalCredential extCred = ConnectApi.NamedCredentials.getExternalCredential('Docgen_AAD_Credential_CI');
+    ConnectApi.ExternalCredential extCred = ConnectApi.NamedCredentials.getExternalCredential('Docgen_AAD_Credential');
 
     System.debug(LoggingLevel.INFO, 'External Credential: ' + extCred.developerName);
 
@@ -31,7 +31,7 @@ try {
     System.debug(LoggingLevel.INFO, '=== Checking Named Credential Status ===');
 
     // Check Named Credential
-    ConnectApi.NamedCredential namedCred = ConnectApi.NamedCredentials.getNamedCredential('Docgen_Node_API_CI');
+    ConnectApi.NamedCredential namedCred = ConnectApi.NamedCredentials.getNamedCredential(DocgenConnectionConfig.getNamedCredentialName());
 
     System.debug(LoggingLevel.INFO, 'Named Credential: ' + namedCred.developerName);
 

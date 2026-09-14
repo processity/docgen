@@ -46,19 +46,10 @@ public with sharing class DocgenController {
         return result;
     }
 
-    /**
-     * Get Named Credential name from Custom Settings
-     * Allows configuring different Named Credentials for different environments
-     * (e.g., 'Docgen_Node_API_CI' for CI tests, 'Docgen_Node_API' for production)
-     * Defaults to 'Docgen_Node_API' if not configured
-     */
+    /** Get the explicit override or the default for this org type. */
     @TestVisible
     private static String getNamedCredentialName() {
-        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
-        if (settings != null && String.isNotBlank(settings.Named_Credential_Name__c)) {
-            return settings.Named_Credential_Name__c;
-        }
-        return 'Docgen_Node_API'; // Default to production Named Credential
+        return DocgenConnectionConfig.getNamedCredentialName();
     }
 
     /**

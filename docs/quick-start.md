@@ -103,7 +103,7 @@ export AAD_CLIENT_SECRET="your-azure-ad-client-secret"
 # - Create a new scratch org (default alias: docgen-dev)
 # - Deploy all metadata (custom objects, Apex classes, LWC components)
 # - Configure External Credential with AAD credentials
-# - Configure Custom Settings for CI Named Credential
+# - Configure Custom Settings for Sandbox Named Credential
 # - Test Named Credential connectivity with backend
 # - Assign permission sets
 # - Run Apex tests to verify deployment
@@ -151,7 +151,7 @@ The project includes several helper scripts in the `scripts/` directory:
 
 **Credential Configuration:**
 - **`configure-external-credential.sh [alias] [client-id] [secret]`** - Configure AAD External Credential
-- **`configure-named-credential.sh [alias] [backend-url]`** - Configure Named Credential URL
+- **`configure-named-credential.sh [alias] [backend-url] [named-credential]`** - Configure Named Credential URL
 - **`configure-ci-backend-for-scratch-org.sh [alias]`** - Configure CI backend to use scratch org
 
 **Testing & Verification:**

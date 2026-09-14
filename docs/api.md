@@ -46,12 +46,12 @@ curl -X POST "https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token" \
 
 ### Salesforce Integration
 
-Salesforce uses a **Named Credential** (`Docgen_Node_API`) to automatically obtain and inject tokens. No manual token management required in Apex code.
+Salesforce uses a **Named Credential** (`Docgen_Node_API_Sandbox` in sandbox orgs or `Docgen_Node_API` in non-sandbox orgs when the setting is blank; an explicit setting takes precedence) to automatically obtain and inject tokens. No manual token management required in Apex code.
 
 ```apex
 // Apex code - Named Credential handles auth automatically
 HttpRequest req = new HttpRequest();
-req.setEndpoint('callout:Docgen_Node_API/generate');
+req.setEndpoint('callout:' + DocgenConnectionConfig.getNamedCredentialName() + '/generate');
 req.setMethod('POST');
 req.setHeader('Content-Type', 'application/json');
 req.setBody(JSON.serialize(envelope));

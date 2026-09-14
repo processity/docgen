@@ -9,18 +9,10 @@ public with sharing class DocgenStatusController {
     private static final Integer HOURS_FOR_METRICS = 24;
     private static final Integer TOP_TEMPLATES_LIMIT = 5;
 
-    /**
-     * Get Named Credential name from Custom Settings
-     * Allows configuring different Named Credentials for different environments
-     * Defaults to 'Docgen_Node_API' if not configured
-     */
+    /** Get the explicit override or the default for this org type. */
     @TestVisible
     private static String getNamedCredentialName() {
-        Docgen_Settings__c settings = Docgen_Settings__c.getInstance();
-        if (settings != null && String.isNotBlank(settings.Named_Credential_Name__c)) {
-            return settings.Named_Credential_Name__c;
-        }
-        return 'Docgen_Node_API'; // Default to production Named Credential
+        return DocgenConnectionConfig.getNamedCredentialName();
     }
 
     /**
