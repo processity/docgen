@@ -425,6 +425,7 @@ describe('Config', () => {
     it('should load secrets from Key Vault in production mode', async () => {
       process.env.NODE_ENV = 'production';
       process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+      delete process.env.SF_USERNAME;
 
       // Mock Key Vault returning secrets
       mockLoadSecretsFromKeyVault.mockResolvedValue({
@@ -437,7 +438,9 @@ describe('Config', () => {
 
       const config = await loadConfig();
 
-      expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/');
+      expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
+        includeSfUsername: true,
+      });
       expect(config.sfPrivateKey).toBe('kv-private-key');
       expect(config.sfClientId).toBe('kv-client-id');
       expect(config.sfUsername).toBe('kv-user@example.com');
@@ -502,12 +505,12 @@ describe('Config', () => {
       expect(config.sfClientId).toBe('env-client-id');
     });
 
-    it('should partially override with Key Vault secrets', async () => {
+    it('should preserve the deployment username while loading sensitive values from Key Vault', async () => {
       process.env.NODE_ENV = 'production';
       process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
       process.env.SF_PRIVATE_KEY = 'env-private-key';
       process.env.SF_CLIENT_ID = 'env-client-id';
-      process.env.SF_USERNAME = 'env-user@example.com';
+      process.env.SF_USERNAME = ' integration@uipath.com.uatfull ';
 
       // Mock Key Vault returning only some secrets
       mockLoadSecretsFromKeyVault.mockResolvedValue({
@@ -518,11 +521,28 @@ describe('Config', () => {
 
       const config = await loadConfig();
 
-      // KV secrets override where available
+      // The deployment username wins; sensitive values still come from Key Vault.
       expect(config.sfPrivateKey).toBe('kv-private-key');
-      expect(config.sfUsername).toBe('kv-user@example.com');
+      expect(config.sfUsername).toBe('integration@uipath.com.uatfull');
+      expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
+        includeSfUsername: false,
+      });
       // Env var used where KV doesn't have it
       expect(config.sfClientId).toBe('env-client-id');
+    });
+
+    it.each(['', '   '])('should retain the Key Vault username when SF_USERNAME is blank (%j)', async (username) => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+      process.env.SF_USERNAME = username;
+      mockLoadSecretsFromKeyVault.mockResolvedValue({ sfUsername: 'kv-user@example.com' });
+
+      const config = await loadConfig();
+
+      expect(config.sfUsername).toBe('kv-user@example.com');
+      expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', {
+        includeSfUsername: true,
+      });
     });
   });
 

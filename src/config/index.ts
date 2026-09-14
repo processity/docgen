@@ -29,7 +29,8 @@ function loadPrivateKey(): string | undefined {
  * Load configuration from environment variables and Azure Key Vault
  *
  * In production mode with KEY_VAULT_URI set, secrets are loaded from Azure Key Vault
- * and override environment variables. In development mode, only environment variables are used.
+ * and override environment variables, except an explicit SF_USERNAME takes precedence.
+ * In development mode, only environment variables are used.
  *
  * This approach:
  * - Maintains backward compatibility for local development
@@ -55,7 +56,7 @@ export async function loadConfig(): Promise<AppConfig> {
     audience: process.env.AUDIENCE,
     jwksUri: process.env.JWKS_URI,
     // Salesforce JWT Bearer Flow settings (T-09)
-    sfUsername: process.env.SF_USERNAME,
+    sfUsername: process.env.SF_USERNAME?.trim() || undefined,
     sfClientId: process.env.SF_CLIENT_ID,
     sfPrivateKey: loadPrivateKey(),
     // Salesforce SFDX Auth URL (alternative to JWT Bearer)
@@ -88,9 +89,11 @@ export async function loadConfig(): Promise<AppConfig> {
   };
 
   // In production mode with Key Vault configured, load secrets from Key Vault
-  // Key Vault secrets override environment variables for enhanced security
+  // The non-secret username can be supplied by deployment configuration.
   if (nodeEnv === 'production' && keyVaultUri) {
-    const kvSecrets = await loadSecretsFromKeyVault(keyVaultUri);
+    const kvSecrets = await loadSecretsFromKeyVault(keyVaultUri, {
+      includeSfUsername: !config.sfUsername,
+    });
 
     // Merge Key Vault secrets into config (KV takes precedence over env vars)
     if (kvSecrets.sfPrivateKey) {
@@ -99,7 +102,7 @@ export async function loadConfig(): Promise<AppConfig> {
     if (kvSecrets.sfClientId) {
       config.sfClientId = kvSecrets.sfClientId;
     }
-    if (kvSecrets.sfUsername) {
+    if (!config.sfUsername && kvSecrets.sfUsername) {
       config.sfUsername = kvSecrets.sfUsername;
     }
     if (kvSecrets.sfDomain) {

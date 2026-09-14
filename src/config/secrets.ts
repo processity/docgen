@@ -44,6 +44,7 @@ const SECRET_NAMES = {
  * credential failure, invalid URI, etc.). Errors are logged for troubleshooting.
  *
  * @param keyVaultUri - The URI of the Azure Key Vault (e.g., https://my-kv.vault.azure.net/)
+ * @param options - Skip the username lookup when supplied by deployment configuration
  * @returns Object containing loaded secrets (camelCase property names)
  *
  * @example
@@ -54,7 +55,10 @@ const SECRET_NAMES = {
  * }
  * ```
  */
-export async function loadSecretsFromKeyVault(keyVaultUri: string): Promise<KeyVaultSecrets> {
+export async function loadSecretsFromKeyVault(
+  keyVaultUri: string,
+  options: { includeSfUsername?: boolean } = {},
+): Promise<KeyVaultSecrets> {
   const correlationId = `kv-load-${Date.now()}`;
 
   try {
@@ -79,6 +83,9 @@ export async function loadSecretsFromKeyVault(keyVaultUri: string): Promise<KeyV
 
     // Fetch all secrets in parallel for performance
     const secretPromises = Object.entries(SECRET_NAMES).map(async ([key, secretName]) => {
+      if (key === 'SF_USERNAME' && options.includeSfUsername === false) {
+        return { key, value: undefined };
+      }
       try {
         const secret = await client.getSecret(secretName);
         return { key, value: secret.value };

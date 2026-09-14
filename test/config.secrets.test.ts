@@ -38,6 +38,23 @@ describe('Key Vault Secrets Loader', () => {
   });
 
   describe('loadSecretsFromKeyVault', () => {
+    it('should skip SF-USERNAME when deployment supplies it and still load authentication secrets', async () => {
+      mockSecretClient.getSecret.mockImplementation(async (name) => ({
+        value: name === 'SF-PRIVATE-KEY' ? 'test-private-key' : undefined,
+        name,
+        properties: {},
+      } as any));
+
+      const secrets = await loadSecretsFromKeyVault(mockKeyVaultUri, { includeSfUsername: false });
+
+      expect(mockSecretClient.getSecret).not.toHaveBeenCalledWith('SF-USERNAME');
+      expect(mockSecretClient.getSecret).toHaveBeenCalledWith('SF-PRIVATE-KEY');
+      expect(mockSecretClient.getSecret).toHaveBeenCalledWith('SF-CLIENT-ID');
+      expect(mockSecretClient.getSecret).toHaveBeenCalledTimes(7);
+      expect(secrets.sfPrivateKey).toBe('test-private-key');
+      expect(secrets.sfUsername).toBeUndefined();
+    });
+
     it('should successfully load configured secrets from Key Vault', async () => {
       // Mock secret responses
       mockSecretClient.getSecret

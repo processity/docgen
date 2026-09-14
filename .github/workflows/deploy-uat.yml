@@ -26,6 +26,7 @@ env:
   APP_NAME: docgen-uat
   ACR_NAME: docgenuat
   IMAGE_REPOSITORY: docgen-api
+  SF_USERNAME: integration@uipath.com.uatfull
 
 jobs:
   deploy:
@@ -110,6 +111,7 @@ jobs:
             --name "$APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${{ steps.image.outputs.image_uri }}" \
+            --set-env-vars "SF_USERNAME=$SF_USERNAME" \
             --output none
 
       - name: Wait for new revision

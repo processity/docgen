@@ -187,6 +187,11 @@ gh run watch <run-id>
 The workflow builds the selected commit, pushes the image to the UAT registry,
 updates `docgen-uat` in `docgen-uat-rg`, and runs `/healthz` and `/readyz` checks.
 It does not deploy Bicep, update Key Vault secrets, or install the Salesforce package.
+The UAT integration username, `integration@uipath.com.uatfull`, is stored openly as
+`SF_USERNAME` in the workflow and applied to the Container App. A nonblank
+`SF_USERNAME` skips the `SF-USERNAME` Key Vault lookup. Other environments without
+this variable continue to use their existing Key Vault username. Private keys and
+authentication tokens remain in Key Vault.
 A successful deployment is followed by a document-generation check in UAT.
 
 ```bash
@@ -306,6 +311,11 @@ for historical reference; they are not part of the active UAT deployment process
 ---
 
 ## Deploying to Production
+
+The production workflow supplies `SF_USERNAME=integration@uipath.com` to the
+Container App. This non-secret username takes precedence over `SF-USERNAME` in
+Key Vault; private keys and authentication tokens remain in Key Vault. The value
+is applied when the updated workflow and backend are deployed.
 
 ### Method 1: Automated CI/CD (Recommended)
 
