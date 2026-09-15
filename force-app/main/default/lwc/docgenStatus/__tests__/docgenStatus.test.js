@@ -407,7 +407,8 @@ describe('Docgen reconnect', () => {
     const element = createStatusPage(); await flushPromises();
     button(element, 'Connect / Reconnect').click(); await flushPromises();
     expect(element.shadowRoot.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(textOf(element)).toContain('External Client App Manager');
+    expect(textOf(element)).toContain('Setup → App Manager');
+    expect(textOf(element)).toContain('Docgen JWT Bearer');
     expect(textOf(element)).toContain('https://custom-backend.example.com/connect/callback');
     expect(element.shadowRoot.querySelector('[data-connection-field="clientSecret"]').type).toBe('password');
     expect(window.open).not.toHaveBeenCalled();

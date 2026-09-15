@@ -395,6 +395,20 @@ h3 {
 .slds-list_horizontal dd {
     margin-top: 0.5rem;
 }
+.connection-setup-steps li + li {
+    margin-top: 1rem;
+}
+.connection-setup-steps li > p {
+    margin-top: 0.25rem;
+}
+.connection-callback-url {
+    display: block;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #f3f3f3;
+    border-radius: 0.25rem;
+    overflow-wrap: anywhere;
+}
 @media (max-width: 900px) {
     .summary-grid,
     .activity-totals {

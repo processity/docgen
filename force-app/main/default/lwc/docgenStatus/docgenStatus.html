@@ -7,24 +7,34 @@
                     <h2 id="connect-title" class="slds-text-heading_medium">Connect this Salesforce org</h2>
                 </header>
                 <div class="slds-modal__content slds-p-around_medium">
-                    <p>After a sandbox refresh, enter the current Salesforce OAuth app credentials. You do not need Azure access.</p>
-                    <p class="slds-m-top_small"><strong>Backend:</strong> {reconnectInfo.backendUrl}</p>
-                    <ol class="slds-list_ordered slds-m-top_medium slds-m-bottom_medium">
-                        <li>In Setup, open <strong>External Client App Manager</strong> (ECA) or <strong>App Manager</strong> (Connected App). Restore or recreate the app if the refresh removed it.</li>
-                        <li>Enable the web-server OAuth flow with <strong>api</strong> and <strong>openid</strong> scopes, and JWT bearer authentication. Upload the public certificate matching this backend.</li>
-                        <li>Add this exact callback URL: <code>{reconnectCallbackUrl}</code></li>
-                        <li>Authorize yourself and the configured integration user to use the app. Keep your <strong>Docgen Admin</strong> and Named Credential management permissions.</li>
-                        <li>Open the app’s <strong>Consumer Details</strong> or <strong>Manage Consumer Details</strong>, complete Salesforce identity verification, and copy its consumer key and secret below.</li>
+                    <p>Enter the current Salesforce OAuth app credentials.</p>
+                    <ol class="slds-list_ordered connection-setup-steps slds-m-top_medium slds-m-bottom_medium">
+                        <li>
+                            <strong>Open the Docgen connected app.</strong>
+                            <p>Go to <strong>Setup → App Manager</strong>. Find <strong>Docgen JWT Bearer</strong> (or your Docgen connected app), open its action menu, and select <strong>View</strong>.</p>
+                        </li>
+                        <li>
+                            <strong>Check the setup after a sandbox refresh.</strong>
+                            <p>If the app is missing, restore or recreate it first. Select <strong>Edit</strong>, enable <strong>OAuth Settings</strong> and <strong>Use digital signatures</strong>, then upload the public certificate.</p>
+                            <template if:true={connectionCertificate}>
+                                <p class="slds-m-top_x-small"><a href={connectionCertificate.url} download={connectionCertificate.fileName}>{connectionCertificate.label}</a></p>
+                            </template>
+                            <template if:false={connectionCertificate}>
+                                <p class="slds-m-top_x-small">Use the public certificate provided for this environment.</p>
+                            </template>
+                        </li>
+                        <li>
+                            <strong>Confirm the OAuth settings.</strong>
+                            <p>Add the callback URL below and include the <strong>api</strong> and <strong>openid</strong> OAuth scopes. Save your changes and ensure you and the integration user are authorized to use the app.</p>
+                            <code class="connection-callback-url">{reconnectCallbackUrl}</code>
+                        </li>
+                        <li>
+                            <strong>Copy the app credentials.</strong>
+                            <p>Return to the app’s <strong>View</strong> page and select <strong>Manage Consumer Details</strong>. Complete identity verification, then copy the <strong>Consumer Key</strong> and <strong>Consumer Secret</strong> into the fields below.</p>
+                        </li>
                     </ol>
-                    <template if:true={connectionCertificate}>
-                        <p class="slds-m-bottom_medium"><a href={connectionCertificate.url} download={connectionCertificate.fileName}>{connectionCertificate.label}</a>. Upload this certificate; do not generate a replacement private key.</p>
-                    </template>
-                    <template if:false={connectionCertificate}>
-                        <p class="slds-m-bottom_medium">Use the public certificate supplied for this backend. A certificate from another environment may not match its signing key.</p>
-                    </template>
                     <lightning-input data-connection-field="clientId" label="Consumer Key (Client ID)" value={newClientId} onchange={handleCredentialInput} autocomplete="off" required></lightning-input>
                     <lightning-input data-connection-field="clientSecret" type="password" label="Consumer Secret (Client Secret)" value={newClientSecret} onchange={handleCredentialInput} autocomplete="off" required></lightning-input>
-                    <p class="slds-m-top_small">The secret is not redisplayed. Salesforce verifies your admin access before these credentials become the active connection. The backend keeps its configured integration user.</p>
                     <template if:true={credentialInputError}><p role="alert" class="slds-text-color_error slds-m-top_small">{credentialInputError}</p></template>
                 </div>
                 <footer class="slds-modal__footer">

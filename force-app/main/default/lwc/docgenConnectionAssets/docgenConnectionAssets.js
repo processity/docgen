@@ -7,7 +7,7 @@ const CERTIFICATES = [
         backendUrl: 'https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io',
         url: uatCertificate,
         fileName: 'uat_server.crt',
-        label: 'Download backend public certificate (uat_server.crt)'
+        label: 'Download UAT Public Certificate'
     }
 ];
 
