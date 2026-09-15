@@ -18,7 +18,7 @@ env:
   AZURE_REGION: eastus
   APP_NAME: docgen-production
   KEY_VAULT_NAME: docgen-prod-kv-gl
-  SF_USERNAME: integration@uipath.com
+  SF_USERNAME: uipath.docgen@uipath.com
 
 jobs:
   build-image:

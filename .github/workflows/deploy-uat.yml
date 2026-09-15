@@ -26,7 +26,7 @@ env:
   APP_NAME: docgen-uat
   ACR_NAME: docgenuat
   IMAGE_REPOSITORY: docgen-api
-  SF_USERNAME: integration@uipath.com.uatfull
+  SF_USERNAME: uipath.docgen@uipath.com.uatfull
 
 jobs:
   deploy:
