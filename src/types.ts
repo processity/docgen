@@ -34,6 +34,9 @@ export interface AppConfig {
   // Optional administrator reconnect flow (runtime secrets stay server-side).
   reconnectPublicUrl?: string;
   reconnectAadClientSecret?: string;
+  reconnectSfClientSecret?: string;
+  reconnectCredentialEditing?: boolean;
+  reconnectStoragePath?: string;
   // Salesforce SFDX Auth URL (alternative to JWT Bearer)
   sfdxAuthUrl?: string;
   // Salesforce access token (short-lived CI/scratch org auth)

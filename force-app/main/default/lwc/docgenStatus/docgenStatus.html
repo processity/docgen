@@ -1,4 +1,41 @@
 <template>
+    <template if:true={showConnectionModal}>
+        <section role="dialog" aria-modal="true" aria-labelledby="connect-title" tabindex="-1" class="slds-modal slds-fade-in-open" onkeydown={handleModalKeydown}>
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <lightning-button-icon icon-name="utility:close" alternative-text="Close connection setup" onclick={closeConnectionModal} class="slds-modal__close" variant="bare-inverse"></lightning-button-icon>
+                    <h2 id="connect-title" class="slds-text-heading_medium">Connect this Salesforce org</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <p>After a sandbox refresh, enter the current Salesforce OAuth app credentials. You do not need Azure access.</p>
+                    <p class="slds-m-top_small"><strong>Backend:</strong> {reconnectInfo.backendUrl}</p>
+                    <ol class="slds-list_ordered slds-m-top_medium slds-m-bottom_medium">
+                        <li>In Setup, open <strong>External Client App Manager</strong> (ECA) or <strong>App Manager</strong> (Connected App). Restore or recreate the app if the refresh removed it.</li>
+                        <li>Enable the web-server OAuth flow with <strong>api</strong> and <strong>openid</strong> scopes, and JWT bearer authentication. Upload the public certificate matching this backend.</li>
+                        <li>Add this exact callback URL: <code>{reconnectCallbackUrl}</code></li>
+                        <li>Authorize yourself and the configured integration user to use the app. Keep your <strong>Docgen Admin</strong> and Named Credential management permissions.</li>
+                        <li>Open the app’s <strong>Consumer Details</strong> or <strong>Manage Consumer Details</strong>, complete Salesforce identity verification, and copy its consumer key and secret below.</li>
+                    </ol>
+                    <template if:true={connectionCertificate}>
+                        <p class="slds-m-bottom_medium"><a href={connectionCertificate.url} download={connectionCertificate.fileName}>{connectionCertificate.label}</a>. Upload this certificate; do not generate a replacement private key.</p>
+                    </template>
+                    <template if:false={connectionCertificate}>
+                        <p class="slds-m-bottom_medium">Use the public certificate supplied for this backend. A certificate from another environment may not match its signing key.</p>
+                    </template>
+                    <lightning-input data-connection-field="clientId" label="Consumer Key (Client ID)" value={newClientId} onchange={handleCredentialInput} autocomplete="off" required></lightning-input>
+                    <lightning-input data-connection-field="clientSecret" type="password" label="Consumer Secret (Client Secret)" value={newClientSecret} onchange={handleCredentialInput} autocomplete="off" required></lightning-input>
+                    <p class="slds-m-top_small">The secret is not redisplayed. Salesforce verifies your admin access before these credentials become the active connection. The backend keeps its configured integration user.</p>
+                    <template if:true={credentialInputError}><p role="alert" class="slds-text-color_error slds-m-top_small">{credentialInputError}</p></template>
+                </div>
+                <footer class="slds-modal__footer">
+                    <lightning-button label="Cancel" onclick={closeConnectionModal}></lightning-button>
+                    <lightning-button label="Reconnect with saved credentials" onclick={handleSavedReconnect} class="slds-m-left_small"></lightning-button>
+                    <lightning-button label="Save credentials and connect" variant="brand" onclick={handleSaveAndReconnect} class="slds-m-left_small"></lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
     <div class="dashboard">
         <header class="dashboard-header">
             <div class="heading-group">
@@ -11,12 +48,13 @@
             <div class="header-actions">
                 <span class="muted" aria-live="polite">{updatedLabel}</span>
                 <template if:true={canManageConnection}>
-                    <lightning-button label={connectLabel} icon-name="utility:link" onclick={handleReconnect} disabled={isConnecting}></lightning-button>
+                    <lightning-button label={connectLabel} icon-name="utility:link" onclick={handleReconnect} disabled={reconnectDisabled}></lightning-button>
                 </template>
                 <lightning-button label="Refresh" icon-name="utility:refresh" onclick={handleRefresh} disabled={isRefreshing}></lightning-button>
             </div>
         </header>
         <template if:true={connectionMessage}><p class="slds-m-top_small" role="status">{connectionMessage}</p></template>
+        <template if:true={reconnectInfoError}><p class="error-message" role="alert">{reconnectInfoError}</p></template>
         <template if:true={connectionError}><p class="error-message" role="alert">{connectionError}</p></template>
         <template if:true={isLoading}>
             <div class="loading-region"><lightning-spinner alternative-text="Refreshing dashboard" size="small"></lightning-spinner></div>

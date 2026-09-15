@@ -10,6 +10,9 @@ import { metricsRoutes } from './routes/metrics';
 import authPlugin from './plugins/auth';
 import { loadConfig } from './config';
 import { createSalesforceAuth } from './sf/auth';
+import { ConnectionManager } from './sf/connection-manager';
+import { KeyVaultConnectionStore } from './sf/connection-store';
+import { FileConnectionStore } from './sf/file-connection-store';
 import { createErrorHandler } from './errors';
 import { pollerService } from './worker';
 import { initializeAppInsights, startCpuSampler } from './obs';
@@ -23,6 +26,15 @@ dotenv.config();
  */
 export async function build(): Promise<FastifyInstance> {
   const config = await loadConfig();
+  const connectionManager = config.reconnectPublicUrl && (config.reconnectStoragePath || config.keyVaultUri) && config.sfDomain
+    && config.sfUsername && config.sfPrivateKey && !config.sfAccessToken && !config.sfdxAuthUrl
+    ? new ConnectionManager(config, config.reconnectStoragePath
+      ? new FileConnectionStore(config.reconnectStoragePath, config.sfPrivateKey,
+        new URL(config.sfDomain.startsWith('https://') ? config.sfDomain : `https://${config.sfDomain}`).origin, true)
+      : new KeyVaultConnectionStore(config.keyVaultUri!)) : undefined;
+  if (connectionManager) {
+    try { await connectionManager.refresh(); } catch { /* Keep the setup page available during storage/auth outages. */ }
+  }
 
   // Initialize Azure Application Insights (T-15)
   initializeAppInsights();
@@ -38,6 +50,7 @@ export async function build(): Promise<FastifyInstance> {
 
   if (hasAccessTokenConfig || hasJwtConfig || hasSfdxConfig) {
     createSalesforceAuth({
+      refreshClientId: connectionManager ? () => connectionManager.credentialsForWorker() : undefined,
       sfAccessToken: config.sfAccessToken,
       sfInstanceUrl: config.sfInstanceUrl,
       sfDomain: config.sfDomain,
@@ -71,7 +84,7 @@ export async function build(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(generateRoutes);
   await app.register(authTestRoutes);
-  await app.register(connectRoutes, { config });
+  await app.register(connectRoutes, { config, connectionManager });
   await app.register(workerRoutes, { prefix: '/worker' });
   await app.register(previewRoutes, { prefix: '/preview' });
   await app.register(metricsRoutes, { prefix: '/metrics' });

@@ -43,6 +43,33 @@ param tenantId string
 @description('Azure AD client ID (application ID)')
 param clientId string
 
+@description('Nonsecret Salesforce integration username; blank retains the Key Vault fallback')
+param sfUsername string = ''
+
+@description('Selected Named Credential HTTPS base URL; blank disables reconnect')
+param reconnectPublicUrl string = ''
+
+@description('Existing Container App secret name for reconnect; blank uses the runtime Key Vault lookup')
+#disable-next-line secure-secrets-in-params // A reference name, never a secret value.
+param reconnectAadSecretRef string = ''
+
+@description('Existing Container App secret name for Salesforce OAuth client authentication; blank uses runtime configuration')
+#disable-next-line secure-secrets-in-params // A reference name, never a secret value.
+param reconnectSfSecretRef string = ''
+
+@description('Enable admin credential updates after granting the backend identity vault write access')
+param reconnectCredentialEditing bool = false
+
+@description('Persistent connection storage path; blank uses Key Vault')
+param reconnectStoragePath string = ''
+
+@description('Existing Container Apps environment Azure Files storage link')
+param reconnectStorageName string = ''
+
+@secure()
+@description('Existing app secrets to preserve during an infrastructure update; omitted for first-time provisioning')
+param existingSecretConfiguration object = {}
+
 @description('Image allowlist (comma-separated domains)')
 param imageAllowlist string = ''
 
@@ -95,6 +122,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   properties: {
     managedEnvironmentId: environmentId
     configuration: {
+      ...existingSecretConfiguration
       activeRevisionsMode: 'Single'
       ingress: {
         external: true
@@ -116,16 +144,23 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
       ]
     }
     template: {
+      volumes: empty(reconnectStorageName) ? [] : [{
+        name: 'docgen-connection'
+        storageType: 'AzureFile'
+        storageName: reconnectStorageName
+        mountOptions: 'uid=1000,gid=1000,dir_mode=0700,file_mode=0600,cache=strict'
+      }]
       revisionSuffix: ''
       containers: [
         {
           name: 'docgen-api'
+          volumeMounts: empty(reconnectStorageName) ? [] : [{ volumeName: 'docgen-connection', mountPath: reconnectStoragePath }]
           image: containerImage
           resources: {
             cpu: json(cpuCores)
             memory: memorySize
           }
-          env: [
+          env: concat([
             // Node.js environment
             {
               name: 'NODE_ENV'
@@ -210,13 +245,19 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'IMAGE_ALLOWLIST'
               value: imageAllowlist
             }
-          ]
+          ], empty(sfUsername) ? [] : [{ name: 'SF_USERNAME', value: sfUsername }],
+          empty(reconnectPublicUrl) ? [] : [{ name: 'DOCGEN_RECONNECT_PUBLIC_URL', value: reconnectPublicUrl }],
+          empty(reconnectAadSecretRef) ? [] : [{ name: 'DOCGEN_RECONNECT_AAD_CLIENT_SECRET', secretRef: reconnectAadSecretRef }],
+          empty(reconnectSfSecretRef) ? [] : [{ name: 'DOCGEN_RECONNECT_SF_CLIENT_SECRET', secretRef: reconnectSfSecretRef }],
+          reconnectCredentialEditing ? [{ name: 'DOCGEN_RECONNECT_CREDENTIAL_EDITING', value: 'true' }] : [],
+          empty(reconnectStoragePath) ? [] : [{ name: 'DOCGEN_RECONNECT_STORAGE_PATH', value: reconnectStoragePath }])
           probes: [
             // Startup probe: Check readiness before marking container as started
             {
               type: 'Startup'
               httpGet: {
-                path: '/readyz'
+                // The recovery UI must remain reachable when Salesforce auth is broken.
+                path: reconnectCredentialEditing ? '/healthz' : '/readyz'
                 port: 8080
                 scheme: 'HTTP'
               }
@@ -244,7 +285,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               type: 'Readiness'
               httpGet: {
-                path: '/readyz'
+                path: reconnectCredentialEditing ? '/healthz' : '/readyz'
                 port: 8080
                 scheme: 'HTTP'
               }

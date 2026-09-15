@@ -56,6 +56,32 @@ param tenantId string
 @description('Azure AD client ID (application ID for OAuth2)')
 param clientId string
 
+@description('Nonsecret Salesforce integration username; blank retains the Key Vault fallback')
+param sfUsername string = ''
+
+@description('Selected Named Credential HTTPS base URL; blank disables reconnect')
+param reconnectPublicUrl string = ''
+
+@description('Existing Container App secret name for reconnect; blank uses the runtime Key Vault lookup')
+#disable-next-line secure-secrets-in-params // A reference name, never a secret value.
+param reconnectAadSecretRef string = ''
+
+@description('Existing Container App secret name for Salesforce OAuth client authentication; blank uses runtime configuration')
+#disable-next-line secure-secrets-in-params // A reference name, never a secret value.
+param reconnectSfSecretRef string = ''
+
+@description('Enable admin credential updates after granting the backend identity vault write access')
+param reconnectCredentialEditing bool = false
+
+@description('Persistent connection storage path; blank uses Key Vault')
+param reconnectStoragePath string = ''
+
+@description('Existing Container Apps environment Azure Files storage link')
+param reconnectStorageName string = ''
+
+@description('Preserve secrets when redeploying an existing app. Leave false for first-time provisioning.')
+param preserveAppSecrets bool = false
+
 @description('Container Registry SKU')
 @allowed([
   'Basic'
@@ -152,6 +178,12 @@ module containerEnv './modules/environment.bicep' = {
 // Module 5: Container App
 // ============================================================================
 
+// Read only when preserveAppSecrets is enabled. Secret values remain inside ARM
+// and pass to the module through a secure parameter, never workflow output/files.
+resource existingContainerApp 'Microsoft.App/containerApps@2023-05-01' existing = {
+  name: appName
+}
+
 module containerApp './modules/app.bicep' = {
   name: 'app-deployment'
   params: {
@@ -165,6 +197,14 @@ module containerApp './modules/app.bicep' = {
     keyVaultId: keyVault.outputs.keyVaultId
     tenantId: tenantId
     clientId: clientId
+    sfUsername: sfUsername
+    reconnectPublicUrl: reconnectPublicUrl
+    reconnectAadSecretRef: reconnectAadSecretRef
+    reconnectSfSecretRef: reconnectSfSecretRef
+    reconnectCredentialEditing: reconnectCredentialEditing
+    reconnectStoragePath: reconnectStoragePath
+    reconnectStorageName: reconnectStorageName
+    existingSecretConfiguration: preserveAppSecrets ? { secrets: existingContainerApp.listSecrets().value } : {}
     imageAllowlist: imageAllowlist
     tags: tags
     // Environment-specific resource allocation

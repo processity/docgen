@@ -10,6 +10,11 @@ not delete Azure resources or secrets. CI still references the registry in
 
 Staging resource and manual-operation examples below are retained as legacy reference.
 
+For the Status-page Connect / Reconnect button, see
+[backend reconnect deployment settings](backend-reconnect.md#uat-and-production-deployments).
+UAT and production deployments retain the target app's reconnect URL and secret reference;
+the one-time Salesforce OAuth callback and Entra secret setup is still required per backend.
+
 ## Table of Contents
 
 - [Overview](#overview)

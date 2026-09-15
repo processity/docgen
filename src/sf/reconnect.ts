@@ -4,11 +4,54 @@ import { AppConfig } from '../types';
 import { SalesforceAuth, getSalesforceAuth } from './auth';
 
 export class ReconnectError extends Error {}
+
+/** Translate known OAuth failures without exposing upstream bodies, tokens or assertions. */
+function salesforceAuthorizationError(error: unknown, stage: string, usesConsumerSecret: boolean): ReconnectError {
+  const response = (error as { response?: { status?: unknown; data?: { error?: unknown; error_description?: unknown } } } | null)?.response;
+  const status = typeof response?.status === 'number' && Number.isInteger(response.status)
+    && response.status >= 100 && response.status <= 599 ? `HTTP ${response.status}` : '';
+  const hints: Record<string, string> = {
+    invalid_client: 'Check the Salesforce OAuth app consumer key and its certificate against the backend JWT key.',
+    invalid_client_id: 'Check that the backend Salesforce consumer key identifies the OAuth app in this org.',
+    invalid_client_credentials: 'Check the Salesforce OAuth app consumer key and its certificate against the backend JWT key.',
+    invalid_grant: 'Close the popup and start again. If it repeats, check the authorization code, PKCE verifier and OAuth app certificate.',
+    invalid_request: 'Check the Salesforce OAuth request parameters and registered callback URL.',
+    invalid_scope: 'The Salesforce OAuth app must allow the api and openid scopes.',
+    unsupported_grant_type: 'Check that the Salesforce OAuth app supports the web-server authorization flow.',
+    access_denied: 'Check the administrator’s authorization to use the Salesforce OAuth app.',
+    invalid_token: 'The temporary administrator token was rejected. Close the popup and start again.',
+  };
+  const rawCode = response?.data?.error;
+  const code = typeof rawCode === 'string' && Object.prototype.hasOwnProperty.call(hints, rawCode) ? rawCode : '';
+  // Emit a fixed category, never the upstream description (which can reflect credentials).
+  const categories: [RegExp, string][] = [
+    [/code[_ ]verifier|code[_ ]challenge|\bpkce\b/i, 'PKCE verification'],
+    [/audience/i, 'JWT audience'],
+    [/signature|certificate/i, 'JWT signature or certificate'],
+    [/assertion/i, 'JWT assertion'],
+    [/expired|expiration|expiry/i, 'OAuth credential expiration'],
+    [/authorization code/i, 'authorization code'],
+    [/not approved|hasn.t approved/i, 'OAuth app authorization'],
+    [/ip restricted|ip restriction|login hours/i, 'Salesforce login policy'],
+  ];
+  const description = response?.data?.error_description;
+  const category = typeof description === 'string' && description.length <= 1024
+    ? categories.find(([pattern]) => pattern.test(description))?.[1] : undefined;
+  const details = [status, code, category].filter(Boolean).join('; ');
+  let hint = code ? hints[code] : 'Check the Salesforce OAuth app configuration and retry.';
+  if (usesConsumerSecret && (code === 'invalid_client' || code === 'invalid_client_credentials')) {
+    hint = 'Check that the backend’s Salesforce OAuth consumer secret matches this app and has not been rotated.';
+  } else if (!usesConsumerSecret && category === 'JWT assertion') {
+    hint = 'Salesforce rejected certificate-based client authentication. Configure this backend’s Salesforce OAuth consumer secret, then retry.';
+  }
+  return new ReconnectError(`${stage} failed${details ? ` (${details})` : ''}. ${hint}`);
+}
 export interface ReconnectSettings {
   publicUrl: string;
   salesforceOrigin: string;
   username: string;
   clientId: string;
+  clientSecret?: string;
   privateKey: string;
   aadClientId: string;
   aadClientSecret: string;
@@ -61,6 +104,7 @@ export function reconnectSettings(config: AppConfig): ReconnectSettings {
   return {
     publicUrl: normalizeBackendUrl(config.reconnectPublicUrl), salesforceOrigin: sf.origin,
     username: config.sfUsername, clientId: config.sfClientId, privateKey: config.sfPrivateKey,
+    clientSecret: config.reconnectSfClientSecret?.trim() || undefined,
     aadClientId: config.clientId, aadClientSecret: config.reconnectAadClientSecret,
     aadTokenEndpoint: `https://login.microsoftonline.com/${config.azureTenantId}/oauth2/v2.0/token`,
     aadScope: `api://${config.clientId}/.default`,
@@ -99,20 +143,27 @@ export async function verifyIntegration(settings: ReconnectSettings, expectedOrg
 }
 
 /** The admin token is short-lived setup authority; it never becomes worker authentication. */
-export async function completeReconnect(settings: ReconnectSettings, request: ReconnectRequest, code: string, verifier: string): Promise<ConnectionResult> {
+export async function completeReconnect(settings: ReconnectSettings, request: ReconnectRequest, code: string, verifier: string,
+  saveVerifiedCredentials?: () => Promise<void>): Promise<ConnectionResult> {
   const tokenUrl = `${settings.salesforceOrigin}/services/oauth2/token`;
   let adminToken: string | undefined;
-  let stage = 'Salesforce authorization';
+  let stage = 'Salesforce token exchange';
   try {
-    const assertion = jwt.sign({ iss: settings.clientId, sub: settings.clientId, aud: tokenUrl }, settings.privateKey,
-      { algorithm: 'RS256', expiresIn: 300 });
+    // Authenticate the OAuth client with its consumer secret when configured.
+    // Keep certificate authentication for existing installations that support it.
+    const clientAuthentication: Record<string, string> = settings.clientSecret
+      ? { client_secret: settings.clientSecret }
+      : { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: jwt.sign({ iss: settings.clientId, sub: settings.clientId, aud: tokenUrl }, settings.privateKey,
+          { algorithm: 'RS256', expiresIn: 300 }) };
     const tokenResponse = (await axios.post<{ access_token?: string }>(tokenUrl, new URLSearchParams({
       grant_type: 'authorization_code', code, code_verifier: verifier, client_id: settings.clientId,
       redirect_uri: `${settings.publicUrl}/connect/callback`,
-      client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: assertion,
+      ...clientAuthentication,
     }).toString(), { ...requestOptions, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).data;
     adminToken = tokenResponse.access_token;
     if (!adminToken) throw new ReconnectError('Salesforce did not return setup authorization.');
+    stage = 'Salesforce administrator identity check';
     const identity = (await axios.get<SalesforceIdentity>(`${settings.salesforceOrigin}/services/oauth2/userinfo`, authorized(adminToken))).data;
     if (!sameId(identity.organization_id, request.orgId) || !sameId(identity.user_id, request.userId)) {
       throw new ReconnectError('Sign in as the admin who started reconnect, in the same Salesforce org.');
@@ -139,6 +190,13 @@ export async function completeReconnect(settings: ReconnectSettings, request: Re
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).data;
     if (!entra.access_token) throw new ReconnectError('Entra did not authorize the backend’s configured client credentials.');
 
+    // Never persist candidate credentials until Salesforce has verified the admin,
+    // selected endpoint, fixed integration user and org, and Entra has accepted its secret.
+    if (saveVerifiedCredentials) {
+      stage = 'Saving verified Salesforce credentials';
+      await saveVerifiedCredentials();
+    }
+
     stage = 'External Credential restoration';
     const saved = (await axios.put<{ restored: boolean }>(setupUrl, {
       orgId: info.orgId, userId: info.userId, namedCredential: info.namedCredential, backendUrl: info.backendUrl,
@@ -160,6 +218,9 @@ export async function completeReconnect(settings: ReconnectSettings, request: Re
   } catch (error) {
     if (error instanceof ReconnectError) throw error;
     // Axios errors may contain tokens and credential bodies. Never forward or log them.
+    if (stage === 'Salesforce token exchange' || stage === 'Salesforce administrator identity check') {
+      throw salesforceAuthorizationError(error, stage, !!settings.clientSecret);
+    }
     throw new ReconnectError(`${stage} failed. Check the backend setup and administrator permissions, then retry.`);
   } finally {
     if (adminToken) {

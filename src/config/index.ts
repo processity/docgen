@@ -61,6 +61,9 @@ export async function loadConfig(): Promise<AppConfig> {
     sfPrivateKey: loadPrivateKey(),
     reconnectPublicUrl: process.env.DOCGEN_RECONNECT_PUBLIC_URL,
     reconnectAadClientSecret: process.env.DOCGEN_RECONNECT_AAD_CLIENT_SECRET,
+    reconnectSfClientSecret: process.env.DOCGEN_RECONNECT_SF_CLIENT_SECRET,
+    reconnectCredentialEditing: process.env.DOCGEN_RECONNECT_CREDENTIAL_EDITING === 'true',
+    reconnectStoragePath: process.env.DOCGEN_RECONNECT_STORAGE_PATH?.trim() || undefined,
     // Salesforce SFDX Auth URL (alternative to JWT Bearer)
     sfdxAuthUrl: process.env.SFDX_AUTH_URL,
     // Salesforce access token (short-lived CI/scratch org auth)
@@ -125,6 +128,9 @@ export async function loadConfig(): Promise<AppConfig> {
     }
     if (kvSecrets.reconnectAadClientSecret) {
       config.reconnectAadClientSecret = kvSecrets.reconnectAadClientSecret;
+    }
+    if (kvSecrets.reconnectSfClientSecret) {
+      config.reconnectSfClientSecret = kvSecrets.reconnectSfClientSecret;
     }
   }
 

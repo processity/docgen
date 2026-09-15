@@ -17,6 +17,7 @@ export interface KeyVaultSecrets {
   sfInstanceUrl?: string;
   azureMonitorConnectionString?: string;
   reconnectAadClientSecret?: string;
+  reconnectSfClientSecret?: string;
 }
 
 /**
@@ -32,6 +33,7 @@ const SECRET_NAMES = {
   SF_INSTANCE_URL: 'SF-INSTANCE-URL',
   AZURE_MONITOR_CONNECTION_STRING: 'AZURE-MONITOR-CONNECTION-STRING',
   RECONNECT_AAD_CLIENT_SECRET: 'DOCGEN-RECONNECT-AAD-CLIENT-SECRET',
+  RECONNECT_SF_CLIENT_SECRET: 'DOCGEN-RECONNECT-SF-CLIENT-SECRET',
 } as const;
 
 /**
@@ -88,7 +90,7 @@ export async function loadSecretsFromKeyVault(
       if (key === 'SF_USERNAME' && options.includeSfUsername === false) {
         return { key, value: undefined };
       }
-      if (key === 'RECONNECT_AAD_CLIENT_SECRET' && !options.includeReconnectSecret) {
+      if ((key === 'RECONNECT_AAD_CLIENT_SECRET' || key === 'RECONNECT_SF_CLIENT_SECRET') && !options.includeReconnectSecret) {
         return { key, value: undefined };
       }
       try {
@@ -138,6 +140,9 @@ export async function loadSecretsFromKeyVault(
             break;
           case 'RECONNECT_AAD_CLIENT_SECRET':
             secrets.reconnectAadClientSecret = value;
+            break;
+          case 'RECONNECT_SF_CLIENT_SECRET':
+            secrets.reconnectSfClientSecret = value;
             break;
         }
       }

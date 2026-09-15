@@ -50,6 +50,10 @@ param keyVaultSku = 'standard'
 param imageTag = 'latest'
 param imageAllowlist = ''
 
+param sfUsername = 'integration@uipath.com'
+// The deployment workflow resolves reconnect URL and secret reference from the
+// target app before applying Bicep. Secret values are never parameter-file values.
+
 // ============================================================================
 // Tags
 // ============================================================================

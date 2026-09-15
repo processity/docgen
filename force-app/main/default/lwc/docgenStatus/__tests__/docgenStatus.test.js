@@ -181,6 +181,7 @@ function select(element, label, value) {
 
 describe('c-docgen-status dashboard', () => {
   beforeEach(() => {
+    getReconnectInfo.mockResolvedValue({ orgId: '00D000000000001AAA', userId: '005000000000001AAA', namedCredential: 'Docgen_Node_API_Sandbox', backendUrl: 'https://backend.example.com' });
     getSystemStatus.mockResolvedValue({ ready: true, checks: { salesforce: true } });
     getQueueMetrics.mockResolvedValue({ total: 40, succeeded: 36, failed: 1, queued: 2, processing: 1,
       canceled: 0, currentQueued: 3, currentProcessing: 1, queueDepth: 4, retries: 2, successRate: 97.3 });
@@ -369,26 +370,106 @@ describe('Docgen reconnect', () => {
   beforeEach(() => {
     getReconnectInfo.mockResolvedValue(info);
     checkConnection.mockResolvedValue({ connected: true, orgId: info.orgId, integrationUsername: 'integration@uipath.com.uatfull' });
-    popup = { closed: false, location: '', close: jest.fn(() => { popup.closed = true; }) };
-    jest.spyOn(window, 'open').mockReturnValue(popup);
+    // Locker returns a restricted popup without a writable location property.
+    popup = Object.preventExtensions({ closed: false, close: jest.fn(() => { popup.closed = true; }), postMessage: jest.fn() });
+    jest.spyOn(window, 'open').mockImplementation((url) => {
+      if (!String(url).startsWith('https://')) throw new Error('SecureWindow.open only supports allowed URL schemes');
+      return popup;
+    });
   });
   afterEach(() => {
     while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     jest.restoreAllMocks();
     jest.clearAllMocks();
   });
+  function startSavedReconnect(element) {
+    button(element, 'Connect / Reconnect').click();
+    // Rendering the modal is asynchronous; use a queued click in existing async tests.
+    return Promise.resolve().then(() => {
+      const saved = button(element, 'Reconnect with saved credentials');
+      if (saved) saved.click();
+    });
+  }
   function notify(data = {}, origin = 'https://custom-backend.example.com', source = popup) {
     window.dispatchEvent(new MessageEvent('message', { origin, source, data: {
       type: 'docgen:reconnect', success: true, orgId: info.orgId, namedCredential: info.namedCredential, ...data
     } }));
   }
+  function enterCredentials(element, clientId = 'new-client-id', clientSecret = 'SECRET-INPUT') {
+    for (const [field, value] of [['clientId', clientId], ['clientSecret', clientSecret]]) {
+      const input = element.shadowRoot.querySelector(`[data-connection-field="${field}"]`);
+      input.value = value;
+      input.dispatchEvent(new CustomEvent('change'));
+    }
+  }
+
+  it('opens a credential modal with the selected callback, app instructions and a password field', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(textOf(element)).toContain('External Client App Manager');
+    expect(textOf(element)).toContain('https://custom-backend.example.com/connect/callback');
+    expect(element.shadowRoot.querySelector('[data-connection-field="clientSecret"]').type).toBe('password');
+    expect(window.open).not.toHaveBeenCalled();
+    expect(element.shadowRoot.querySelector('a[download="uat_server.crt"]')).toBeNull();
+  });
+
+  it('offers the UAT public certificate only for the matching UAT backend', async () => {
+    getReconnectInfo.mockResolvedValue({ ...info, backendUrl: 'https://docgen-uat.mangostone-78031136.eastus.azurecontainerapps.io' });
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('a[download="uat_server.crt"]')).not.toBeNull();
+  });
+
+  it('hands credentials only to the matching backend popup, once, without putting them in the launch URL', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    enterCredentials(element);
+    button(element, 'Save credentials and connect').click();
+    const launch = new URL(window.open.mock.calls[0][0]);
+    expect(launch.pathname).toBe('/connect/prepare');
+    expect(launch.toString()).not.toContain('SECRET-INPUT');
+    expect(launch.toString()).not.toContain('new-client-id');
+    notify({ type: 'docgen:credentials-ready' }, 'https://attacker.example.com');
+    notify({ type: 'docgen:credentials-ready' }, 'https://custom-backend.example.com', window);
+    expect(popup.postMessage).not.toHaveBeenCalled();
+    notify({ type: 'docgen:credentials-ready' });
+    expect(popup.postMessage).toHaveBeenCalledWith({ type: 'docgen:credentials', clientId: 'new-client-id',
+      clientSecret: 'SECRET-INPUT', orgId: info.orgId, namedCredential: info.namedCredential }, 'https://custom-backend.example.com');
+    notify({ type: 'docgen:credentials-ready' });
+    expect(popup.postMessage).toHaveBeenCalledTimes(1);
+    notify({ success: false, message: 'Authorization denied' }); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('[data-connection-field="clientSecret"]').value).toBe('');
+  });
+
+  it('validates input and clears canceled secrets', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    button(element, 'Save credentials and connect').click(); await flushPromises();
+    expect(textOf(element)).toContain('Enter the OAuth app'); expect(window.open).not.toHaveBeenCalled();
+    enterCredentials(element);
+    button(element, 'Cancel').click(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('[data-connection-field="clientSecret"]').value).toBe('');
+  });
+
+  it('clears entered credentials when the selected backend changes during setup', async () => {
+    const element = createStatusPage(); await flushPromises();
+    button(element, 'Connect / Reconnect').click(); await flushPromises(); enterCredentials(element);
+    getReconnectInfo.mockResolvedValue({ ...info, backendUrl: 'https://changed.example.com' });
+    button(element, 'Refresh').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('[role="dialog"]')).toBeNull();
+    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    expect(element.shadowRoot.querySelector('[data-connection-field="clientSecret"]').value).toBe('');
+  });
   it('opens the resolved override endpoint without relying on an authenticated Named Credential callout', async () => {
     const element = createStatusPage();
     await flushPromises();
-    button(element, 'Connect / Reconnect').click();
+    await startSavedReconnect(element);
     expect(window.open).toHaveBeenCalled();
     await flushPromises();
-    const url = new URL(popup.location);
+    const url = new URL(window.open.mock.calls[0][0]);
     expect(url.origin).toBe('https://custom-backend.example.com');
     expect(url.pathname).toBe('/connect/start');
     expect(url.searchParams.get('namedCredential')).toBe(info.namedCredential);
@@ -399,7 +480,7 @@ describe('Docgen reconnect', () => {
   });
   it('requires a matching popup message and a fresh connection check before reporting success', async () => {
     const element = createStatusPage(); await flushPromises();
-    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    await startSavedReconnect(element); await flushPromises();
     notify({}, 'https://attacker.example.com');
     notify({}, 'https://custom-backend.example.com', window);
     notify({ orgId: 'different-org' });
@@ -412,27 +493,92 @@ describe('Docgen reconnect', () => {
   it('reports a failed final check rather than trusting popup success', async () => {
     checkConnection.mockRejectedValue({ body: { message: 'Wrong backend org' } });
     const element = createStatusPage(); await flushPromises();
-    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    await startSavedReconnect(element); await flushPromises();
     notify(); await flushPromises();
     expect(textOf(element)).toContain('Wrong backend org');
     expect(textOf(element)).not.toContain('Both directions verified as');
   });
   it('handles declined authorization and blocked popups without claiming a connection', async () => {
     const element = createStatusPage(); await flushPromises();
-    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    await startSavedReconnect(element); await flushPromises();
     notify({ success: false, message: 'Authorization declined' }); await flushPromises();
     expect(textOf(element)).toContain('Authorization declined');
     expect(checkConnection).not.toHaveBeenCalled();
     window.open.mockReturnValue(null);
-    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    await startSavedReconnect(element); await flushPromises();
     expect(textOf(element)).toContain('Allow popups');
   });
-  it('closes the popup and reports missing credential metadata', async () => {
+  it('reports missing credential metadata without opening a popup', async () => {
     getReconnectInfo.mockRejectedValue({ body: { message: 'Named Credential is missing' } });
     const element = createStatusPage(); await flushPromises();
-    button(element, 'Connect / Reconnect').click(); await flushPromises();
+    await startSavedReconnect(element); await flushPromises();
     expect(textOf(element)).toContain('Named Credential is missing');
-    expect(popup.close).toHaveBeenCalled();
+    expect(button(element, 'Connect / Reconnect').disabled).toBe(true);
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
+  it('waits for metadata, then opens HTTPS synchronously with the click', async () => {
+    let resolveInfo;
+    getReconnectInfo.mockReturnValueOnce(new Promise(resolve => { resolveInfo = resolve; }));
+    const element = createStatusPage(); await flushPromises();
+    expect(button(element, 'Preparing connection…').disabled).toBe(true);
+    button(element, 'Preparing connection…').click();
+    expect(window.open).not.toHaveBeenCalled();
+    resolveInfo(info); await flushPromises();
+    await startSavedReconnect(element);
+    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/custom-backend\.example\.com\/connect\/start\?/), '_blank', 'popup,width=680,height=800');
+    expect(getReconnectInfo).toHaveBeenCalledTimes(1);
+  });
+  it('reloads endpoint selection on Refresh', async () => {
+    const element = createStatusPage(); await flushPromises();
+    getReconnectInfo.mockResolvedValue({ ...info, backendUrl: 'https://changed-backend.example.com', namedCredential: 'Changed_Backend' });
+    button(element, 'Refresh').click(); await flushPromises();
+    await startSavedReconnect(element);
+    const url = new URL(window.open.mock.calls[0][0]);
+    expect(url.hostname).toBe('changed-backend.example.com');
+    expect(url.searchParams.get('namedCredential')).toBe('Changed_Backend');
+  });
+
+  it('refreshes stale endpoint details after a failed reconnect while preserving the error', async () => {
+    const element = createStatusPage(); await flushPromises();
+    await startSavedReconnect(element);
+    getReconnectInfo.mockResolvedValue({ ...info, backendUrl: 'https://updated-backend.example.com' });
+    notify({ success: false, message: 'Connection settings changed. Start again.' });
+    await flushPromises();
+    expect(textOf(element)).toContain('Connection settings changed');
+    await startSavedReconnect(element);
+    expect(new URL(window.open.mock.calls[1][0]).hostname).toBe('updated-backend.example.com');
+  });
+
+  it('prepares the connection when the runtime does not expose isConnected', async () => {
+    class LockerStatus extends DocgenStatus {
+      get isConnected() { return undefined; }
+    }
+    const element = createElement('c-locker-status', { is: LockerStatus });
+    document.body.appendChild(element);
+    await flushPromises();
+    expect(button(element, 'Connect / Reconnect').disabled).toBe(false);
+    await startSavedReconnect(element);
+    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/custom-backend\.example\.com\/connect\/start\?/), '_blank', 'popup,width=680,height=800');
+  });
+
+  it('ignores late metadata from a removed view and reloads when it is attached again', async () => {
+    let resolveOld;
+    getReconnectInfo.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    const element = createStatusPage(); await flushPromises();
+    document.body.removeChild(element);
+    getReconnectInfo.mockResolvedValue({ ...info, backendUrl: 'https://new-view.example.com' });
+    document.body.appendChild(element); await flushPromises();
+    resolveOld(info); await flushPromises();
+    expect(button(element, 'Connect / Reconnect').disabled).toBe(false);
+    await startSavedReconnect(element);
+    expect(new URL(window.open.mock.calls[0][0]).hostname).toBe('new-view.example.com');
+  });
+  it('explains incomplete endpoint details instead of silently disabling the button', async () => {
+    getReconnectInfo.mockResolvedValue({});
+    const element = createStatusPage(); await flushPromises();
+    expect(button(element, 'Connect / Reconnect').disabled).toBe(true);
+    expect(textOf(element)).toContain('Connection details are incomplete');
   });
 
 });

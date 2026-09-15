@@ -106,12 +106,26 @@ jobs:
           echo "Current active revision: ${CURRENT_REVISION}"
 
       - name: Update UAT Container App
+        env:
+          DOCGEN_RECONNECT_PUBLIC_URL: ${{ vars.DOCGEN_RECONNECT_PUBLIC_URL }}
         run: |
+          node scripts/reconnect-deployment-config.js "$RESOURCE_GROUP" "$APP_NAME" > "$RUNNER_TEMP/reconnect.parameters.json"
+          RECONNECT_URL=$(jq -r '.parameters.reconnectPublicUrl.value' "$RUNNER_TEMP/reconnect.parameters.json")
+          RECONNECT_SECRET_REF=$(jq -r '.parameters.reconnectAadSecretRef.value' "$RUNNER_TEMP/reconnect.parameters.json")
+          RECONNECT_SF_SECRET_REF=$(jq -r '.parameters.reconnectSfSecretRef.value' "$RUNNER_TEMP/reconnect.parameters.json")
+          ENV_VARS=("SF_USERNAME=$SF_USERNAME" "DOCGEN_RECONNECT_PUBLIC_URL=$RECONNECT_URL")
+          if [ -n "$RECONNECT_SECRET_REF" ]; then
+            ENV_VARS+=("DOCGEN_RECONNECT_AAD_CLIENT_SECRET=secretref:$RECONNECT_SECRET_REF")
+          fi
+          if [ -n "$RECONNECT_SF_SECRET_REF" ]; then
+            ENV_VARS+=("DOCGEN_RECONNECT_SF_CLIENT_SECRET=secretref:$RECONNECT_SF_SECRET_REF")
+          fi
+
           az containerapp update \
             --name "$APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${{ steps.image.outputs.image_uri }}" \
-            --set-env-vars "SF_USERNAME=$SF_USERNAME" \
+            --set-env-vars "${ENV_VARS[@]}" \
             --output none
 
       - name: Wait for new revision

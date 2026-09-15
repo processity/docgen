@@ -8,6 +8,7 @@ import getUsageMetrics from '@salesforce/apex/DocgenStatusController.getUsageMet
 import getReconnectInfo from '@salesforce/apex/DocgenConnectionController.getReconnectInfo';
 import checkConnection from '@salesforce/apex/DocgenConnectionController.checkConnection';
 import canManageConnection from '@salesforce/customPermission/Docgen_Manage_Connection';
+import { getConnectionCertificate } from 'c/docgenConnectionAssets';
 
 const STAGE_LABELS = {
     templateFetch: 'Template fetch',
@@ -51,9 +52,62 @@ export default class DocgenStatus extends LightningElement {
     reconnectPopup;
     reconnectOrigin;
     reconnectInfo;
+    reconnectInfoLoading = false;
+    reconnectInfoError;
+    reconnectLaunchUrl;
     reconnectTimer;
     reconnectListener;
     verifyingConnection = false;
+    viewConnected = false;
+    reconnectInfoRequest = 0;
+    showConnectionModal = false;
+    newClientId = '';
+    newClientSecret = '';
+    credentialInputError;
+    pendingCredentials;
+    credentialUpdateInProgress = false;
+    connectionStartedAt;
+    focusConnectionModal = false;
+
+    renderedCallback() {
+        if (this.showConnectionModal && this.focusConnectionModal) {
+            this.focusConnectionModal = false;
+            this.template.querySelector('[data-connection-field="clientId"]')?.focus();
+        }
+    }
+
+    get reconnectCallbackUrl() { return this.reconnectInfo ? `${this.reconnectInfo.backendUrl}/connect/callback` : ''; }
+    get connectionCertificate() { return getConnectionCertificate(this.reconnectInfo?.backendUrl); }
+
+    handleCredentialInput(event) {
+        if (event.target.dataset.connectionField === 'clientId') this.newClientId = event.target.value;
+        if (event.target.dataset.connectionField === 'clientSecret') this.newClientSecret = event.target.value;
+        this.credentialInputError = null;
+        this.focusConnectionModal = false;
+    }
+
+    closeConnectionModal() {
+        this.showConnectionModal = false;
+        this.newClientId = '';
+        this.newClientSecret = '';
+        this.credentialInputError = null;
+        this.focusConnectionModal = false;
+    }
+
+    handleModalKeydown(event) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            this.closeConnectionModal();
+        } else if (event.key === 'Tab') {
+            const dialog = this.template.querySelector('[role="dialog"]');
+            const controls = dialog ? [...dialog.querySelectorAll('lightning-input, lightning-button, lightning-button-icon, a[href]')] : [];
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            const active = this.template.activeElement;
+            if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+        }
+    }
 
     pageSizeOptions = [
         { label: '10', value: '10' },
@@ -99,47 +153,120 @@ export default class DocgenStatus extends LightningElement {
     ];
 
     connectedCallback() {
+        this.viewConnected = true;
         this.reconnectListener = this.handleReconnectMessage.bind(this);
         window.addEventListener('message', this.reconnectListener);
+        if (this.canManageConnection) this.loadReconnectInfo();
         this.loadAllData();
         this.loadUsage();
         this.loadPerformance();
     }
 
     disconnectedCallback() {
+        this.viewConnected = false;
+        this.reconnectInfoRequest++;
+        this.reconnectInfoLoading = false;
+        this.reconnectLaunchUrl = null;
         window.removeEventListener('message', this.reconnectListener);
         this.clearReconnect();
     }
 
     get canManageConnection() { return canManageConnection; }
-    get connectLabel() { return this.isConnecting ? 'Connecting…' : 'Connect / Reconnect'; }
+    get connectLabel() {
+        if (this.reconnectInfoLoading) return 'Preparing connection…';
+        return this.isConnecting ? 'Connecting…' : 'Connect / Reconnect';
+    }
+    get reconnectDisabled() { return this.isConnecting || this.reconnectInfoLoading || !this.reconnectLaunchUrl; }
 
-    async handleReconnect() {
-        if (this.isConnecting || !this.canManageConnection) return;
-        this.connectionError = null;
-        this.connectionMessage = null;
-        this.isConnecting = true;
-        // Open synchronously with the click so browser popup blockers do not block OAuth.
+    async loadReconnectInfo() {
+        if (!this.viewConnected || this.reconnectInfoLoading || this.isConnecting) return;
+        const request = ++this.reconnectInfoRequest;
+        this.reconnectInfoLoading = true;
+        this.reconnectLaunchUrl = null;
+        this.reconnectInfoError = null;
         try {
-            this.reconnectPopup = window.open('about:blank', '_blank', 'popup,width=680,height=800');
-            if (!this.reconnectPopup) {
-                this.connectionError = 'Allow popups for Salesforce, then click Connect / Reconnect again.';
-                this.isConnecting = false;
-                return;
+            const info = await getReconnectInfo();
+            // Track our own lifecycle: legacy Locker may not expose isConnected.
+            if (!this.viewConnected || request !== this.reconnectInfoRequest) return;
+            if (!info?.backendUrl || !info.orgId || !info.userId || !info.namedCredential) {
+                throw new Error('Connection details are incomplete. Refresh to load the selected endpoint again.');
             }
-            this.reconnectInfo = await getReconnectInfo();
-            if (!this.isConnected) { this.clearReconnect(); return; }
-            const url = new URL(`${this.reconnectInfo.backendUrl}/connect/start`);
+            if (this.showConnectionModal && (info.backendUrl !== this.reconnectInfo?.backendUrl
+                || info.namedCredential !== this.reconnectInfo?.namedCredential)) this.closeConnectionModal();
+            this.reconnectInfo = info;
+            const url = new URL(`${info.backendUrl}/connect/start`);
             if (url.protocol !== 'https:') throw new Error('The selected backend must use HTTPS.');
             this.reconnectOrigin = url.origin;
             url.searchParams.set('orgId', this.reconnectInfo.orgId);
             url.searchParams.set('userId', this.reconnectInfo.userId);
             url.searchParams.set('namedCredential', this.reconnectInfo.namedCredential);
             url.searchParams.set('sourceOrigin', window.location.origin);
-            this.reconnectPopup.location = url.toString();
+            this.reconnectLaunchUrl = url.toString();
+        } catch (error) {
+            if (this.viewConnected && request === this.reconnectInfoRequest) this.reconnectInfoError = this.reduceErrors(error);
+        } finally {
+            if (request === this.reconnectInfoRequest) this.reconnectInfoLoading = false;
+        }
+    }
+
+    handleReconnect() {
+        if (this.reconnectDisabled || !this.canManageConnection) return;
+        this.credentialInputError = null;
+        this.showConnectionModal = true;
+        this.focusConnectionModal = true;
+    }
+
+    handleSavedReconnect() {
+        this.closeConnectionModal();
+        this.launchReconnect(this.reconnectLaunchUrl);
+    }
+
+    handleSaveAndReconnect() {
+        const clientId = this.newClientId.trim();
+        const clientSecret = this.newClientSecret.trim();
+        if (!/^[a-zA-Z0-9._-]{8,256}$/.test(clientId) || !clientSecret || clientSecret.length > 512) {
+            this.credentialInputError = 'Enter the OAuth app’s consumer key and consumer secret.';
+            return;
+        }
+        this.pendingCredentials = { clientId, clientSecret };
+        this.credentialUpdateInProgress = true;
+        this.closeConnectionModal();
+        const url = new URL(this.reconnectLaunchUrl);
+        url.pathname = url.pathname.replace(/\/connect\/start$/, '/connect/prepare');
+        this.launchReconnect(url.toString());
+    }
+
+    launchReconnect(url) {
+        if (this.reconnectDisabled || !this.canManageConnection) {
+            this.pendingCredentials = null;
+            this.credentialUpdateInProgress = false;
+            return;
+        }
+        this.connectionError = null;
+        this.connectionMessage = null;
+        this.isConnecting = true;
+        // Locker rejects about: URLs and restricts popup.location. Open the final
+        // HTTPS URL directly within the click gesture to also avoid popup blockers.
+        try {
+            this.reconnectPopup = window.open(url, '_blank', 'popup,width=680,height=800');
+            if (!this.reconnectPopup) {
+                this.connectionError = 'Allow popups for Salesforce, then click Connect / Reconnect again.';
+                this.clearReconnect();
+                return;
+            }
             this.connectionMessage = 'Complete Salesforce authorization in the connection window.';
+            this.connectionStartedAt = Date.now();
             this.reconnectTimer = setInterval(() => {
-                if (this.reconnectPopup?.closed && !this.verifyingConnection) this.finishReconnect();
+                if (this.verifyingConnection) return;
+                if (Date.now() - this.connectionStartedAt > 600000) {
+                    this.connectionError = 'Connection setup expired. Start Connect / Reconnect again.';
+                    this.clearReconnect();
+                } else if (this.reconnectPopup?.closed) {
+                    if (this.credentialUpdateInProgress) {
+                        this.connectionError = 'The setup window closed before completion was confirmed. Reconnect with saved credentials to check the connection.';
+                        this.clearReconnect();
+                    } else this.finishReconnect();
+                }
             }, 1000);
         } catch (error) {
             this.connectionError = this.reduceErrors(error);
@@ -149,13 +276,27 @@ export default class DocgenStatus extends LightningElement {
 
     handleReconnectMessage(event) {
         if (!this.isConnecting || this.verifyingConnection || event.origin !== this.reconnectOrigin || event.source !== this.reconnectPopup
-            || event.data?.type !== 'docgen:reconnect' || event.data.orgId !== this.reconnectInfo?.orgId
+            || event.data?.orgId !== this.reconnectInfo?.orgId
             || event.data.namedCredential !== this.reconnectInfo?.namedCredential) return;
+        if (event.data.type === 'docgen:credentials-ready') {
+            if (!this.pendingCredentials || !this.credentialUpdateInProgress) return;
+            try {
+                this.reconnectPopup.postMessage({ type: 'docgen:credentials', ...this.pendingCredentials,
+                    orgId: this.reconnectInfo.orgId, namedCredential: this.reconnectInfo.namedCredential }, this.reconnectOrigin);
+                this.pendingCredentials = null;
+            } catch {
+                this.connectionError = 'Unable to send credentials to the connection window. Close it and retry.';
+                this.clearReconnect();
+            }
+            return;
+        }
+        if (event.data.type !== 'docgen:reconnect') return;
         if (event.data.success === true) {
             this.finishReconnect();
         } else {
             this.connectionError = event.data.message || 'Reconnect did not complete. Please retry.';
             this.clearReconnect();
+            this.loadReconnectInfo();
         }
     }
 
@@ -175,7 +316,7 @@ export default class DocgenStatus extends LightningElement {
         } finally {
             this.clearReconnect();
             this.verifyingConnection = false;
-            if (this.isConnected) this.handleRefresh();
+            if (this.viewConnected) this.handleRefresh();
         }
     }
 
@@ -184,6 +325,9 @@ export default class DocgenStatus extends LightningElement {
         if (this.reconnectPopup && !this.reconnectPopup.closed) this.reconnectPopup.close();
         this.reconnectPopup = null;
         this.isConnecting = false;
+        this.pendingCredentials = null;
+        this.credentialUpdateInProgress = false;
+        this.closeConnectionModal();
         if (this.connectionError) this.connectionMessage = null;
     }
 
@@ -222,6 +366,7 @@ export default class DocgenStatus extends LightningElement {
 
     handleRefresh() {
         if (this.isRefreshing) return;
+        if (this.canManageConnection) this.loadReconnectInfo();
         this.loadAllData();
         this.loadUsage();
         this.loadPerformance();
@@ -351,7 +496,7 @@ export default class DocgenStatus extends LightningElement {
             : '0 documents';
     }
     get isRefreshing() {
-        return this.isConnecting || this.isLoading || this.usageLoading || this.performanceLoading || this.resourcesLoading;
+        return this.isConnecting || this.reconnectInfoLoading || this.isLoading || this.usageLoading || this.performanceLoading || this.resourcesLoading;
     }
     get updatedLabel() {
         return this.lastUpdated ? `Last refresh: ${this.lastUpdated}` : 'Loading status…';

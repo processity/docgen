@@ -74,6 +74,13 @@ jobs:
           echo "previous_revision=${PREVIOUS_REV}" >> $GITHUB_OUTPUT
           echo "📌 Revision before deployment: ${PREVIOUS_REV:-none}"
 
+      - name: Preserve production reconnect configuration
+        env:
+          RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+          DOCGEN_RECONNECT_PUBLIC_URL: ${{ vars.DOCGEN_RECONNECT_PUBLIC_URL }}
+        run: |
+          node scripts/reconnect-deployment-config.js "$RESOURCE_GROUP" "$APP_NAME" > "$RUNNER_TEMP/reconnect.parameters.json"
+
       - name: Deploy Bicep template
         id: deploy
         run: |
@@ -84,6 +91,9 @@ jobs:
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --parameters infra/parameters/production.bicepparam \
+            --parameters @"$RUNNER_TEMP/reconnect.parameters.json" \
+            --parameters preserveAppSecrets=true \
+            --parameters sfUsername="$SF_USERNAME" \
             --parameters appName=${APP_NAME} \
             --parameters keyVaultName=${KEY_VAULT_NAME} \
             --parameters imageTag=${{ github.event.release.tag_name || inputs.release_tag }} \

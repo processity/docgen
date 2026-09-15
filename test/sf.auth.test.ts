@@ -46,6 +46,35 @@ describe('Salesforce JWT Bearer Authentication', () => {
     resetSalesforceAuth();
   });
 
+  it('refreshes the client id before returning a cached token without changing the integration username', async () => {
+    let clientId = MOCK_CONFIG.sfClientId;
+    const dynamic = new SalesforceAuth({ ...MOCK_CONFIG, refreshClientId: async () => clientId });
+    const old = nock('https://login.salesforce.com').post('/services/oauth2/token').reply(200, MOCK_TOKEN_RESPONSE);
+    expect(await dynamic.getAccessToken()).toBe(MOCK_TOKEN_RESPONSE.access_token);
+    clientId = 'NEW_CLIENT_AFTER_REFRESH';
+    const updated = nock('https://login.salesforce.com').post('/services/oauth2/token', body => {
+      const claims = jwt.decode(body.assertion) as jwt.JwtPayload;
+      return claims.iss === clientId && claims.sub === MOCK_CONFIG.sfUsername;
+    }).reply(200, { ...MOCK_TOKEN_RESPONSE, access_token: 'updated-token' });
+    expect(await dynamic.getAccessToken()).toBe('updated-token');
+    expect(old.isDone() && updated.isDone()).toBe(true);
+  });
+
+  it('discards an in-flight token for the old client when credentials change', async () => {
+    let started!: () => void;
+    const requested = new Promise<void>(resolve => { started = resolve; });
+    nock('https://login.salesforce.com').post('/services/oauth2/token', () => { started(); return true; })
+      .delay(30).reply(200, MOCK_TOKEN_RESPONSE);
+    const current = nock('https://login.salesforce.com').post('/services/oauth2/token')
+      .reply(200, { ...MOCK_TOKEN_RESPONSE, access_token: 'new-client-token' });
+    const pending = auth.getAccessToken();
+    await requested;
+    auth.updateClientId('NEW_CLIENT_AFTER_REFRESH');
+    expect(await pending).toBe('new-client-token');
+    expect(await auth.getAccessToken()).toBe('new-client-token');
+    expect(current.isDone()).toBe(true);
+  });
+
   describe('Token Exchange', () => {
     it('should sign JWT and exchange for access token', async () => {
       const tokenScope = nock('https://login.salesforce.com')

@@ -436,6 +436,20 @@ describe('Config', () => {
       expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledWith('https://test-kv.vault.azure.net/', expect.objectContaining({ includeReconnectSecret: true }));
     });
 
+    it('loads Salesforce OAuth client authentication independently of Entra and preserves the environment fallback', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';
+      process.env.DOCGEN_RECONNECT_PUBLIC_URL = 'https://docgen.example.com';
+      process.env.DOCGEN_RECONNECT_SF_CLIENT_SECRET = 'env-sf-secret';
+      process.env.DOCGEN_RECONNECT_AAD_CLIENT_SECRET = 'env-entra-secret';
+      mockLoadSecretsFromKeyVault.mockResolvedValue({});
+      const fallback = await loadConfig();
+      expect(fallback.reconnectSfClientSecret).toBe('env-sf-secret');
+      expect(fallback.reconnectAadClientSecret).toBe('env-entra-secret');
+      mockLoadSecretsFromKeyVault.mockResolvedValue({ reconnectSfClientSecret: 'kv-sf-secret' });
+      expect((await loadConfig()).reconnectSfClientSecret).toBe('kv-sf-secret');
+    });
+
     it('should load secrets from Key Vault in production mode', async () => {
       process.env.NODE_ENV = 'production';
       process.env.KEY_VAULT_URI = 'https://test-kv.vault.azure.net/';

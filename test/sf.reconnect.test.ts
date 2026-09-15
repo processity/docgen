@@ -68,6 +68,61 @@ it('restores the selected credential only after admin, integration-user, and Ent
   expect(http.post).toHaveBeenLastCalledWith(`${settings.salesforceOrigin}/services/oauth2/revoke`, 'token=admin-token', expect.anything());
 });
 
+it('uses the configured Salesforce consumer secret for admin OAuth while retaining PKCE and the fixed JWT integration user', async () => {
+  const sfSecret = 'SF-CONSUMER-SECRET-NEVER-LOG';
+  await expect(completeReconnect({ ...settings, clientSecret: sfSecret }, request, 'code', 'verifier'))
+    .resolves.toMatchObject({ salesforceToAzure: true, azureToSalesforce: true, integrationUsername: settings.username });
+  const body = new URLSearchParams(http.post.mock.calls[0][1] as string);
+  expect(body.get('client_secret')).toBe(sfSecret);
+  expect(body.get('client_assertion')).toBeNull();
+  expect(body.get('client_assertion_type')).toBeNull();
+  expect(body.get('code_verifier')).toBe('verifier');
+  expect(body.get('redirect_uri')).toBe(`${settings.publicUrl}/connect/callback`);
+  expect(SalesforceAuth).toHaveBeenCalledWith(expect.objectContaining({
+    sfUsername: settings.username, sfPrivateKey: settings.privateKey,
+  }));
+  expect(http.put).toHaveBeenCalledWith(setupUrl, expect.objectContaining({ clientSecret: settings.aadClientSecret }), expect.anything());
+});
+
+it('persists credentials only after the admin, integration user, org, endpoint and Entra are verified', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  await completeReconnect(settings, request, 'code', 'verifier', save);
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.invocationCallOrder[0]).toBeGreaterThan(http.get.mock.invocationCallOrder[3]);
+  expect(save.mock.invocationCallOrder[0]).toBeGreaterThan(http.post.mock.invocationCallOrder[1]);
+  expect(save.mock.invocationCallOrder[0]).toBeLessThan(http.put.mock.invocationCallOrder[0]);
+});
+
+it.each(['admin', 'integration', 'entra'])('never persists candidate credentials when %s verification fails', async (failure) => {
+  const save = jest.fn();
+  if (failure === 'admin') http.get.mockRejectedValueOnce(new Error('Forbidden'));
+  if (failure === 'integration') {
+    http.get.mockResolvedValueOnce(response({ organization_id: orgId, user_id: userId }))
+      .mockResolvedValueOnce(response(info))
+      .mockResolvedValueOnce(response({ organization_id: orgId, preferred_username: 'wrong-user' }));
+  }
+  if (failure === 'entra') {
+    http.post.mockResolvedValueOnce(response({ access_token: 'admin-token' })).mockRejectedValueOnce(new Error('Invalid Entra secret'));
+  }
+  await expect(completeReconnect(settings, request, 'code', 'verifier', save)).rejects.toThrow();
+  expect(save).not.toHaveBeenCalled(); expect(http.put).not.toHaveBeenCalled();
+});
+
+it('does not restore the principal or report success when durable storage rejects the verified credentials', async () => {
+  const save = jest.fn().mockRejectedValue(new Error('PRIVATE-SECRET-BODY'));
+  await expect(completeReconnect(settings, request, 'code', 'verifier', save)).rejects.toThrow('Saving verified Salesforce credentials failed');
+  expect(http.put).not.toHaveBeenCalled();
+});
+
+it('does not retry a rejected Salesforce consumer secret using a different authentication method or write credentials', async () => {
+  http.post.mockRejectedValueOnce({ response: { status: 400, data: { error: 'invalid_client',
+    error_description: 'SF-CONSUMER-SECRET-NEVER-LOG' } }, config: { data: 'PRIVATE-CODE-AND-SECRET' } });
+  await expect(completeReconnect({ ...settings, clientSecret: 'SF-CONSUMER-SECRET-NEVER-LOG' }, request, 'code', 'verifier'))
+    .rejects.toThrow('Salesforce token exchange failed (HTTP 400; invalid_client)');
+  expect(http.post).toHaveBeenCalledTimes(1);
+  expect(http.put).not.toHaveBeenCalled();
+});
+
 it.each([
   { organization_id: '00D000000000002AAA', user_id: userId },
   { organization_id: orgId, user_id: '005000000000002AAA' },
@@ -95,6 +150,51 @@ it('does not grant privileges or replace the integration user when administrator
   http.get.mockRejectedValueOnce(new Error('403 with PRIVATE-TOKEN'));
   await expect(completeReconnect(settings, request, 'code', 'verifier')).rejects.toThrow('Administrator and endpoint verification failed');
   expect(http.put).not.toHaveBeenCalled();
+});
+
+it.each(['invalid_client', 'invalid_client_id', 'invalid_client_credentials', 'invalid_grant',
+  'invalid_request', 'invalid_scope', 'unsupported_grant_type', 'access_denied'])(
+  'identifies a Salesforce token-exchange failure safely (%s)', async (code) => {
+  http.post.mockRejectedValueOnce({ response: { status: 400, data: { error: code,
+    error_description: 'SECRET-UPSTREAM-DESCRIPTION' } }, config: { data: 'PRIVATE-ASSERTION-AND-CODE' } });
+  let failure: unknown;
+  try { await completeReconnect(settings, request, 'PRIVATE-CODE', 'PRIVATE-VERIFIER'); } catch (error) { failure = error; }
+  expect(failure).toBeInstanceOf(Error);
+  const message = (failure as Error).message;
+  expect(message).toContain(`Salesforce token exchange failed (HTTP 400; ${code})`);
+  expect(message).not.toMatch(/SECRET-|PRIVATE-/);
+  expect(http.get).not.toHaveBeenCalled();
+  expect(http.put).not.toHaveBeenCalled();
+});
+
+it('never echoes unknown OAuth errors or descriptions', async () => {
+  http.post.mockRejectedValueOnce({ response: { status: 400, data: {
+    error: 'PRIVATE-TOKEN', error_description: 'PRIVATE-TOKEN' } } });
+  await expect(completeReconnect(settings, request, 'code', 'verifier')).rejects.toThrow(
+    'Salesforce token exchange failed (HTTP 400). Check the Salesforce OAuth app configuration and retry.');
+});
+
+it.each([
+  ['invalid code verifier: PRIVATE-VERIFIER', 'PKCE verification'],
+  ['audience is invalid: PRIVATE-ASSERTION', 'JWT audience'],
+  ['invalid assertion: PRIVATE-ASSERTION', 'JWT assertion'],
+  ['invalid authorization code: PRIVATE-CODE', 'authorization code'],
+  ['user has not approved this consumer: PRIVATE-IDENTITY', 'OAuth app authorization'],
+])('categorizes OAuth rejection details without exposing them (%s)', async (description, category) => {
+  http.post.mockRejectedValueOnce({ response: { status: 400, data: {
+    error: 'invalid_grant', error_description: description } } });
+  let failure: unknown;
+  try { await completeReconnect(settings, request, 'code', 'verifier'); } catch (error) { failure = error; }
+  expect((failure as Error).message).toContain(`HTTP 400; invalid_grant; ${category}`);
+  expect((failure as Error).message).not.toContain('PRIVATE-');
+});
+
+it('distinguishes rejected administrator tokens from the code exchange and still revokes the token', async () => {
+  http.get.mockRejectedValueOnce({ response: { status: 401, data: { error: 'invalid_token', error_description: 'PRIVATE-TOKEN' } } });
+  await expect(completeReconnect(settings, request, 'code', 'verifier')).rejects.toThrow(
+    'Salesforce administrator identity check failed (HTTP 401; invalid_token)');
+  expect(http.put).not.toHaveBeenCalled();
+  expect(http.post).toHaveBeenLastCalledWith(`${settings.salesforceOrigin}/services/oauth2/revoke`, 'token=admin-token', expect.anything());
 });
 
 it('refuses an integration token for a different Salesforce org', async () => {
@@ -137,7 +237,35 @@ it('requires explicit reconnect configuration and leaves non-JWT backends unsupp
     sfDomain: 'acme--uat.sandbox.my.salesforce.com', sfUsername: settings.username, sfClientId: settings.clientId,
     sfPrivateKey: privateKey, clientId: 'entra-client', azureTenantId: 'tenant' } as AppConfig;
   expect(reconnectSettings(config).username).toBe(settings.username);
+  expect(reconnectSettings({ ...config, reconnectSfClientSecret: ' consumer-secret ' }).clientSecret).toBe('consumer-secret');
+  expect(reconnectSettings({ ...config, reconnectSfClientSecret: ' ' }).clientSecret).toBeUndefined();
   expect(() => reconnectSettings({ ...config, sfdxAuthUrl: 'force://unused' })).toThrow('configured JWT integration user');
   expect(() => reconnectSettings({ ...config, sfDomain: 'attacker.example.com' })).toThrow('My Domain');
   expect(() => reconnectSettings({ ...config, reconnectPublicUrl: 'http://insecure.example.com' })).toThrow('HTTPS');
+});
+
+it('repairs production using its own JWT user and credential after verifying a non-sandbox org', async () => {
+  const production = { ...settings, publicUrl: 'https://production.example.com',
+    salesforceOrigin: 'https://acme.my.salesforce.com', username: 'integration@acme.com',
+    aadClientId: 'production-entra', aadClientSecret: 'PRODUCTION-SECRET', aadScope: 'api://production-entra/.default' };
+  const productionRequest = { ...request, namedCredential: 'Docgen_Node_API' };
+  const productionSetup = `${production.salesforceOrigin}/services/apexrest/docgen/connection/setup`;
+  const productionResult = { connected: true, orgId, integrationUsername: production.username };
+  http.get.mockResolvedValueOnce(response({ organization_id: orgId, user_id: userId }))
+    .mockResolvedValueOnce(response({ ...info, ...productionRequest, backendUrl: production.publicUrl,
+      salesforceOrigin: production.salesforceOrigin, scope: production.aadScope, isSandbox: false }))
+    .mockResolvedValueOnce(response({ organization_id: orgId, preferred_username: production.username }))
+    .mockResolvedValueOnce(response({ records: [{ Id: orgId, IsSandbox: false }] }));
+  http.post.mockResolvedValueOnce(response({ access_token: 'production-admin' }))
+    .mockResolvedValueOnce(response({ access_token: 'production-entra-token' }))
+    .mockResolvedValueOnce(response(productionResult))
+    .mockResolvedValueOnce(response({}));
+  expect(await completeReconnect(production, productionRequest, 'code', 'verifier')).toEqual({
+    ...productionResult, salesforceToAzure: true, azureToSalesforce: true,
+  });
+  expect(SalesforceAuth).toHaveBeenCalledWith(expect.objectContaining({ sfDomain: 'acme.my.salesforce.com', sfUsername: production.username }));
+  expect(http.put).toHaveBeenCalledWith(productionSetup, expect.objectContaining({
+    namedCredential: 'Docgen_Node_API', backendUrl: production.publicUrl,
+    clientId: production.aadClientId, clientSecret: production.aadClientSecret,
+  }), expect.anything());
 });

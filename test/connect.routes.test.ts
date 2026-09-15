@@ -52,6 +52,29 @@ it('uses the configured Salesforce endpoint, PKCE and a protected cookie; ignore
   await app.close();
 });
 
+it('uses the production Salesforce org, callback and integration username throughout reconnect', async () => {
+  const production = { ...config, sfDomain: 'acme.my.salesforce.com',
+    sfUsername: 'integration@acme.com', reconnectPublicUrl: 'https://production.example.com' };
+  const productionQuery = { ...query, namedCredential: 'Docgen_Node_API', sourceOrigin: 'https://acme.lightning.force.com' };
+  const app = appFor(production);
+  (completeReconnect as jest.Mock).mockResolvedValue({ ...completed, integrationUsername: production.sfUsername });
+  const startResponse = await app.inject({ method: 'GET', url: '/connect/start', query: productionQuery });
+  expect(startResponse.statusCode).toBe(302);
+  const location = new URL(startResponse.headers.location!);
+  expect(location.origin).toBe('https://acme.my.salesforce.com');
+  expect(location.searchParams.get('redirect_uri')).toBe('https://production.example.com/connect/callback');
+  const callback = await app.inject({ method: 'GET', url: '/connect/callback',
+    query: { code: 'production-code', state: location.searchParams.get('state')! },
+    headers: { cookie: String(startResponse.headers['set-cookie']).split(';')[0] } });
+  expect(callback.statusCode).toBe(200);
+  expect(completeReconnect).toHaveBeenCalledWith(expect.objectContaining({
+    publicUrl: production.reconnectPublicUrl, salesforceOrigin: 'https://acme.my.salesforce.com',
+    username: production.sfUsername,
+  }), expect.objectContaining(productionQuery), 'production-code', expect.any(String));
+  expect(callback.body).toContain(productionQuery.sourceOrigin);
+  await app.close();
+});
+
 it('restores both directions across replicas and returns only a result message to the exact Salesforce origin', async () => {
   const first = appFor();
   const second = appFor();

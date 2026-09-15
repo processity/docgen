@@ -15,6 +15,7 @@ function isAxiosError(error: unknown): error is { response?: { status: number; d
 }
 
 export interface SalesforceAuthConfig {
+  refreshClientId?: () => Promise<string | undefined>;
   // Direct access token (short-lived CI/scratch orgs)
   sfAccessToken?: string;
   sfInstanceUrl?: string;
@@ -54,6 +55,7 @@ interface ParsedSfdxAuthUrl {
  * - Refresh Token: https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_refresh_token_flow.htm
  */
 export class SalesforceAuth {
+  private credentialGeneration = 0;
   private config: SalesforceAuthConfig;
   private cachedToken: CachedToken | null = null;
   private tokenRefreshPromise: Promise<string> | null = null;
@@ -61,7 +63,7 @@ export class SalesforceAuth {
 
   constructor(config: SalesforceAuthConfig) {
     this.validateConfig(config);
-    this.config = config;
+    this.config = { ...config };
   }
 
   /**
@@ -178,6 +180,10 @@ export class SalesforceAuth {
    * Implements 60-second buffer before expiry to avoid race conditions.
    */
   async getAccessToken(): Promise<string> {
+    if (this.config.refreshClientId) {
+      const clientId = await this.config.refreshClientId();
+      if (clientId) this.updateClientId(clientId);
+    }
     // Check if cached token is still valid (with buffer)
     if (this.cachedToken && this.isTokenValid(this.cachedToken)) {
       logger.debug('Using cached Salesforce access token');
@@ -192,13 +198,21 @@ export class SalesforceAuth {
 
     // Fetch new token
     logger.debug('Fetching new Salesforce access token');
+    const generation = this.credentialGeneration;
     this.tokenRefreshPromise = this.fetchAccessToken()
       .then((token) => {
         this.tokenRefreshPromise = null;
+        if (generation !== this.credentialGeneration) {
+          this.cachedToken = null;
+          return this.getAccessToken();
+        }
         return token;
-      })
-      .catch((error) => {
+      }, (error) => {
         this.tokenRefreshPromise = null;
+        if (generation !== this.credentialGeneration) {
+          this.cachedToken = null;
+          return this.getAccessToken();
+        }
         throw error;
       });
 
@@ -220,6 +234,13 @@ export class SalesforceAuth {
   invalidateToken(): void {
     logger.debug('Invalidating cached Salesforce token');
     this.cachedToken = null;
+  }
+
+  updateClientId(clientId: string): void {
+    if (this.config.sfClientId === clientId) return;
+    this.config.sfClientId = clientId;
+    this.credentialGeneration++;
+    this.invalidateToken();
   }
 
   /**

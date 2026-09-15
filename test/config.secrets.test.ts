@@ -46,6 +46,17 @@ describe('Key Vault Secrets Loader', () => {
       expect(mockSecretClient.getSecret).toHaveBeenCalledWith('DOCGEN-RECONNECT-AAD-CLIENT-SECRET');
     });
 
+    it('loads the Salesforce OAuth consumer secret separately and only for reconnect', async () => {
+      mockSecretClient.getSecret.mockImplementation(async (name) => ({
+        value: name === 'DOCGEN-RECONNECT-SF-CLIENT-SECRET' ? 'sf-oauth-secret' : undefined, name, properties: {},
+      } as any));
+      expect((await loadSecretsFromKeyVault(mockKeyVaultUri)).reconnectSfClientSecret).toBeUndefined();
+      expect(mockSecretClient.getSecret).not.toHaveBeenCalledWith('DOCGEN-RECONNECT-SF-CLIENT-SECRET');
+      const loaded = await loadSecretsFromKeyVault(mockKeyVaultUri, { includeReconnectSecret: true });
+      expect(loaded.reconnectSfClientSecret).toBe('sf-oauth-secret');
+      expect(loaded.reconnectAadClientSecret).toBeUndefined();
+    });
+
     it('should skip SF-USERNAME when deployment supplies it and still load authentication secrets', async () => {
       mockSecretClient.getSecret.mockImplementation(async (name) => ({
         value: name === 'SF-PRIVATE-KEY' ? 'test-private-key' : undefined,
