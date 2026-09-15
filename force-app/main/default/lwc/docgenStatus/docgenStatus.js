@@ -590,8 +590,9 @@ export default class DocgenStatus extends LightningElement {
         const peak = Math.max(1, ...hourly.map((bucket) => bucket.count));
         const breakdown = (entries, key) =>
             entries.map((entry, index) => ({
-                key: `${index}`,
+                key: entry.sourceId || `${index}`,
                 label: entry[key],
+                sourceType: entry.sourceType,
                 count: entry.count,
                 barStyle: this.barStyle(entry.count, usage.last24Hours)
             }));

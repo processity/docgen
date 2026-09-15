@@ -180,6 +180,23 @@ function select(element, label, value) {
 }
 
 describe('c-docgen-status dashboard', () => {
+  it('shows composite and standalone request sources separately, with shares of total requests', async () => {
+    getUsageMetrics.mockResolvedValue({ ...USAGE, topTemplates: [
+      { sourceId: 'composite-1', sourceType: 'Composite', templateName: 'Combined Order Pack', count: 30 },
+      { sourceId: 'template-1', sourceType: 'Template', templateName: 'Combined Order Pack', count: 4 }
+    ] });
+    const element = createStatusPage(); await flushPromises();
+    const rows = [...element.shadowRoot.querySelectorAll('.ranked-row')]
+      .filter(row => row.querySelector('.slds-badge'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('Composite');
+    expect(rows[0].textContent).toContain('30');
+    expect(rows[1].textContent).toContain('Template');
+    expect(rows[1].textContent).toContain('4');
+    expect(rows[0].querySelector('.metric-bar__fill').style.width).toBe('75.0%');
+    expect(rows[1].querySelector('.metric-bar__fill').style.width).toBe('10.0%');
+    expect(textOf(element)).toContain('Most requested templates and composites');
+  });
   beforeEach(() => {
     getReconnectInfo.mockResolvedValue({ orgId: '00D000000000001AAA', userId: '005000000000001AAA', namedCredential: 'Docgen_Node_API_Sandbox', backendUrl: 'https://backend.example.com' });
     getSystemStatus.mockResolvedValue({ ready: true, checks: { salesforce: true } });

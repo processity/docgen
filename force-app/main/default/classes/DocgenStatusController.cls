@@ -338,20 +338,49 @@ public with sharing class DocgenStatusController {
                 });
             }
 
-            // Busiest templates
+            // Rank request sources, not the component templates inside a composite.
+            // The two sets are disjoint, including legacy rows with both lookups populated.
+            List<TemplateUsageRank> rankedSources = new List<TemplateUsageRank>();
             List<Map<String, Object>> topTemplates = new List<Map<String, Object>>();
             for (AggregateResult ar : [
-                SELECT Template__r.Name templateName, COUNT(Id) cnt
+                SELECT Template__c sourceId, Template__r.Name templateName, COUNT(Id) cnt
                 FROM Generated_Document__c
-                WHERE CreatedDate >= :last24Hours AND Template__c != null
-                GROUP BY Template__r.Name
-                ORDER BY COUNT(Id) DESC
+                WHERE CreatedDate >= :last24Hours AND Template__c != null AND Composite_Document__c = null
+                GROUP BY Template__c, Template__r.Name
+                ORDER BY COUNT(Id) DESC, Template__c ASC
                 LIMIT :TOP_TEMPLATES_LIMIT
             ]) {
-                topTemplates.add(new Map<String, Object>{
-                    'templateName' => ar.get('templateName') == null ? 'Unknown' : (String) ar.get('templateName'),
-                    'count' => (Integer) ar.get('cnt')
-                });
+                rankedSources.add(new TemplateUsageRank((Id) ar.get('sourceId'),
+                    ar.get('templateName') == null ? 'Unknown' : (String) ar.get('templateName'),
+                    'Template', (Integer) ar.get('cnt')));
+            }
+            List<AggregateResult> compositeUsage = [
+                SELECT Composite_Document__c sourceId, COUNT(Id) cnt
+                FROM Generated_Document__c
+                WHERE CreatedDate >= :last24Hours AND Composite_Document__c != null
+                GROUP BY Composite_Document__c
+                ORDER BY COUNT(Id) DESC, Composite_Document__c ASC
+                LIMIT :TOP_TEMPLATES_LIMIT
+            ];
+            Set<Id> compositeIds = new Set<Id>();
+            for (AggregateResult ar : compositeUsage) compositeIds.add((Id) ar.get('sourceId'));
+            // Description is long text and cannot be grouped in SOQL. Name is an auto-number.
+            Map<Id, Composite_Document__c> composites = new Map<Id, Composite_Document__c>([
+                SELECT Id, Name, Description__c FROM Composite_Document__c WHERE Id IN :compositeIds
+            ]);
+            for (AggregateResult ar : compositeUsage) {
+                Id sourceId = (Id) ar.get('sourceId');
+                Composite_Document__c composite = composites.get(sourceId);
+                String label = composite == null ? 'Composite document'
+                    : (String.isBlank(composite.Description__c) ? composite.Name : composite.Description__c.trim());
+                rankedSources.add(new TemplateUsageRank(sourceId, label, 'Composite', (Integer) ar.get('cnt')));
+            }
+            // Each query's top five contains every possible member of the combined top five.
+            rankedSources.sort();
+            for (Integer i = 0; i < Math.min(TOP_TEMPLATES_LIMIT, rankedSources.size()); i++) {
+                TemplateUsageRank entry = rankedSources[i];
+                topTemplates.add(new Map<String, Object>{ 'sourceId' => entry.sourceId,
+                    'sourceType' => entry.sourceType, 'templateName' => entry.label, 'count' => entry.count });
             }
 
             Datetime lastHourStart = nowTime.addHours(-1);
@@ -385,6 +414,24 @@ public with sharing class DocgenStatusController {
             };
         } catch (Exception e) {
             throw new AuraHandledException('Failed to get usage metrics: ' + e.getMessage());
+        }
+    }
+
+    private class TemplateUsageRank implements Comparable {
+        public Id sourceId;
+        public String label;
+        public String sourceType;
+        public Integer count;
+        public TemplateUsageRank(Id sourceId, String label, String sourceType, Integer count) {
+            this.sourceId = sourceId;
+            this.label = label;
+            this.sourceType = sourceType;
+            this.count = count;
+        }
+        public Integer compareTo(Object otherObject) {
+            TemplateUsageRank other = (TemplateUsageRank) otherObject;
+            if (count != other.count) return count > other.count ? -1 : 1;
+            return String.valueOf(sourceId).compareTo(String.valueOf(other.sourceId));
         }
     }
 

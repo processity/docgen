@@ -300,6 +300,59 @@ private class DocgenStatusControllerTest {
     }
 
     @isTest
+    static void testUsageRanksCompositeAndStandaloneRequestsOnce() {
+        Docgen_Template__c original = [SELECT Id, Name FROM Docgen_Template__c LIMIT 1];
+        Docgen_Template__c duplicateName = DocgenTestDataFactory.createTemplate(
+            original.Name, 'Account', 'SELECT Id FROM Account WHERE Id = :recordId');
+        List<Composite_Document__c> composites = new List<Composite_Document__c>{
+            new Composite_Document__c(Description__c = original.Name, Template_Strategy__c = 'Concatenate Templates'),
+            new Composite_Document__c(Description__c = original.Name, Template_Strategy__c = 'Own Template', TemplateContentVersionId__c = '068000000000000AAA'),
+            new Composite_Document__c(Template_Strategy__c = 'Concatenate Templates'),
+            new Composite_Document__c(Description__c = 'Below the top five', Template_Strategy__c = 'Concatenate Templates')
+        };
+        insert composites;
+        List<Generated_Document__c> requests = new List<Generated_Document__c>();
+        List<Integer> counts = new List<Integer>{20, 3, 2, 1};
+        for (Integer source = 0; source < composites.size(); source++) {
+            for (Integer i = 0; i < counts[source]; i++) {
+                requests.add(new Generated_Document__c(Composite_Document__c = composites[source].Id,
+                    // Legacy rows may contain both links: the composite must take precedence.
+                    Template__c = source == 0 && i < 10 ? original.Id : null,
+                    Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF',
+                    RequestHash__c = 'composite-usage-' + source + '-' + i));
+            }
+        }
+        for (Integer i = 0; i < 4; i++) requests.add(new Generated_Document__c(
+            Template__c = duplicateName.Id, Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF', RequestHash__c = 'duplicate-name-' + i));
+        requests.add(new Generated_Document__c(Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF', RequestHash__c = 'unlinked-usage'));
+        Generated_Document__c oldRequest = new Generated_Document__c(Composite_Document__c = composites[0].Id,
+            Status__c = 'SUCCEEDED', OutputFormat__c = 'PDF', RequestHash__c = 'old-composite-usage');
+        requests.add(oldRequest);
+        insert requests;
+        Test.setCreatedDate(oldRequest.Id, Datetime.now().addHours(-25));
+        Id fallbackId = composites[2].Id;
+        String fallbackName = [SELECT Name FROM Composite_Document__c WHERE Id = :fallbackId].Name;
+
+        Test.startTest();
+        Map<String, Object> usage = DocgenStatusController.getUsageMetrics();
+        Test.stopTest();
+        System.assertEquals(47, usage.get('last24Hours'), 'Each generated request contributes once to total volume');
+        List<Object> ranked = (List<Object>) usage.get('topTemplates');
+        System.assertEquals(5, ranked.size(), 'One combined top five, not five per source type');
+        List<Id> expectedIds = new List<Id>{composites[0].Id, original.Id, duplicateName.Id, composites[1].Id, composites[2].Id};
+        List<Integer> expectedCounts = new List<Integer>{20, 16, 4, 3, 2};
+        for (Integer i = 0; i < ranked.size(); i++) {
+            Map<String, Object> entry = (Map<String, Object>) ranked[i];
+            System.assertEquals(expectedIds[i], entry.get('sourceId'), 'Rank by individual source ID, even when names match');
+            System.assertEquals(expectedCounts[i], entry.get('count'), 'Composite rows must not also count against a component template');
+        }
+        System.assertEquals('Composite', ((Map<String, Object>) ranked[0]).get('sourceType'));
+        System.assertEquals(original.Name, ((Map<String, Object>) ranked[0]).get('templateName'), 'Use the human-readable composite description');
+        System.assertEquals('Template', ((Map<String, Object>) ranked[1]).get('sourceType'));
+        System.assertEquals(fallbackName, ((Map<String, Object>) ranked[4]).get('templateName'), 'Fall back to the composite record number');
+    }
+
+    @isTest
     static void testGetUsageMetrics() {
         Test.startTest();
         Map<String, Object> result = DocgenStatusController.getUsageMetrics();

@@ -2,8 +2,11 @@
     <template if:true={showConnectionModal}>
         <section role="dialog" aria-modal="true" aria-labelledby="connect-title" tabindex="-1" class="slds-modal slds-fade-in-open" onkeydown={handleModalKeydown}>
             <div class="slds-modal__container">
+                <lightning-button-icon icon-name="utility:close" alternative-text="Close connection setup" 
+                    onclick={closeConnectionModal} class="slds-button slds-button_icon slds-modal__close" 
+                    variant="bare-inverse">
+                </lightning-button-icon>
                 <header class="slds-modal__header">
-                    <lightning-button-icon icon-name="utility:close" alternative-text="Close connection setup" onclick={closeConnectionModal} class="slds-modal__close" variant="bare-inverse"></lightning-button-icon>
                     <h2 id="connect-title" class="slds-text-heading_medium">Connect this Salesforce org</h2>
                 </header>
                 <div class="slds-modal__content slds-p-around_medium">
@@ -283,15 +286,15 @@
                                 <template if:false={usage.hasVolume}><p class="empty-state">No format data in this window.</p></template>
                             </section>
                             <section class="panel">
-                                <div class="panel-heading"><h3>Most requested templates</h3><span class="muted">Top 5 · 24 hours</span></div>
+                                <div class="panel-heading"><h3>Most requested templates and composites</h3><span class="muted">Top 5 · 24 hours</span></div>
                                 <div class="ranked-list">
                                     <template for:each={usage.topTemplates} for:item="entry">
-                                        <div key={entry.key} class="ranked-row"><div class="ranked-label"><span title={entry.label}>{entry.label}</span><strong>{entry.count}</strong></div>
+                                        <div key={entry.key} class="ranked-row"><div class="ranked-label"><span title={entry.label}>{entry.label}<template if:true={entry.sourceType}><span class="slds-badge slds-m-left_x-small">{entry.sourceType}</span></template></span><strong>{entry.count}</strong></div>
                                             <div class="metric-bar"><span class="metric-bar__fill" style={entry.barStyle}></span></div>
                                         </div>
                                     </template>
                                 </div>
-                                <p class="muted">Requests with a linked template. Bars show share of all requests.</p>
+                                <p class="muted">Each request is counted once against its standalone template or composite document. Bars show share of all requests.</p>
                             </section>
                         </div>
                     </template>
