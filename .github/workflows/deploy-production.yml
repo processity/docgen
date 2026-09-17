@@ -87,10 +87,15 @@ jobs:
           echo "🚀 Deploying infrastructure to production..."
           echo "📦 Release: ${{ github.event.release.tag_name || inputs.release_tag }}"
 
+          # Compile to JSON so Azure CLI can merge the reconnect parameter file.
+          az bicep build-params \
+            --file infra/parameters/production.bicepparam \
+            --outfile "$RUNNER_TEMP/production.parameters.json"
+
           DEPLOYMENT_OUTPUT=$(az deployment group create \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
-            --parameters infra/parameters/production.bicepparam \
+            --parameters @"$RUNNER_TEMP/production.parameters.json" \
             --parameters @"$RUNNER_TEMP/reconnect.parameters.json" \
             --parameters preserveAppSecrets=true \
             --parameters sfUsername="$SF_USERNAME" \
