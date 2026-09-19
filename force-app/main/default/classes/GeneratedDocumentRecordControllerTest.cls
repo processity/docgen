@@ -2,7 +2,7 @@
 private class GeneratedDocumentRecordControllerTest {
     @isTest
     static void returnsFilesLookupsAndCollapsedPayloadData() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
 
         Docgen_Template__c template = DocgenTestDataFactory.createTemplate(
             'Record View Template',
@@ -129,23 +129,24 @@ private class GeneratedDocumentRecordControllerTest {
         ];
     }
 
-    private static void assignDocgenUserPermissionSet() {
-        PermissionSet docgenUser = [
+    // Full request diagnostics are reserved for Docgen administrators.
+    private static void assignDocgenAdminPermissionSet() {
+        PermissionSet docgenAdmin = [
             SELECT Id
             FROM PermissionSet
-            WHERE Name = 'Docgen_User'
+            WHERE Name = 'Docgen_Admin'
             LIMIT 1
         ];
         if ([
             SELECT COUNT()
             FROM PermissionSetAssignment
             WHERE AssigneeId = :UserInfo.getUserId()
-            AND PermissionSetId = :docgenUser.Id
+            AND PermissionSetId = :docgenAdmin.Id
         ] == 0) {
             System.runAs(new User(Id = UserInfo.getUserId())) {
                 insert new PermissionSetAssignment(
                     AssigneeId = UserInfo.getUserId(),
-                    PermissionSetId = docgenUser.Id
+                    PermissionSetId = docgenAdmin.Id
                 );
             }
         }

@@ -440,7 +440,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateTemplateConfigurationWithUploadedFile() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         ContentVersion uploadedVersion = createTemplateFile('New Account Template', 'docx');
         ContentVersion storedVersion = [
             SELECT Id, ContentDocumentId
@@ -499,7 +499,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateTemplateConfigurationWithDeferredUpload() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         Map<String, Object> fields = new Map<String, Object>{
             'Name' => 'Deferred Template',
             'DataSource__c' => 'SOQL',
@@ -536,7 +536,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateConcatenateCompositeWithoutMasterFile() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         Map<String, Object> fields = new Map<String, Object>{
             'Template_Strategy__c' => 'Concatenate Templates',
             'Default_Output_Format__c' => 'PDF'
@@ -575,7 +575,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateOwnTemplateCompositeWithUploadedFile() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         ContentVersion uploadedVersion = createTemplateFile('Composite Master', 'pptx');
         ContentVersion storedVersion = [
             SELECT Id, ContentDocumentId
@@ -619,7 +619,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateOwnTemplateCompositeWithDeferredUpload() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         Map<String, Object> fields = new Map<String, Object>{
             'Template_Strategy__c' => 'Own Template',
             'Default_Output_Format__c' => 'PDF',
@@ -656,7 +656,7 @@ private class DocgenTemplateFileControllerTest {
 
     @isTest
     static void testCreateConfigurationValidatesFileAndFields() {
-        assignDocgenUserPermissionSet();
+        assignDocgenAdminPermissionSet();
         ContentVersion pdfVersion = createTemplateFile('Not A Template', 'pdf');
         Id pdfDocumentId = [
             SELECT ContentDocumentId
@@ -715,23 +715,24 @@ private class DocgenTemplateFileControllerTest {
         return version;
     }
 
-    private static void assignDocgenUserPermissionSet() {
-        PermissionSet docgenUser = [
+    // Creating template configuration is an administrator operation.
+    private static void assignDocgenAdminPermissionSet() {
+        PermissionSet docgenAdmin = [
             SELECT Id
             FROM PermissionSet
-            WHERE Name = 'Docgen_User'
+            WHERE Name = 'Docgen_Admin'
             LIMIT 1
         ];
         if ([
             SELECT COUNT()
             FROM PermissionSetAssignment
             WHERE AssigneeId = :UserInfo.getUserId()
-            AND PermissionSetId = :docgenUser.Id
+            AND PermissionSetId = :docgenAdmin.Id
         ] == 0) {
             System.runAs(new User(Id = UserInfo.getUserId())) {
                 insert new PermissionSetAssignment(
                     AssigneeId = UserInfo.getUserId(),
-                    PermissionSetId = docgenUser.Id
+                    PermissionSetId = docgenAdmin.Id
                 );
             }
         }
