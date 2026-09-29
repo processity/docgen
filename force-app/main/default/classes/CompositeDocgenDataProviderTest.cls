@@ -938,4 +938,189 @@ private class CompositeDocgenDataProviderTest {
                 'Error should explain the supported strategy');
         }
     }
+
+    @isTest
+    static void testManyAppendixFormulasShareSourceQueries() {
+        FormulaCacheFixture fixture = new FormulaCacheFixture('No optional sections');
+        fixture.addSection('Header', null);
+        fixture.addSection('Tables', null);
+        fixture.addSection('Clauses', null);
+        fixture.addSection('RipReplace',
+            'AND(AnnualRevenue > 2000000, NumberOfEmployees > 20, BillingCity = "London")');
+        for (Integer i = 0; i < 71; i++) {
+            fixture.addSection('Appendix' + i, 'CONTAINS(Name, "Appendix' + i + '")');
+        }
+        insert fixture.junctions;
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        CompositeDocgenDataProvider.CompositeBuildResult result = buildFixture(fixture);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(6, queriesUsed,
+            '75 sections need one junction query, two formula source queries and three provider queries');
+        Assert.areEqual(new Set<String>{ 'Header', 'Tables', 'Clauses' }, result.data.keySet(),
+            'All 72 conditional sections should be excluded');
+        Assert.areEqual(3, result.includedJunctionIds.size(), 'Only unconditional sections should be selected');
+    }
+
+    @isTest
+    static void testSharedSourceStillEvaluatesEachFormula() {
+        FormulaCacheFixture fixture = new FormulaCacheFixture('Appendix One; Appendix Three');
+        Composite_Document_Template__c first = fixture.addSection('First', 'CONTAINS(Name, "Appendix One")');
+        fixture.addSection('Missing', 'CONTAINS(Name, "Appendix Two")');
+        Composite_Document_Template__c third = fixture.addSection('Third', 'CONTAINS(Name, "Appendix Three")');
+        Composite_Document_Template__c revenue = fixture.addSection('Revenue',
+            'AND(CONTAINS(Name, "Appendix"), AnnualRevenue > 0)');
+        fixture.addSection('MissingRevenue', 'AND(AnnualRevenue > 0, CONTAINS(Name, "Missing"))');
+        insert fixture.junctions;
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        CompositeDocgenDataProvider.CompositeBuildResult result = buildFixture(fixture);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(6, queriesUsed,
+            'Each distinct field set should be queried once and all three included providers should still run');
+        Assert.areEqual(new Set<Id>{ first.Id, third.Id, revenue.Id }, result.includedJunctionIds,
+            'Formulas sharing fields must retain their individual true or false results');
+        Assert.areEqual(new Set<String>{ 'First', 'Third', 'Revenue' }, result.data.keySet(),
+            'Only matching formulas should produce data');
+        Assert.areEqual(fixture.sourceAccount.Name,
+            ((Map<String, Object>) result.data.get('Third')).get('Name'),
+            'Included providers should return the existing section data');
+    }
+
+    @isTest
+    static void testFormulaCacheSeparatesSequentialSourceRecords() {
+        FormulaCacheFixture fixture = new FormulaCacheFixture('First Account');
+        Account secondAccount = DocgenTestDataFactory.createAccount('Second Account');
+        Opportunity opportunity = DocgenTestDataFactory.createOpportunity(secondAccount.Id);
+        Docgen_Template__c opportunityTemplate = DocgenTestDataFactory.createTemplate(
+            'Resolve next account', 'Opportunity',
+            'SELECT Id, AccountId FROM Opportunity WHERE Id = :recordId'
+        );
+        fixture.addSection('BeforeRelationship', 'Name = "First Account"');
+        fixture.addSection('Relationship', null, opportunityTemplate.Id);
+        fixture.addSection('AfterRelationship', 'Name = "Second Account"');
+        insert fixture.junctions;
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        CompositeDocgenDataProvider.CompositeBuildResult result =
+            CompositeDocgenDataProvider.buildCompositeDataWithSelection(
+                fixture.composite.Id,
+                new Map<String, Id>{
+                    'accountId' => fixture.sourceAccount.Id,
+                    'opportunityId' => opportunity.Id
+                },
+                'en-GB', 'Europe/London'
+            );
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(6, queriesUsed, 'Different source IDs need separate formula reads');
+        Assert.areEqual(3, result.includedJunctionIds.size(),
+            'The later formula should use the account ID extracted from the previous provider');
+        Assert.areEqual(fixture.sourceAccount.Id,
+            ((Map<String, Object>) result.data.get('BeforeRelationship')).get('Id'));
+        Assert.areEqual(secondAccount.Id,
+            ((Map<String, Object>) result.data.get('AfterRelationship')).get('Id'),
+            'A cache entry for the original account must not affect the newly resolved account');
+    }
+
+    @isTest
+    static void testCustomProviderInvalidatesFormulaSourceCache() {
+        FormulaCacheFixture fixture = new FormulaCacheFixture('Before Custom');
+        Docgen_Template__c customTemplate = DocgenTestDataFactory.createCustomTemplate(
+            'Mutate formula source', 'Account', 'MutatingFormulaSourceProvider'
+        );
+        fixture.addSection('BeforeCustom', 'Name = "Before Custom"');
+        fixture.addSection('Custom', null, customTemplate.Id);
+        fixture.addSection('AfterCustom', 'Name = "Changed by custom provider"');
+        fixture.addSection('OldValue', 'Name = "Before Custom"');
+        insert fixture.junctions;
+
+        Test.startTest();
+        CompositeDocgenDataProvider.CompositeBuildResult result = buildFixture(fixture);
+        Test.stopTest();
+
+        Assert.areEqual(new Set<String>{ 'BeforeCustom', 'Custom', 'AfterCustom' }, result.data.keySet(),
+            'Later formulas must observe changes made by a custom provider');
+        Assert.areEqual('Before Custom',
+            ((Map<String, Object>) result.data.get('BeforeCustom')).get('Name'),
+            'Earlier section data must retain the value read before the custom provider');
+        Assert.areEqual('Changed by custom provider',
+            ((Map<String, Object>) result.data.get('AfterCustom')).get('Name'),
+            'The updated source should be used by subsequent formulas and providers');
+    }
+
+    @isTest
+    static void testSeparateBuildsReadFreshFormulaSources() {
+        FormulaCacheFixture fixture = new FormulaCacheFixture('Initial Account');
+        fixture.addSection('Conditional', 'CONTAINS(Name, "Initial")');
+        insert fixture.junctions;
+
+        Test.startTest();
+        CompositeDocgenDataProvider.CompositeBuildResult first = buildFixture(fixture);
+        fixture.sourceAccount.Name = 'Updated Account';
+        update fixture.sourceAccount;
+        Integer queriesBefore = Limits.getQueries();
+        CompositeDocgenDataProvider.CompositeBuildResult second = buildFixture(fixture);
+        Integer secondBuildQueries = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, first.includedJunctionIds.size(), 'The first build should include the initial value');
+        Assert.isTrue(second.includedJunctionIds.isEmpty(),
+            'A separate build in the same transaction must not retain a previous build\'s source cache');
+        Assert.isTrue(second.data.isEmpty(), 'The changed source should exclude the section from the second build');
+        Assert.areEqual(2, secondBuildQueries, 'A fresh build should read junctions and its formula source');
+    }
+
+    private static CompositeDocgenDataProvider.CompositeBuildResult buildFixture(FormulaCacheFixture fixture) {
+        return CompositeDocgenDataProvider.buildCompositeDataWithSelection(
+            fixture.composite.Id,
+            new Map<String, Id>{ 'accountId' => fixture.sourceAccount.Id },
+            'en-GB', 'Europe/London'
+        );
+    }
+
+    private class FormulaCacheFixture {
+        public Account sourceAccount;
+        public Composite_Document__c composite;
+        public Docgen_Template__c accountTemplate;
+        public List<Composite_Document_Template__c> junctions = new List<Composite_Document_Template__c>();
+
+        public FormulaCacheFixture(String sourceName) {
+            sourceAccount = DocgenTestDataFactory.createAccount(sourceName);
+            composite = new Composite_Document__c(
+                Description__c = 'Formula query reuse',
+                Template_Strategy__c = 'Concatenate Templates',
+                IsActive__c = true
+            );
+            insert composite;
+            accountTemplate = DocgenTestDataFactory.createTemplate(
+                'Formula cache source', 'Account', 'SELECT Id, Name FROM Account WHERE Id = :recordId'
+            );
+        }
+
+        public Composite_Document_Template__c addSection(String namespaceName, String formula) {
+            return addSection(namespaceName, formula, accountTemplate.Id);
+        }
+
+        public Composite_Document_Template__c addSection(String namespaceName, String formula, Id templateId) {
+            Composite_Document_Template__c junction = new Composite_Document_Template__c(
+                Composite_Document__c = composite.Id,
+                Document_Template__c = templateId,
+                Namespace__c = namespaceName,
+                Sequence__c = (junctions.size() + 1) * 10,
+                IsActive__c = true,
+                Inclusion_Formula__c = formula
+            );
+            junctions.add(junction);
+            return junction;
+        }
+    }
 }

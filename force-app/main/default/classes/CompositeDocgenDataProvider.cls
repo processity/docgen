@@ -101,6 +101,9 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
 
         // Execute each template's data provider and merge results
         Map<String, Id> variablePool = new Map<String, Id>(recordIds); // Shared variable pool
+        // Conditions often inspect the same source fields across many optional sections.
+        // Keep their source records local to this build so later builds see fresh data.
+        Map<String, SObject> formulaSourceRecords = new Map<String, SObject>();
 
         for (Composite_Document_Template__c junction : junctions) {
             Docgen_Template__c tmpl = junction.Document_Template__r;
@@ -108,7 +111,7 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
             // Determine record ID for this template
             Id templateRecordId = determineRecordId(tmpl, variablePool);
 
-            if (!shouldIncludeTemplate(junction, templateRecordId)) {
+            if (!shouldIncludeTemplate(junction, templateRecordId, formulaSourceRecords)) {
                 continue;
             }
 
@@ -122,6 +125,11 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
                 locale,
                 timezone
             );
+
+            if (tmpl.DataSource__c == 'Custom' && String.isNotBlank(tmpl.ClassName__c)) {
+                // Custom providers may update source records used by later conditions.
+                formulaSourceRecords.clear();
+            }
 
             // Build section data for this namespace.
             // Single-record SOQL data is exposed in both convenient forms:
@@ -174,7 +182,8 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
      */
     private static Boolean shouldIncludeTemplate(
         Composite_Document_Template__c junction,
-        Id sourceRecordId
+        Id sourceRecordId,
+        Map<String, SObject> formulaSourceRecords
     ) {
         if (String.isBlank(junction.Inclusion_Formula__c)) {
             return true;
@@ -198,20 +207,33 @@ public class CompositeDocgenDataProvider implements DocgenDataProvider {
             List<String> queryFields = new List<String>(referencedFields);
             queryFields.sort();
 
-            String objectApiName = sourceType.getDescribe().getName();
-            String query = 'SELECT ' + String.join(queryFields, ', ') +
-                ' FROM ' + objectApiName +
-                ' WHERE Id = :sourceRecordId LIMIT 1';
-            List<SObject> sourceRecords = Database.query(query);
+            Set<String> normalizedFields = new Set<String>();
+            for (String field : referencedFields) {
+                normalizedFields.add(field.toLowerCase());
+            }
+            List<String> cacheFields = new List<String>(normalizedFields);
+            cacheFields.sort();
+            String cacheKey = String.valueOf(sourceRecordId) + ':' + String.join(cacheFields, ',');
+            SObject sourceRecord = formulaSourceRecords.get(cacheKey);
 
-            if (sourceRecords.isEmpty()) {
-                throw inclusionFormulaError(
-                    junction,
-                    'Source record ' + sourceRecordId + ' was not found or is not accessible.'
-                );
+            if (sourceRecord == null) {
+                String objectApiName = sourceType.getDescribe().getName();
+                String query = 'SELECT ' + String.join(queryFields, ', ') +
+                    ' FROM ' + objectApiName +
+                    ' WHERE Id = :sourceRecordId LIMIT 1';
+                List<SObject> sourceRecords = Database.query(query);
+
+                if (sourceRecords.isEmpty()) {
+                    throw inclusionFormulaError(
+                        junction,
+                        'Source record ' + sourceRecordId + ' was not found or is not accessible.'
+                    );
+                }
+                sourceRecord = sourceRecords[0];
+                formulaSourceRecords.put(cacheKey, sourceRecord);
             }
 
-            Object formulaResult = formulaInstance.evaluate(sourceRecords[0]);
+            Object formulaResult = formulaInstance.evaluate(sourceRecord);
             return formulaResult != null && (Boolean) formulaResult;
         } catch (CompositeDocgenException e) {
             throw e;
