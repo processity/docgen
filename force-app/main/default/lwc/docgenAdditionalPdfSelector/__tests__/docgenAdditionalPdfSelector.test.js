@@ -18,7 +18,7 @@ const FILE_1 = {
 };
 const FILE_2 = {
   contentVersionId: '068000000000002AAA',
-  title: 'Appendix',
+  title: 'Word Schedule.docx',
   contentSize: 2048,
   lastModifiedDate: '2026-07-02T10:00:00.000Z'
 };
@@ -49,7 +49,7 @@ describe('c-docgen-additional-pdf-selector', () => {
     expect(element.shadowRoot.querySelector('.selector')).not.toBeNull();
   });
 
-  it('shows related PDFs and preserves selection order', async () => {
+  it('shows related PDF and DOCX files and preserves selection order', async () => {
     getAttachmentContext.mockResolvedValue({
       effectiveOutputFormat: 'PDF',
       files: [FILE_1, FILE_2]
@@ -149,7 +149,7 @@ describe('c-docgen-additional-pdf-selector', () => {
     expect(() => element.setSelectedContentVersionIds('{invalid')).not.toThrow();
     expect(element.getSelectedContentVersionIds()).toEqual([]);
     expect(toastHandler.mock.calls[0][0].detail).toEqual(expect.objectContaining({
-      title: 'Invalid PDF Selection',
+      title: 'Invalid Attachment Selection',
       variant: 'error'
     }));
   });

@@ -1,11 +1,15 @@
 import { PDFDocument } from 'pdf-lib';
 import type { SalesforceApi } from '../src/sf/api';
-import { SalesforceApiError, ValidationError } from '../src/errors';
+import { ConversionFailedError, ConversionTimeoutError, SalesforceApiError, ValidationError } from '../src/errors';
+import { convertDocxToPdf } from '../src/convert/soffice';
 import {
   appendAdditionalPdfPages,
   MAX_ADDITIONAL_PDF_COUNT,
   MAX_ADDITIONAL_PDF_BYTES,
 } from '../src/pdf/attachments';
+
+jest.mock('../src/convert/soffice', () => ({ convertDocxToPdf: jest.fn() }));
+const mockConvertDocxToPdf = jest.mocked(convertDocxToPdf);
 
 const ID_1 = '068000000000001AAA';
 const ID_2 = '068000000000002AAA';
@@ -32,7 +36,11 @@ function createApi(records: any[], files: Record<string, Buffer | Error>): Sales
   } as unknown as SalesforceApi;
 }
 
-describe('additional PDF attachments', () => {
+describe('additional PDF and DOCX attachments', () => {
+  beforeEach(() => {
+    mockConvertDocxToPdf.mockReset();
+  });
+
   it('returns the original PDF without Salesforce calls when IDs are omitted', async () => {
     const base = await createPdf([100]);
     const api = createApi([], {});
@@ -69,6 +77,72 @@ describe('additional PDF attachments', () => {
     expect(result.appendedAttachmentCount).toBe(2);
     expect(result.warnings).toEqual([]);
     expect(api.downloadContentVersion).toHaveBeenCalledTimes(2);
+    expect(mockConvertDocxToPdf).not.toHaveBeenCalled();
+  });
+
+  it('converts DOCX attachments as documents and appends PDF and DOCX pages in caller order', async () => {
+    const base = await createPdf([100]);
+    const firstDocx = Buffer.from('DOCX with literal {{template commands}}');
+    const pdf = await createPdf([310]);
+    const secondDocx = Buffer.from('Second DOCX');
+    mockConvertDocxToPdf
+      .mockResolvedValueOnce(await createPdf([410, 420]))
+      .mockResolvedValueOnce(await createPdf([210]));
+    const api = createApi(
+      [
+        { Id: ID_1, Title: 'First', FileType: 'word_x', ContentSize: firstDocx.length },
+        { Id: ID_2, Title: 'PDF', FileType: 'PDF', ContentSize: pdf.length },
+        { Id: ID_3, Title: 'Second', FileExtension: 'DOCX', ContentSize: secondDocx.length },
+      ],
+      { [ID_1]: firstDocx, [ID_2]: pdf, [ID_3]: secondDocx }
+    );
+
+    const result = await appendAdditionalPdfPages(
+      base, [ID_3, ID_2, ID_1, ID_3], api, 'corr-docx',
+      { timeout: 12345, workdir: '/tmp/attachments' }
+    );
+    const output = await PDFDocument.load(result.buffer);
+
+    expect(output.getPages().map((page) => page.getWidth())).toEqual([100, 410, 420, 310, 210]);
+    expect(result.appendedAttachmentCount).toBe(3);
+    expect(result.warnings).toEqual([]);
+    expect(api.downloadContentVersion).toHaveBeenCalledTimes(3);
+    expect(mockConvertDocxToPdf).toHaveBeenCalledTimes(2);
+    expect(mockConvertDocxToPdf).toHaveBeenNthCalledWith(1, secondDocx, {
+      timeout: 12345, workdir: '/tmp/attachments', correlationId: 'corr-docx',
+    });
+    expect(mockConvertDocxToPdf).toHaveBeenNthCalledWith(2, firstDocx, {
+      timeout: 12345, workdir: '/tmp/attachments', correlationId: 'corr-docx',
+    });
+  });
+
+  it.each([
+    new ConversionTimeoutError(1000),
+    new ConversionFailedError('Invalid DOCX'),
+  ])('fails generation instead of dropping a DOCX when conversion fails (%s)', async (error) => {
+    const base = await createPdf([100]);
+    const api = createApi(
+      [{ Id: ID_1, Title: 'Schedule', FileType: 'WORD_X', ContentSize: 10 }],
+      { [ID_1]: Buffer.from('DOCX') }
+    );
+    mockConvertDocxToPdf.mockRejectedValueOnce(error);
+
+    await expect(appendAdditionalPdfPages(base, [ID_1], api, 'corr-fail')).rejects.toBe(error);
+  });
+
+  it.each(['malformed', 'empty'])('fails generation when converted DOCX yields a %s PDF', async (resultType) => {
+    const base = await createPdf([100]);
+    const api = createApi(
+      [{ Id: ID_1, Title: 'Schedule', FileExtension: 'docx', ContentSize: 10 }],
+      { [ID_1]: Buffer.from('DOCX') }
+    );
+    const emptyPdf = await PDFDocument.create();
+    mockConvertDocxToPdf.mockResolvedValueOnce(resultType === 'malformed'
+      ? Buffer.from('not a PDF')
+      : Buffer.from(await emptyPdf.save({ addDefaultPage: false })));
+
+    await expect(appendAdditionalPdfPages(base, [ID_1], api, 'corr-fail'))
+      .rejects.toBeInstanceOf(ConversionFailedError);
   });
 
   it('skips permanent invalid files and returns structured warnings', async () => {
@@ -76,7 +150,7 @@ describe('additional PDF attachments', () => {
     const malformed = Buffer.from('not a pdf');
     const api = createApi(
       [
-        { Id: ID_1, Title: 'Word file', FileType: 'WORD_X', FileExtension: 'docx', ContentSize: 10 },
+        { Id: ID_1, Title: 'Legacy Word file', FileType: 'WORD', FileExtension: 'doc', ContentSize: 10 },
         { Id: ID_2, Title: 'Broken PDF', FileType: 'PDF', FileExtension: 'pdf', ContentSize: malformed.length },
       ],
       { [ID_2]: malformed }
@@ -138,12 +212,36 @@ describe('additional PDF attachments', () => {
     const sizeApi = createApi(
       [
         { Id: ID_1, Title: 'Large one', FileType: 'PDF', ContentSize: MAX_ADDITIONAL_PDF_BYTES },
-        { Id: ID_2, Title: 'Large two', FileType: 'PDF', ContentSize: 1 },
+        { Id: ID_2, Title: 'Large DOCX', FileType: 'WORD_X', ContentSize: 1 },
       ],
       {}
     );
     await expect(
       appendAdditionalPdfPages(base, [ID_1, ID_2], sizeApi, 'corr-7')
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('checks actual DOCX download size even when metadata understates the size', async () => {
+    const base = await createPdf([100]);
+    const api = createApi(
+      [{ Id: ID_1, Title: 'Large DOCX', FileType: 'WORD_X', ContentSize: 1 }],
+      { [ID_1]: Buffer.alloc(MAX_ADDITIONAL_PDF_BYTES + 1) }
+    );
+
+    await expect(appendAdditionalPdfPages(base, [ID_1], api, 'corr-size'))
+      .rejects.toBeInstanceOf(ValidationError);
+    expect(mockConvertDocxToPdf).not.toHaveBeenCalled();
+  });
+
+  it('also bounds the PDF bytes produced by DOCX conversion', async () => {
+    const base = await createPdf([100]);
+    const api = createApi(
+      [{ Id: ID_1, Title: 'Expanded DOCX', FileType: 'WORD_X', ContentSize: 1 }],
+      { [ID_1]: Buffer.from('DOCX') }
+    );
+    mockConvertDocxToPdf.mockResolvedValueOnce(Buffer.alloc(MAX_ADDITIONAL_PDF_BYTES + 1));
+
+    await expect(appendAdditionalPdfPages(base, [ID_1], api, 'corr-size'))
+      .rejects.toThrow('Additional files after PDF conversion exceed the 50 MiB aggregate size limit');
   });
 });

@@ -28,7 +28,7 @@ This component is designed for admin configuration via the Lightning App Builder
 | **Button Label** | String | Custom text displayed on the button | `Generate Account Report` |
 | **Success Message** | String | Custom message shown in success toast notification | `Report generated successfully!` |
 | **Hide Internal Button** | Boolean | Hides the component's button when generation is controlled by a parent LWC | `true` |
-| **Hide Additional PDF Picker** | Boolean | Hides the additional PDF file picker shown before generation (PDF output only). Attachments can still be passed programmatically via `additionalPdfContentVersionIds`. | `true` |
+| **Hide Additional Document Picker** | Boolean | Hides the additional PDF/DOCX file picker shown before generation (PDF output only). Attachments can still be passed programmatically via `additionalPdfContentVersionIds`. | `true` |
 
 ---
 
@@ -54,7 +54,7 @@ await generator.generate({
 });
 ```
 
-The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, optional `readOnlyWord`, and optional `additionalPdfContentVersionIds` (array of ContentVersion IDs merged after the generated PDF; overrides any file picker selection). Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF, PPTX, and XLSX. XLSX generation requires **Own Template**. It emits
+The public `generate()` method accepts `compositeDocumentId`, `recordIds`, optional `outputFormat`, optional `readOnlyWord`, and optional `additionalPdfContentVersionIds` (array of PDF or DOCX ContentVersion IDs appended after the generated PDF; DOCX attachments are converted to PDF; overrides any file picker selection). Omit `outputFormat` or pass blank to use the Composite Document **Default Output Format**. Set `readOnlyWord: true` only when protected DOCX output is required; it is ignored for PDF, PPTX, and XLSX. XLSX generation requires **Own Template**. It emits
 `docgenstart`, `docgensuccess`, and `docgenerror` events that bubble through the parent component.
 
 ### Example 1: Single Record ID (Account Page)

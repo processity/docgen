@@ -615,7 +615,8 @@ export class PollerService {
           outputBuffer,
           request.additionalPdfContentVersionIds,
           sfApi,
-          doc.CorrelationId__c
+          doc.CorrelationId__c,
+          conversion
         );
         outputBuffer = attachmentResult.buffer;
         attachmentWarnings = initialAttachmentWarnings.concat(attachmentResult.warnings);

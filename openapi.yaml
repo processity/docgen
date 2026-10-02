@@ -1011,10 +1011,13 @@ components:
             type: string
             pattern: '^([a-zA-Z0-9]{15}|[a-zA-Z0-9]{18})$'
           description: |
-            Optional ordered Salesforce ContentVersion IDs for PDF files whose pages are appended after
-            the generated PDF. Duplicate IDs are removed after their first occurrence. At most 20 unique
-            PDFs are accepted and the aggregate source
-            size is limited to 50 MiB. Permanent per-file problems are returned as attachment warnings.
+            Optional ordered Salesforce ContentVersion IDs for PDF or DOCX files whose pages are appended
+            after the generated PDF. DOCX attachments are converted to PDF without template merging.
+            The legacy property name is retained for compatibility. Duplicate IDs are removed after their
+            first occurrence. At most 20 unique files are accepted. Aggregate source size and aggregate
+            attachment PDF size after conversion are each limited to 50 MiB. Unsupported, inaccessible,
+            and invalid PDF files are returned as attachment warnings. DOCX conversion failures fail
+            generation and use the existing conversion retry behavior for queued requests.
             This property is ignored completely for DOCX, PPTX, and XLSX output.
           example:
             - '068xx000000extraAXX'
@@ -1152,7 +1155,7 @@ components:
         appendedAttachmentCount:
           type: integer
           minimum: 0
-          description: Number of additional PDF files successfully appended to the generated PDF.
+          description: Number of additional PDF or DOCX files successfully appended to the generated PDF.
           example: 2
         attachmentWarnings:
           type: array
@@ -1173,6 +1176,7 @@ components:
                 example: Appendix
               code:
                 type: string
+                description: NOT_A_PDF is the legacy code for an unsupported file that is neither PDF nor DOCX.
                 enum:
                   - INVALID_CONTENT_VERSION_ID
                   - CONTENT_VERSION_NOT_FOUND
@@ -1182,7 +1186,7 @@ components:
                   - EMPTY_PDF
               message:
                 type: string
-                example: The ContentVersion is not a PDF and was skipped.
+                example: The ContentVersion is neither PDF nor DOCX and was skipped.
 
     Error:
       type: object

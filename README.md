@@ -349,7 +349,7 @@ docgen/
 - **docgenProgressButton**: Queued single-template generation with progress bar, requester-validated JPEG page preview, and Save/Cancel
 - **compositeDocgenButton**: Composite document generation button with recordIds mapping
 - **docgenDocumentSelector**: Template/composite document selection UI with search lookups and optional preset lock; embeds the generator buttons for a complete generation flow on any supported object
-- **docgenAdditionalPdfSelector**: Attach additional PDF files to a generation request
+- **docgenAdditionalPdfSelector**: Append PDF or DOCX files to PDF output; DOCX attachments are converted to PDF by the backend
 - **docgenTestPage**: E2E testing wrapper component
 
 ### Custom App

@@ -1,10 +1,10 @@
 @isTest
 private class DocgenAdditionalPdfEnvelopeTest {
-    private static ContentVersion createPdf(String title) {
+    private static ContentVersion createFile(String title, String extension) {
         ContentVersion version = new ContentVersion(
             Title = title,
-            PathOnClient = title + '.pdf',
-            VersionData = Blob.valueOf('pdf')
+            PathOnClient = title + '.' + extension,
+            VersionData = Blob.valueOf('attachment')
         );
         insert version;
         return version;
@@ -24,7 +24,8 @@ private class DocgenAdditionalPdfEnvelopeTest {
             false,
             false
         );
-        ContentVersion attachment = createPdf('Attachment');
+        ContentVersion attachment = createFile('Attachment', 'docx');
+        ContentVersion pdfAttachment = createFile('PDF Attachment', 'pdf');
 
         DocgenEnvelopeService.Envelope basePdf = DocgenEnvelopeService.build(
             account.Id, template, 'PDF', 'en-GB', 'Europe/London', false, (List<Id>) null
@@ -36,13 +37,13 @@ private class DocgenAdditionalPdfEnvelopeTest {
             'en-GB',
             'Europe/London',
             false,
-            new List<Id>{ attachment.Id, attachment.Id }
+            new List<Id>{ attachment.Id, pdfAttachment.Id, attachment.Id }
         );
 
         Assert.areEqual(
-            new List<String>{ String.valueOf(attachment.Id) },
+            new List<String>{ String.valueOf(attachment.Id), String.valueOf(pdfAttachment.Id) },
             attachedPdf.additionalPdfContentVersionIds,
-            'Attachments should be deduplicated while preserving order'
+            'DOCX and PDF attachments should be deduplicated while preserving order'
         );
         Assert.areNotEqual(basePdf.requestHash, attachedPdf.requestHash, 'PDF hash must include attachments');
         Assert.isTrue(
@@ -133,7 +134,7 @@ private class DocgenAdditionalPdfEnvelopeTest {
             Sequence__c = 1,
             IsActive__c = true
         );
-        ContentVersion attachment = createPdf('Composite Attachment');
+        ContentVersion attachment = createFile('Composite Word Schedule', 'docx');
 
         DocgenEnvelopeService.Envelope envelope = DocgenEnvelopeService.buildForComposite(
             composite.Id,

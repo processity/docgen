@@ -82,7 +82,7 @@ export default class DocgenDocumentSelector extends LightningElement {
   @api docgenName;
 
   /**
-   * Optional preset additional PDF ContentVersion IDs (array or JSON array
+   * Optional preset additional PDF or DOCX ContentVersion IDs (array or JSON array
    * string) attached to the generated PDF. Typically combined with
    * hideFilePicker so the user cannot change the preset attachments.
    */
@@ -99,7 +99,7 @@ export default class DocgenDocumentSelector extends LightningElement {
   }
 
   /**
-   * Hide the additional PDF file picker rendered by the generator components.
+   * Hide the additional document picker rendered by the generator components.
    */
   @api
   get hideFilePicker() {

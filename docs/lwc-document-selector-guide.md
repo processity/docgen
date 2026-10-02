@@ -6,7 +6,7 @@ The **Docgen Document Selector** (`docgenDocumentSelector`) is a Lightning Web C
 
 1. **Source selection** - the user chooses between a single template and a composite document.
 2. **Document lookup** - a debounced search over `Docgen_Template__c` (by name) or active `Composite_Document__c` records (SOSL over description and composite number), scoped to the record's object. Blank searches show recently viewed records first.
-3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box. The action label is format-based for both sources: `Generate PDF`, `Generate DOCX`, `Generate PPTX`, or `Generate XLSX`.
+3. **Generation** - the component embeds `docgenProgressButton` (template) or `compositeDocgenButton` (composite), so additional PDF/DOCX attachment selection, progress tracking, inline PDF preview, and Save/Cancel actions all work out of the box. The action label is format-based for both sources: `Generate PDF`, `Generate DOCX`, `Generate PPTX`, or `Generate XLSX`.
 
 The component is object-agnostic: it works for any object that has templates or composite documents configured (`PrimaryParent__c`).
 
@@ -24,8 +24,8 @@ The component is object-agnostic: it works for any object that has templates or 
 | **previewBeforeSave** | Boolean | `false` | Generate in preview mode: the user reviews the document and must Save or Cancel before it is linked to the record. |
 | **docgenType** | String | — | Optional preset: `template` or `composite`. See [Preset selection lock](#preset-selection-lock). |
 | **docgenName** | String | — | Optional preset document name. See [Preset selection lock](#preset-selection-lock). |
-| **hideFilePicker** | Boolean | `false` | Hide the additional PDF file picker rendered by the embedded generator. See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
-| **additionalPdfContentVersionIds** | String[] / JSON | `[]` | Optional preset ContentVersion IDs of PDF files merged after the generated document (PDF output only). See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
+| **hideFilePicker** | Boolean | `false` | Hide the additional PDF/DOCX file picker rendered by the embedded generator. See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
+| **additionalPdfContentVersionIds** | String[] / JSON | `[]` | Optional preset ContentVersion IDs of PDF or DOCX files appended after the generated document (PDF output only). DOCX files are converted to PDF. See [Controlling the additional PDF picker](#controlling-the-additional-pdf-picker). |
 | **startGenerationHandler** | Function | — | Optional parent-supplied queued-start delegate, forwarded to either embedded generator. Programmatic use only; see [Delegating start](#delegating-start-to-a-shared-apex-service). |
 
 ---
@@ -68,7 +68,7 @@ When embedding, always pass `object-api-name` explicitly - the Lightning runtime
 
 ## Controlling the additional PDF picker
 
-For PDF output, the embedded generator shows a file picker so the user can attach related PDF files to the generated document. Two properties control this:
+For PDF output, the embedded generator shows a file picker so the user can attach related PDF or DOCX files to the generated document. DOCX attachments are converted to PDF without evaluating template commands, then appended in selection order. The existing component and API names retain `Pdf` for compatibility. Two properties control this:
 
 - **hideFilePicker** - hides the picker entirely. Use when the parent decides the attachments (or wants none).
 - **additionalPdfContentVersionIds** - presets the attachment ContentVersion IDs programmatically (array, or JSON array string).

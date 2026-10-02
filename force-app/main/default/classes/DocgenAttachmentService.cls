@@ -1,6 +1,6 @@
 /**
- * Validates additional PDF ContentVersions under the calling user's access and
- * supplies related PDF files for generation components.
+ * Validates additional PDF and DOCX ContentVersions under the calling user's access
+ * and supplies related files for PDF generation. Public PDF names remain compatible.
  */
 public with sharing class DocgenAttachmentService {
     public static final Integer MAX_FILE_COUNT = 20;
@@ -52,7 +52,7 @@ public with sharing class DocgenAttachmentService {
 
         List<Id> orderedIds = deduplicate(requestedIds);
         if (orderedIds.size() > MAX_FILE_COUNT) {
-            throw new IllegalArgumentException('A maximum of 20 additional PDF files is supported');
+            throw new IllegalArgumentException('A maximum of 20 additional PDF or DOCX files is supported');
         }
 
         Map<Id, ContentVersion> visibleVersions = new Map<Id, ContentVersion>([
@@ -75,14 +75,15 @@ public with sharing class DocgenAttachmentService {
                 continue;
             }
 
-            Boolean isPdf = version.FileType == 'PDF' ||
-                (version.FileExtension != null && version.FileExtension.toLowerCase() == 'pdf');
-            if (!isPdf) {
+            String extension = version.FileExtension == null ? '' : version.FileExtension.toLowerCase();
+            Boolean isSupported = version.FileType == 'PDF' || version.FileType == 'WORD_X' ||
+                extension == 'pdf' || extension == 'docx';
+            if (!isSupported) {
                 result.warnings.add(new AttachmentWarning(
                     version.Id,
                     version.Title,
                     'NOT_A_PDF',
-                    'Skipped non-PDF file: ' + version.Title
+                    'Skipped file (only PDF and DOCX are supported): ' + version.Title
                 ));
                 continue;
             }
@@ -90,7 +91,7 @@ public with sharing class DocgenAttachmentService {
             totalBytes += version.ContentSize == null ? 0 : version.ContentSize;
             if (totalBytes > MAX_TOTAL_BYTES) {
                 throw new IllegalArgumentException(
-                    'Additional PDF files exceed the 50 MiB aggregate size limit'
+                    'Additional PDF and DOCX files exceed the 50 MiB aggregate size limit'
                 );
             }
             result.contentVersionIds.add(version.Id);
@@ -134,7 +135,7 @@ public with sharing class DocgenAttachmentService {
             FROM ContentVersion
             WHERE ContentDocumentId IN :documentIds
               AND IsLatest = true
-              AND FileType = 'PDF'
+              AND (FileType IN ('PDF', 'WORD_X') OR FileExtension IN ('pdf', 'docx'))
             WITH USER_MODE
             ORDER BY LastModifiedDate DESC
             LIMIT 200

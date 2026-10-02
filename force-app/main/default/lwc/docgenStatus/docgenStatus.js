@@ -15,7 +15,7 @@ const STAGE_LABELS = {
     merge: 'Template merge',
     concatenate: 'Section concatenate',
     pdfConvert: 'PDF conversion (LibreOffice)',
-    pdfAttachments: 'PDF attachments',
+    pdfAttachments: 'Additional documents',
     previewRender: 'Preview render',
     sfUpload: 'Salesforce upload'
 };

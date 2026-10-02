@@ -1,10 +1,12 @@
 import { PDFDocument } from 'pdf-lib';
 import type {
   ContentVersionMetadata,
+  ConversionOptions,
   PdfAttachmentWarning,
 } from '../types';
 import type { SalesforceApi } from '../sf/api';
-import { SalesforceApiError, ValidationError } from '../errors';
+import { ConversionFailedError, SalesforceApiError, ValidationError } from '../errors';
+import { convertDocxToPdf } from '../convert/soffice';
 import { createLogger } from '../utils/logger';
 import { timeStage } from '../obs';
 
@@ -48,10 +50,11 @@ export async function appendAdditionalPdfPages(
   generatedPdf: Buffer,
   requestedIds: string[] | undefined,
   sfApi: SalesforceApi,
-  correlationId: string
+  correlationId: string,
+  conversion: ConversionOptions = {}
 ): Promise<AppendPdfAttachmentsResult> {
   return timeStage('pdfAttachments', () =>
-    appendAdditionalPdfPagesInternal(generatedPdf, requestedIds, sfApi, correlationId)
+    appendAdditionalPdfPagesInternal(generatedPdf, requestedIds, sfApi, correlationId, conversion)
   );
 }
 
@@ -59,7 +62,8 @@ async function appendAdditionalPdfPagesInternal(
   generatedPdf: Buffer,
   requestedIds: string[] | undefined,
   sfApi: SalesforceApi,
-  correlationId: string
+  correlationId: string,
+  conversion: ConversionOptions
 ): Promise<AppendPdfAttachmentsResult> {
   const ids = normalizeAdditionalPdfContentVersionIds(requestedIds);
   if (ids.length === 0) {
@@ -67,7 +71,7 @@ async function appendAdditionalPdfPagesInternal(
   }
   if (ids.length > MAX_ADDITIONAL_PDF_COUNT) {
     throw new ValidationError(
-      `A maximum of ${MAX_ADDITIONAL_PDF_COUNT} additional PDF files is supported`,
+      `A maximum of ${MAX_ADDITIONAL_PDF_COUNT} additional PDF or DOCX files is supported`,
       { correlationId }
     );
   }
@@ -110,12 +114,12 @@ async function appendAdditionalPdfPagesInternal(
 
     const isPdf = metadata.FileType?.toUpperCase() === 'PDF' ||
       metadata.FileExtension?.toLowerCase() === 'pdf';
-    if (!isPdf) {
+    if (!isPdf && !isDocx(metadata)) {
       warnings.push({
         contentVersionId: id,
         title: metadata.Title,
         code: 'NOT_A_PDF',
-        message: `Skipped non-PDF file: ${metadata.Title || id}`,
+        message: `Skipped unsupported file (only PDF or DOCX is supported): ${metadata.Title || id}`,
       });
       continue;
     }
@@ -123,7 +127,7 @@ async function appendAdditionalPdfPagesInternal(
     metadataBytes += metadata.ContentSize || 0;
     if (metadataBytes > MAX_ADDITIONAL_PDF_BYTES) {
       throw new ValidationError(
-        'Additional PDF files exceed the 50 MiB aggregate size limit',
+        'Additional PDF or DOCX files exceed the 50 MiB aggregate size limit',
         { correlationId }
       );
     }
@@ -136,6 +140,7 @@ async function appendAdditionalPdfPagesInternal(
 
   const output = await PDFDocument.load(generatedPdf);
   let downloadedBytes = 0;
+  let pdfBytes = 0;
   let appendedAttachmentCount = 0;
 
   for (const metadata of eligible) {
@@ -148,7 +153,7 @@ async function appendAdditionalPdfPagesInternal(
           contentVersionId: metadata.Id,
           title: metadata.Title,
           code: 'DOWNLOAD_FORBIDDEN',
-          message: `Skipped inaccessible PDF file: ${metadata.Title || metadata.Id}`,
+          message: `Skipped inaccessible PDF or DOCX file: ${metadata.Title || metadata.Id}`,
         });
         continue;
       }
@@ -158,7 +163,21 @@ async function appendAdditionalPdfPagesInternal(
     downloadedBytes += sourceBytes.length;
     if (downloadedBytes > MAX_ADDITIONAL_PDF_BYTES) {
       throw new ValidationError(
-        'Additional PDF files exceed the 50 MiB aggregate size limit',
+        'Additional PDF or DOCX files exceed the 50 MiB aggregate size limit',
+        { correlationId }
+      );
+    }
+
+    const requiresConversion = isDocx(metadata);
+    if (requiresConversion) {
+      // Reuse the bounded conversion pool without merging or evaluating template commands
+      // in the additional document. Conversion failures must not omit a requested schedule.
+      sourceBytes = await convertDocxToPdf(sourceBytes, { ...conversion, correlationId });
+    }
+    pdfBytes += sourceBytes.length;
+    if (pdfBytes > MAX_ADDITIONAL_PDF_BYTES) {
+      throw new ValidationError(
+        'Additional files after PDF conversion exceed the 50 MiB aggregate size limit',
         { correlationId }
       );
     }
@@ -167,6 +186,9 @@ async function appendAdditionalPdfPagesInternal(
       const source = await PDFDocument.load(sourceBytes);
       const pageIndices = source.getPageIndices();
       if (pageIndices.length === 0) {
+        if (requiresConversion) {
+          throw new Error('Converted DOCX contains no PDF pages');
+        }
         warnings.push({
           contentVersionId: metadata.Id,
           title: metadata.Title,
@@ -182,6 +204,12 @@ async function appendAdditionalPdfPagesInternal(
       }
       appendedAttachmentCount += 1;
     } catch (error) {
+      if (requiresConversion) {
+        throw new ConversionFailedError(
+          `DOCX attachment did not produce a readable PDF: ${metadata.Title || metadata.Id}`,
+          { correlationId }
+        );
+      }
       logger.warn(
         { correlationId, contentVersionId: metadata.Id, error },
         'Skipping unreadable additional PDF'
@@ -207,6 +235,7 @@ async function appendAdditionalPdfPagesInternal(
       appendedAttachmentCount,
       warningCount: warnings.length,
       downloadedBytes,
+      pdfBytes,
     },
     'Additional PDF pages appended'
   );
@@ -216,6 +245,11 @@ async function appendAdditionalPdfPagesInternal(
     appendedAttachmentCount,
     warnings,
   };
+}
+
+function isDocx(metadata: ContentVersionMetadata): boolean {
+  return metadata.FileType?.toUpperCase() === 'WORD_X' ||
+    metadata.FileExtension?.toLowerCase() === 'docx';
 }
 
 async function loadContentVersionMetadata(

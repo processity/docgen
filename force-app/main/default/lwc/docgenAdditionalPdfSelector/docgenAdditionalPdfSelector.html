@@ -1,13 +1,13 @@
 <template>
   <template if:true={showSelector}>
-    <section class="selector" aria-label="Additional PDF pages">
+    <section class="selector" aria-label="Additional documents">
       <div class="selector__header">
-        <span class="selector__title">Additional PDF pages</span>
+        <span class="selector__title">Additional documents (PDF or DOCX)</span>
         <span class="selector__summary">{selectionSummary}</span>
       </div>
 
       <template if:true={isLoading}>
-        <lightning-spinner size="small" alternative-text="Loading related PDF files"></lightning-spinner>
+        <lightning-spinner size="small" alternative-text="Loading related PDF and DOCX files"></lightning-spinner>
       </template>
 
       <template if:true={hasFiles}>
@@ -30,7 +30,7 @@
 
       <template if:false={hasFiles}>
         <template if:false={isLoading}>
-          <p class="empty-state">No related PDF files</p>
+          <p class="empty-state">No related PDF or DOCX files</p>
         </template>
       </template>
 

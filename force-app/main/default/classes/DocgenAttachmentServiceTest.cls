@@ -16,11 +16,12 @@ private class DocgenAttachmentServiceTest {
     }
 
     @isTest
-    static void validatesPdfFilesInCallerOrderAndRemovesDuplicates() {
+    static void validatesPdfAndDocxFilesInCallerOrderAndRemovesDuplicates() {
         Account account = new Account(Name = 'Attachment Account');
         insert account;
         ContentVersion first = createFile('First PDF', 'pdf', account.Id);
-        ContentVersion second = createFile('Second PDF', 'pdf', account.Id);
+        ContentVersion second = createFile('Word Schedule', 'docx', account.Id);
+        Assert.areEqual('WORD_X', second.FileType, 'Salesforce should identify DOCX as WORD_X');
 
         DocgenAttachmentService.ValidationResult result =
             DocgenAttachmentService.validateForGeneration(
@@ -31,23 +32,26 @@ private class DocgenAttachmentServiceTest {
         Assert.areEqual(
             new List<Id>{ second.Id, first.Id },
             result.contentVersionIds,
-            'PDF IDs should preserve first-seen order'
+            'Mixed PDF and DOCX IDs should preserve first-seen order'
         );
-        Assert.areEqual(0, result.warnings.size(), 'Valid PDFs should not produce warnings');
+        Assert.areEqual(0, result.warnings.size(), 'Supported attachments should not produce warnings');
     }
 
     @isTest
-    static void skipsNonPdfAndIgnoresAttachmentsForOtherOutputFormats() {
+    static void skipsUnsupportedFilesAndIgnoresAttachmentsForOtherOutputFormats() {
         Account account = new Account(Name = 'Non PDF Account');
         insert account;
         ContentVersion wordFile = createFile('Word File', 'docx', account.Id);
+        ContentVersion legacyWordFile = createFile('Legacy Word File', 'doc', account.Id);
+        ContentVersion spreadsheet = createFile('Spreadsheet', 'xlsx', account.Id);
 
         DocgenAttachmentService.ValidationResult pdfResult =
             DocgenAttachmentService.validateForGeneration(
-                new List<Id>{ wordFile.Id },
+                new List<Id>{ legacyWordFile.Id, wordFile.Id, spreadsheet.Id },
                 'PDF'
             );
-        Assert.areEqual(0, pdfResult.contentVersionIds.size(), 'DOCX should not be appended');
+        Assert.areEqual(new List<Id>{ wordFile.Id }, pdfResult.contentVersionIds, 'DOCX should be accepted');
+        Assert.areEqual(2, pdfResult.warnings.size(), 'Unsupported Word and spreadsheet files should be skipped');
         Assert.areEqual('NOT_A_PDF', pdfResult.warnings[0].code, 'A warning should identify the type');
 
         DocgenAttachmentService.ValidationResult docxResult =
@@ -60,17 +64,33 @@ private class DocgenAttachmentServiceTest {
     }
 
     @isTest
-    static void returnsLatestRelatedPdfFilesOnly() {
+    static void returnsLatestRelatedPdfAndDocxFilesOnly() {
         Account account = new Account(Name = 'Related Files Account');
         insert account;
         ContentVersion pdf = createFile('Related PDF', 'pdf', account.Id);
-        createFile('Related Word File', 'docx', account.Id);
+        ContentVersion wordFile = createFile('Related Word File', 'docx', account.Id);
+        ContentVersion latestWordFile = new ContentVersion(
+            ContentDocumentId = wordFile.ContentDocumentId,
+            Title = 'Updated Word Schedule',
+            PathOnClient = 'schedule.docx',
+            VersionData = Blob.valueOf('updated schedule')
+        );
+        insert latestWordFile;
+        createFile('Legacy Word File', 'doc', account.Id);
+        createFile('Unrelated Word File', 'docx', null);
 
         List<DocgenAttachmentService.RelatedPdfFile> files =
             DocgenAttachmentService.getRelatedPdfFiles(account.Id);
 
-        Assert.areEqual(1, files.size(), 'Only related PDFs should be returned');
-        Assert.areEqual(pdf.Id, files[0].contentVersionId, 'The PDF ContentVersion should be returned');
+        Set<Id> returnedIds = new Set<Id>();
+        for (DocgenAttachmentService.RelatedPdfFile file : files) {
+            returnedIds.add(file.contentVersionId);
+        }
+        Assert.areEqual(
+            new Set<Id>{ pdf.Id, latestWordFile.Id },
+            returnedIds,
+            'Only the latest related PDF and DOCX versions should be returned'
+        );
     }
 
     @isTest

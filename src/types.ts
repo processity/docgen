@@ -184,7 +184,8 @@ export interface DocgenRequest {
   options: DocgenOptions;
   data: Record<string, any>;
   parents?: DocgenParents;
-  /** Optional PDF ContentVersions appended after generated PDF pages. Ignored for DOCX/PPTX/XLSX. */
+  /** Optional PDF or DOCX ContentVersions appended after generated PDF pages. DOCX attachments
+   * are converted to PDF. The legacy field name is retained; ignored for DOCX/PPTX/XLSX output. */
   additionalPdfContentVersionIds?: string[];
   requestHash?: string;
   generatedDocumentId?: string; // T-12: Apex passes this for status updates

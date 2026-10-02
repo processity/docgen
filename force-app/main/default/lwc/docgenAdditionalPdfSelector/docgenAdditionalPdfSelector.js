@@ -136,8 +136,8 @@ export default class DocgenAdditionalPdfSelector extends LightningElement {
         values = Array.isArray(parsed) ? parsed : [];
       } catch (error) {
         this.showToast(
-          'Invalid PDF Selection',
-          'Additional PDF ContentVersion IDs must be a JSON array.',
+          'Invalid Attachment Selection',
+          'Additional document ContentVersion IDs must be a JSON array.',
           'error'
         );
       }
@@ -168,7 +168,7 @@ export default class DocgenAdditionalPdfSelector extends LightningElement {
         event.target.checked = false;
         this.showToast(
           'Attachment Limit Reached',
-          'Select no more than 20 PDF files or 50 MiB in total.',
+          'Select no more than 20 PDF or DOCX files or 50 MiB in total.',
           'warning'
         );
         return;
@@ -225,7 +225,7 @@ export default class DocgenAdditionalPdfSelector extends LightningElement {
   }
 
   extractErrorMessage(error) {
-    return error?.body?.message || error?.message || 'Unable to load related PDF files.';
+    return error?.body?.message || error?.message || 'Unable to load related PDF and DOCX files.';
   }
 
   showToast(title, message, variant) {

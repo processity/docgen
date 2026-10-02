@@ -196,7 +196,7 @@ export default class DocgenButton extends LightningElement {
     if (warnings.length) {
       this.showToast(
         'Generated with Attachment Warnings',
-        `${warnings.length} additional PDF file${warnings.length === 1 ? ' was' : 's were'} skipped.`,
+        `${warnings.length} additional document${warnings.length === 1 ? ' was' : 's were'} skipped.`,
         'warning'
       );
       return;

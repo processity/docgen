@@ -417,7 +417,7 @@ export default class DocgenProgressButton extends NavigationMixin(LightningEleme
     if (warnings.length) {
       this.showToast(
         'Generated with Attachment Warnings',
-        `${warnings.length} additional PDF file${warnings.length === 1 ? ' was' : 's were'} skipped.`,
+        `${warnings.length} additional document${warnings.length === 1 ? ' was' : 's were'} skipped.`,
         'warning'
       );
       return;

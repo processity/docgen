@@ -145,7 +145,7 @@ const docgenRequestSchema = {
     },
     additionalPdfContentVersionIds: {
       type: 'array',
-      description: 'Optional ordered ContentVersion IDs for PDF files appended after generated PDF pages. Ignored for DOCX/PPTX/XLSX.',
+      description: 'Optional ordered ContentVersion IDs for PDF or DOCX files appended after generated PDF pages. DOCX attachments are converted to PDF. Ignored for DOCX/PPTX/XLSX output.',
       items: { type: 'string' },
     },
     requestHash: {
@@ -428,7 +428,8 @@ async function generateHandler(
         pdfBuffer,
         request.body.additionalPdfContentVersionIds,
         sfApi,
-        correlationId
+        correlationId,
+        conversion
       );
       pdfBuffer = attachmentResult.buffer;
       appendedAttachmentCount = attachmentResult.appendedAttachmentCount;

@@ -81,6 +81,8 @@ DocgenAsyncController.StartResult compositeResult = DocgenAsyncController.startC
 
 These keyed overloads are for Apex integration code. The existing `@AuraEnabled` signatures remain unchanged. The host application owns record authorization, business validation, input-conflict checks and any post-save actions.
 
+For PDF output, `additionalPdfContentVersionIds` accepts PDF and DOCX files. The backend converts DOCX attachments to PDF using LibreOffice, without template merging, and appends all pages after the generated content in caller order. Duplicate IDs are removed. The legacy field name remains unchanged. Attachments are ignored for other output formats. The limits are 20 unique files and 50 MiB of aggregate source files; converted attachment PDFs also have a 50 MiB aggregate limit. A DOCX conversion failure fails generation instead of silently omitting the attachment. Unsupported files retain the legacy `NOT_A_PDF` warning code, with a message indicating that PDF or DOCX is required.
+
 - Use a nonblank, stable key of at most 128 characters for one operation. `requestHashForKey(requestKey)` computes its user-scoped identity in the existing unique `RequestHash__c` field.
 - Reusing the key returns the same Generated Document, including FAILED or CANCELED results. Use a new key for an intentional new generation. See [Idempotency Strategy](idempotency.md#operation-keyed-async-generation).
 - Call `wakePoller()` in a separate Salesforce transaction after enqueueing; it is best-effort and cannot be combined with the enqueue DML transaction.

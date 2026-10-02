@@ -5,6 +5,7 @@ import { generateKeyPairSync } from 'crypto';
 import { PDFDocument } from 'pdf-lib';
 import ExcelJS from 'exceljs';
 import { build } from '../src/server';
+import { convertDocxToPdf } from '../src/convert/soffice';
 import type { DocgenRequest, DocgenResponse } from '../src/types';
 import { createTestDocxBuffer, createTestDocxWithContent } from './helpers/test-docx';
 import { createTestPptxBuffer } from './helpers/test-pptx';
@@ -87,15 +88,27 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
   });
 
   describe('Success Scenarios', () => {
-    it('should successfully generate a PDF document', async () => {
-      const testTemplateId = '068000000000001AAA';
+    it.each(['PDF', 'DOCX'])('should generate and upload a PDF with a %s attachment', async (attachmentFormat) => {
+      const testTemplateId = attachmentFormat === 'DOCX' ? '068000000000901AAA' : '068000000000001AAA';
       const testContentVersionId = '068000000000002AAA';
       const testContentDocumentId = '069000000000001AAA';
       const attachmentId = '068000000000090AAA';
       const attachmentPdf = await PDFDocument.create();
       attachmentPdf.addPage([300, 200]);
       attachmentPdf.addPage([400, 200]);
-      const attachmentBytes = Buffer.from(await attachmentPdf.save());
+      const attachmentPdfBytes = Buffer.from(await attachmentPdf.save());
+      const attachmentBytes = attachmentFormat === 'DOCX'
+        ? await createTestDocxWithContent('Additional schedule')
+        : attachmentPdfBytes;
+      const convertMock = jest.mocked(convertDocxToPdf);
+      convertMock.mockClear();
+      if (attachmentFormat === 'DOCX') {
+        const generatedPdf = await PDFDocument.create();
+        generatedPdf.addPage([200, 200]);
+        convertMock
+          .mockResolvedValueOnce(Buffer.from(await generatedPdf.save()))
+          .mockResolvedValueOnce(attachmentPdfBytes);
+      }
       let uploadedVersionData = '';
 
       // Pre-generate test DOCX buffer
@@ -104,6 +117,7 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       // Mock Salesforce JWT token exchange
       nock('https://login.salesforce.com')
         .post('/services/oauth2/token')
+        .optionally() // The parameterized cases may reuse the cached token.
         .reply(200, {
           access_token: 'test-access-token',
           instance_url: 'https://test.salesforce.com',
@@ -122,8 +136,8 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
           records: [{
             Id: attachmentId,
             Title: 'Appendix',
-            FileExtension: 'pdf',
-            FileType: 'PDF',
+            FileExtension: attachmentFormat.toLowerCase(),
+            FileType: attachmentFormat === 'DOCX' ? 'WORD_X' : 'PDF',
             ContentSize: attachmentBytes.length,
           }],
         });
@@ -210,9 +224,13 @@ describe('POST /generate - Unit Tests with Mocked Dependencies', () => {
       expect(body.downloadUrl).toBe(`https://test.salesforce.com/sfc/servlet.shepherd/version/download/${testContentVersionId}`);
       const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
       expect(uploadedPdf.getPages().map((page) => page.getWidth())).toEqual([200, 300, 400]);
+      expect(convertMock).toHaveBeenCalledTimes(attachmentFormat === 'DOCX' ? 2 : 1);
+      if (attachmentFormat === 'DOCX') {
+        expect(convertMock).toHaveBeenLastCalledWith(attachmentBytes, convertMock.mock.calls[0][1]);
+      }
 
       // Verify all mocks were called
-      expect(nock.isDone()).toBe(true);
+      expect(nock.pendingMocks()).toEqual([]);
     });
 
     it('should successfully generate a DOCX document', async () => {

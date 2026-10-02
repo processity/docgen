@@ -3,6 +3,7 @@ import nock from 'nock';
 import { PDFDocument } from 'pdf-lib';
 import ExcelJS from 'exceljs';
 import { PollerService } from '../../src/worker/poller';
+import { convertDocxToPdf } from '../../src/convert/soffice';
 import { PdfPageRenderer } from '../../src/preview/pdf-page-renderer';
 import { loadConfig } from '../../src/config';
 import { createSalesforceAuth } from '../../src/sf/auth';
@@ -349,12 +350,24 @@ describeTests('PollerService', () => {
       expect(generatedSheet.getCell('A3').value).toBe('Beta');
     });
 
-    it('should successfully process a document and update status to SUCCEEDED', async () => {
+    it.each(['PDF', 'DOCX'])('should process a document with a %s attachment and update status to SUCCEEDED', async (attachmentFormat) => {
       const attachmentId = '068000000000090AAA';
       const attachmentPdf = await PDFDocument.create();
       attachmentPdf.addPage([300, 200]);
       attachmentPdf.addPage([400, 200]);
-      const attachmentBytes = Buffer.from(await attachmentPdf.save());
+      const attachmentPdfBytes = Buffer.from(await attachmentPdf.save());
+      const { createTestDocxWithContent } = await import('../helpers/test-docx');
+      const attachmentBytes = attachmentFormat === 'DOCX'
+        ? await createTestDocxWithContent('Additional schedule')
+        : attachmentPdfBytes;
+      const convertMock = jest.mocked(convertDocxToPdf);
+      if (attachmentFormat === 'DOCX') {
+        const generatedPdf = await PDFDocument.create();
+        generatedPdf.addPage([200, 200]);
+        convertMock
+          .mockResolvedValueOnce(Buffer.from(await generatedPdf.save()))
+          .mockResolvedValueOnce(attachmentPdfBytes);
+      }
       let uploadedVersionData = '';
       let successUpdateBody: Record<string, unknown> = {};
       const mockDoc: QueuedDocument = {
@@ -406,8 +419,8 @@ describeTests('PollerService', () => {
             {
               Id: attachmentId,
               Title: 'Appendix',
-              FileExtension: 'pdf',
-              FileType: 'PDF',
+              FileExtension: attachmentFormat.toLowerCase(),
+              FileType: attachmentFormat === 'DOCX' ? 'WORD_X' : 'PDF',
               ContentSize: attachmentBytes.length,
             },
           ],
@@ -457,6 +470,10 @@ describeTests('PollerService', () => {
       expect(result.documentId).toBe(mockDoc.Id);
       const uploadedPdf = await PDFDocument.load(Buffer.from(uploadedVersionData, 'base64'));
       expect(uploadedPdf.getPages().map((page) => page.getWidth())).toEqual([200, 300, 400]);
+      expect(convertMock).toHaveBeenCalledTimes(attachmentFormat === 'DOCX' ? 2 : 1);
+      if (attachmentFormat === 'DOCX') {
+        expect(convertMock).toHaveBeenLastCalledWith(attachmentBytes, convertMock.mock.calls[0][1]);
+      }
       expect(JSON.parse(String(successUpdateBody.Attachment_Warnings__c))).toEqual([
         expect.objectContaining({ code: 'NOT_A_PDF' }),
       ]);
