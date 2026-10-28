@@ -1,14 +1,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { runConversionProcess } from './process';
 import type { ConversionOptions, ConversionPoolStats } from '../types';
 import { createLogger } from '../utils/logger';
 import { trackDependency, recordStage } from '../obs';
 import { ConversionTimeoutError, ConversionFailedError } from '../errors';
 
 const logger = createLogger('convert:soffice');
-const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT = 60000; // 60 seconds
 const DEFAULT_WORKDIR = '/tmp';
@@ -340,7 +338,7 @@ export class LibreOfficeConverter {
     );
 
     try {
-      const { stdout, stderr } = await execFileAsync('soffice', args, {
+      const { stdout, stderr } = await runConversionProcess('soffice', args, {
         timeout,
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer for stdout/stderr
       });
@@ -359,15 +357,27 @@ export class LibreOfficeConverter {
       return { stdout, stderr };
     } catch (error: any) {
       // Check if error is timeout
-      if (error.killed || error.signal === 'SIGTERM') {
+      if (error.timedOut) {
         logger.error(
-          { correlationId, timeout, killed: error.killed, signal: error.signal },
+          { correlationId, timeout, signal: error.signal },
           'LibreOffice conversion timed out'
         );
         throw new ConversionTimeoutError(timeout, { correlationId });
       }
 
-      // Check if error is non-zero exit code
+      // Spawn failures have errno strings, not LibreOffice exit codes.
+      if (error.syscall?.startsWith('spawn')) {
+        logger.error(
+          { correlationId, spawnError: error.code, error: error.message },
+          'Unable to start LibreOffice'
+        );
+        throw new ConversionFailedError(
+          `Unable to start LibreOffice (${error.code}): ${error.message}`,
+          { correlationId, spawnError: error.code }
+        );
+      }
+
+      // Check if error is non-zero exit code or a process signal
       if (error.code) {
         // Build detailed error message with both stderr and stdout
         const errorDetails = [];

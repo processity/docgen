@@ -1,5 +1,5 @@
 // Mock modules before import
-jest.mock('child_process');
+jest.mock('../src/convert/process');
 jest.mock('fs', () => {
   const actualFs = jest.requireActual('fs');
   return {
@@ -13,30 +13,12 @@ jest.mock('fs', () => {
   };
 });
 
-// Create global mock for promisified execFile (must be before util mock)
-const mockExecFileAsync = jest.fn();
-
-// Mock promisify to return our mock for execFile
-jest.mock('util', () => {
-  const actualUtil = jest.requireActual('util');
-
-  return {
-    ...actualUtil,
-    promisify: (fn: any) => {
-      // If it's execFile, return the global mock
-      if (fn && (fn.name === 'execFile' || String(fn).includes('execFile'))) {
-        return mockExecFileAsync;
-      }
-      // Otherwise use actual promisify
-      return actualUtil.promisify(fn);
-    },
-  };
-});
-
 import { LibreOfficeConverter, convertDocxToPdf } from '../src/convert/soffice';
+import { runConversionProcess } from '../src/convert/process';
 import { promises as fsPromises } from 'fs';
 
 const mockedFsPromises = jest.mocked(fsPromises);
+const mockRunConversionProcess = jest.mocked(runConversionProcess);
 
 describe('LibreOfficeConverter', () => {
   let converter: LibreOfficeConverter;
@@ -47,7 +29,7 @@ describe('LibreOfficeConverter', () => {
     jest.useRealTimers();
 
     // Set default mock implementations
-    mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+    mockRunConversionProcess.mockResolvedValue({ stdout: '', stderr: '' });
     mockedFsPromises.mkdir.mockResolvedValue(undefined);
     mockedFsPromises.writeFile.mockResolvedValue(undefined);
     mockedFsPromises.readFile.mockResolvedValue(Buffer.from('mock pdf content'));
@@ -70,7 +52,7 @@ describe('LibreOfficeConverter', () => {
       expect(result.toString()).toBe('mock pdf content');
 
       // Verify soffice was called
-      expect(mockExecFileAsync).toHaveBeenCalledWith(
+      expect(mockRunConversionProcess).toHaveBeenCalledWith(
         'soffice',
         expect.arrayContaining(['--headless', '--convert-to', 'pdf']),
         expect.objectContaining({
@@ -87,9 +69,9 @@ describe('LibreOfficeConverter', () => {
 
     it('should handle timeout by killing the process', async () => {
       // Mock hung process that times out
-      mockExecFileAsync.mockRejectedValue({
-        killed: true,
-        signal: 'SIGTERM',
+      mockRunConversionProcess.mockRejectedValue({
+        timedOut: true,
+        signal: 'SIGKILL',
         message: 'Timeout',
       });
 
@@ -110,7 +92,7 @@ describe('LibreOfficeConverter', () => {
       // Mock failed conversion
       const error: any = new Error('soffice exited with code 1');
       error.code = 1;
-      mockExecFileAsync.mockRejectedValue(error);
+      mockRunConversionProcess.mockRejectedValue(error);
 
       const docxBuffer = Buffer.from('mock docx content');
 
@@ -126,12 +108,26 @@ describe('LibreOfficeConverter', () => {
       expect(stats.failedJobs).toBe(1);
     });
 
+    it('should report EAGAIN as a spawn failure and release the pool slot', async () => {
+      mockRunConversionProcess.mockRejectedValueOnce(
+        Object.assign(new Error('spawn soffice EAGAIN'), {
+          code: 'EAGAIN',
+          syscall: 'spawn soffice',
+        })
+      );
+      await expect(converter.convertToPdf(Buffer.from('docx'))).rejects.toThrow(
+        'Unable to start LibreOffice (EAGAIN)'
+      );
+      expect(converter.getActiveJobs()).toBe(0);
+      expect(converter.getStats().failedJobs).toBe(1);
+    });
+
     it('should enforce max concurrent limit of 8', async () => {
       let concurrentCalls = 0;
       let maxConcurrent = 0;
 
       // Mock conversion that tracks concurrency
-      mockExecFileAsync.mockImplementation(() => {
+      mockRunConversionProcess.mockImplementation(() => {
         concurrentCalls++;
         maxConcurrent = Math.max(maxConcurrent, concurrentCalls);
 
@@ -159,7 +155,7 @@ describe('LibreOfficeConverter', () => {
 
     it('should track queue depth when pool is full', async () => {
       // Mock slow conversion
-      mockExecFileAsync.mockImplementation(() => {
+      mockRunConversionProcess.mockImplementation(() => {
         return new Promise((resolve) => {
           setTimeout(() => {
             resolve({ stdout: '', stderr: '' });
@@ -205,7 +201,7 @@ describe('LibreOfficeConverter', () => {
     });
 
     it('should report LibreOffice stderr when no PDF output is produced', async () => {
-      mockExecFileAsync.mockResolvedValue({
+      mockRunConversionProcess.mockResolvedValue({
         stdout: '',
         stderr: 'source file could not be loaded\n',
       });
@@ -241,7 +237,7 @@ describe('LibreOfficeConverter', () => {
       expect(afterSuccess.failedJobs).toBe(0);
 
       // Failed conversion
-      mockExecFileAsync.mockRejectedValueOnce(new Error('Conversion error'));
+      mockRunConversionProcess.mockRejectedValueOnce(new Error('Conversion error'));
 
       await expect(
         converter.convertToPdf(docxBuffer, { correlationId: 'stats-test-2' })
@@ -261,7 +257,7 @@ describe('LibreOfficeConverter', () => {
 
       // This test verifies the API accepts correlationId
       // Actual log verification would require log mocking
-      expect(mockExecFileAsync).toHaveBeenCalled();
+      expect(mockRunConversionProcess).toHaveBeenCalled();
     });
 
     it('should use custom timeout when provided', async () => {
@@ -271,8 +267,8 @@ describe('LibreOfficeConverter', () => {
         correlationId: 'custom-timeout-test',
       });
 
-      // Verify custom timeout is passed to execFile
-      expect(mockExecFileAsync).toHaveBeenCalledWith(
+      // Verify custom timeout is passed to the conversion runner
+      expect(mockRunConversionProcess).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Array),
         expect.objectContaining({
@@ -306,7 +302,7 @@ describe('LibreOfficeConverter', () => {
       });
 
       expect(result).toBeInstanceOf(Buffer);
-      expect(mockExecFileAsync).toHaveBeenCalled();
+      expect(mockRunConversionProcess).toHaveBeenCalled();
     });
   });
 });
