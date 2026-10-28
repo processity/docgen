@@ -11,6 +11,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  conversion-lifecycle:
+    name: LibreOffice process lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production runtime image
+        run: docker build -t docgen-api:lifecycle .
+      - name: Verify conversions do not accumulate processes
+        run: |
+          docker run --rm --network none --pids-limit 128 --memory 4g --cpus 2 \
+            --mount type=bind,source="$PWD/scripts/test-conversion-lifecycle.cjs",target=/checks/lifecycle.cjs,readonly \
+            --mount type=bind,source="$PWD/test/fixtures/conversion-lifecycle.docx.base64",target=/checks/input.docx.base64,readonly \
+            docgen-api:lifecycle node /checks/lifecycle.cjs
+
   test:
     name: Test & Build
     runs-on: ubuntu-latest

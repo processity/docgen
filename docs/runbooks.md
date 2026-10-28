@@ -1430,6 +1430,39 @@ Restart or recover containers that are:
 
 ---
 
+### Conversion failures: `EAGAIN` or `Cannot fork`
+
+`spawn soffice EAGAIN`, `soffice: Cannot fork`, or an OCI exec failure with
+`Resource temporarily unavailable` indicate that a new process could not start.
+Check PID/thread limits and process accumulation before attributing this to a
+template or image-pull credential. HTTP health checks can remain green because
+they do not launch LibreOffice.
+
+Capture process state from the affected replica before recovery, when exec still
+works. These commands do not read process arguments or credentials:
+
+```sh
+cat /proc/1/comm
+cat /proc/1/limits
+ps -eo pid,ppid,stat,comm
+# cgroup v2 (use /sys/fs/cgroup/pids/ on cgroup v1):
+cat /sys/fs/cgroup/pids.current /sys/fs/cgroup/pids.max /sys/fs/cgroup/pids.events
+```
+
+If exec cannot start, retain that runtime error with the replica name and failure
+time. An approved revision restart can recover exhausted process capacity; with
+one replica it briefly interrupts service. Verify a real PDF conversion before
+resubmitting documents already marked `FAILED`.
+
+LibreOffice can leave exited GPG helpers (`gpgconf`, `gpg`, `gpgsm`) orphaned.
+When Node runs as PID 1, these can remain as zombies and consume PID capacity
+across otherwise successful conversions. The runtime image must start through
+Tini so orphaned helpers are reaped. Each conversion also owns a process group
+that is killed on completion or timeout.
+Both changes require rebuilding and deploying the backend image; a Salesforce
+package release alone does not deliver them. CI runs 100 real conversions under
+a 128-task PID limit and checks for zombie accumulation and process growth.
+
 ### Procedure: Restart Stuck Replica
 
 ```bash

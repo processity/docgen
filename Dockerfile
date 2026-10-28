@@ -48,6 +48,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm contrib" >> /etc/apt/sources
 # - ttf-mscorefonts-installer: Microsoft core fonts (Arial, Times New Roman, etc.)
 # - fontconfig: Font discovery and Meiryo UI fallback configuration
 # - curl: For health checks
+# - tini: Reap orphaned LibreOffice helpers instead of accumulating zombie PIDs
 RUN apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
     apt-get install -y -t bookworm-backports \
@@ -63,6 +64,7 @@ RUN apt-get update && \
         ttf-mscorefonts-installer \
         fontconfig \
         curl \
+        tini \
         && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -108,4 +110,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 USER appuser
 
 # Start the application
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/server.js"]
